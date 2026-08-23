@@ -174,6 +174,31 @@ describe("runAgent 主循环", () => {
     });
   });
 
+  it("边跑边持久化:onMessage 收到 assistant 与 tool_result 消息", async () => {
+    const { cwd, artifactDir } = await makeEnv();
+    await writeFile(path.join(cwd, "n.txt"), "ok", "utf8");
+    const provider = new MockProvider([
+      { events: [toolCall("p1", "read", JSON.stringify({ file_path: "n.txt" })), turnComplete()] },
+      { events: [textBlock("完成。"), turnComplete()] },
+    ]);
+    const persisted: Message[] = [];
+    const { deps } = makeDeps(cwd, artifactDir, {
+      provider,
+      onMessage: async (message: Message) => {
+        persisted.push(message);
+      },
+    });
+
+    await runAgent(
+      [{ role: "user", content: [{ type: "text", text: "读 n.txt" }] }],
+      deps,
+    );
+
+    // assistant(工具调用) → user(tool_result) → assistant(最终文本)
+    expect(persisted.map((m) => m.role)).toEqual(["assistant", "user", "assistant"]);
+    expect(persisted[1]?.content[0]).toMatchObject({ type: "tool-result", toolCallId: "p1" });
+  });
+
   it("轮次上限耗尽即停止", async () => {
     const { cwd, artifactDir } = await makeEnv();
     const provider = new MockProvider([

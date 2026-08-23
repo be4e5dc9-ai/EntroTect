@@ -35,6 +35,11 @@ export interface AgentDeps {
   /** 轮次上限,防无限循环烧钱(照抄 ClaudeCode maxTurns) */
   maxTurns?: number;
   abortSignal?: AbortSignal;
+  /**
+   * 消息落盘钩子:历史每追加一条消息即回调(边跑边持久化,
+   * 崩溃后可 resume;append-only,JSONL 层由宿主实现)。
+   */
+  onMessage?: (message: Message) => Promise<void> | void;
 }
 
 export interface AgentRunResult {
@@ -153,6 +158,7 @@ export async function runAgent(
     const assistantMessage: Message = { role: "assistant", content: assistantBlocks };
     history.push(assistantMessage);
     deps.emit({ type: "message-appended", message: assistantMessage });
+    await deps.onMessage?.(assistantMessage);
 
     const toolCalls = assistantBlocks.filter(
       (block): block is ToolCallBlock => block.type === "tool-call",
@@ -295,7 +301,9 @@ export async function runAgent(
     }
 
     // 5. tool_result 回填(紧跟 tool_use,配对铁律)
-    history.push({ role: "user", content: results });
+    const toolResultMessage: Message = { role: "user", content: results };
+    history.push(toolResultMessage);
+    await deps.onMessage?.(toolResultMessage);
     deps.emit({ type: "turn-completed", usage: lastUsage });
   }
 
