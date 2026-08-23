@@ -6,7 +6,7 @@
 // =====================================================================
 
 import { z } from "zod";
-import type { Tool } from "./types.js";
+import type { Tool, ToolContext } from "./types.js";
 import type { SubagentRunner } from "../subagent/run.js";
 
 /** 模块级运行器(由 registry 注入;全局唯一,与主会话一一对应) */
@@ -33,11 +33,12 @@ export const taskTool: Tool = {
     const prompt = (args as Input).prompt;
     return prompt.length > 60 ? `${prompt.slice(0, 60)}…` : prompt;
   },
-  async call(rawArgs: unknown): Promise<string> {
+  async call(rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const args = inputSchema.parse(rawArgs);
     if (runner === null) {
       throw new Error("子代理运行器未配置");
     }
-    return runner(args.prompt);
+    // 活动日志挂在任务卡片上(主循环注入的 subagentLog 通道)
+    return runner(args.prompt, ctx.subagentLog);
   },
 };

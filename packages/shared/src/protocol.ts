@@ -177,6 +177,8 @@ export type AppEvent =
   | { type: "assistant-delta"; text: string }
   | { type: "assistant-reasoning-delta"; text: string }
   | { type: "assistant-block"; block: ContentBlock }
+  /** 子代理活动日志(任务卡片的可展开内部活动,不进主对话流) */
+  | { type: "subagent-activity"; toolCallId: string; text: string }
   | { type: "turn-started" }
   | { type: "turn-completed"; usage: TokenUsage | null }
   | {
@@ -283,6 +285,11 @@ export const appEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("message-appended"), message: messageSchema }),
   z.object({ type: z.literal("assistant-delta"), text: z.string() }),
   z.object({ type: z.literal("assistant-reasoning-delta"), text: z.string() }),
+  z.object({
+    type: z.literal("subagent-activity"),
+    toolCallId: z.string(),
+    text: z.string(),
+  }),
   z.object({ type: z.literal("assistant-block"), block: contentBlockSchema }),
   z.object({ type: z.literal("turn-started") }),
   z.object({ type: z.literal("turn-completed"), usage: tokenUsageSchema.nullable() }),

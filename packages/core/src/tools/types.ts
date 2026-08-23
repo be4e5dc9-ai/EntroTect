@@ -13,6 +13,8 @@ export interface ToolContext {
   /** 输出截断落盘目录 */
   artifactDir: string;
   abortSignal?: AbortSignal;
+  /** 子代理活动日志通道:task 工具内部活动以行进日志(挂在对应工具卡片) */
+  subagentLog?: (line: string) => void;
 }
 
 export interface Tool {

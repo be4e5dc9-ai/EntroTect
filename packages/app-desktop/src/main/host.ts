@@ -310,7 +310,6 @@ export class SessionHost {
             tools: buildBuiltinTools(),
             systemPrompt,
             approve,
-            emit: (event) => this.emit(event),
             cwd: run.meta.cwd,
             artifactDir: this.store.artifactDir(run.meta.id),
             maxTokens: this.config.maxTokens ?? MAX_TOKENS_DEFAULT,

@@ -24,6 +24,8 @@ export interface UiToolBlock {
   preview: string;
   state: ToolCallState;
   summary?: string;
+  /** 子代理内部活动日志(task 工具专用,按行拼接) */
+  log?: string;
 }
 
 export type UiAnyBlock = UiBlock | UiToolBlock;
@@ -170,6 +172,20 @@ function updateToolState(toolCallId: string, patch: Partial<UiToolBlock>): void 
   }));
 }
 
+/** 子代理活动日志:追加到对应任务卡片的 log(不占主对话流) */
+function appendSubagentLog(toolCallId: string, line: string): void {
+  useStore.setState((state) => ({
+    messages: state.messages.map((message) => ({
+      ...message,
+      blocks: message.blocks.map((block) =>
+        block.kind === "tool-call" && block.id === toolCallId
+          ? { ...block, log: block.log ? `${block.log}\n${line}` : line }
+          : block,
+      ),
+    })),
+  }));
+}
+
 // ---------- 事件归约 ----------
 export function applyEvent(event: AppEvent): void {
   switch (event.type) {
@@ -286,6 +302,9 @@ export function applyEvent(event: AppEvent): void {
     case "assistant-reasoning-delta":
       reasoningBuffer += event.text;
       flushDeltas();
+      break;
+    case "subagent-activity":
+      appendSubagentLog(event.toolCallId, event.text);
       break;
     case "assistant-block": {
       // 文本块收口:deltas 已流式构建文本,此处只做对齐/补缺

@@ -801,6 +801,42 @@
 .dot-denied {
   background: var(--text-tertiary);
 }
+
+/* 子代理卡:图标徽章 */
+.tool-subagent-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  color: var(--accent-strong);
+  background: var(--accent-dim);
+  flex-shrink: 0;
+}
+.tool-subagent-icon.state-failed {
+  color: var(--danger);
+  background: var(--danger-dim);
+}
+.tool-subagent-icon.state-denied {
+  color: var(--text-tertiary);
+  background: var(--surface-hover);
+}
+
+/* 子代理内部活动日志 */
+.tool-subagent-log {
+  margin: 0;
+  padding: 9px 12px;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--text-tertiary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow-y: auto;
+}
 .tool-name {
   font-family: var(--font-mono);
   font-size: 12px;

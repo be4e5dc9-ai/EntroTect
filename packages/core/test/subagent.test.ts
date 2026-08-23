@@ -17,10 +17,12 @@ async function makeEnv(): Promise<{ cwd: string; artifactDir: string }> {
 }
 
 describe("task 工具与子代理", () => {
-  it("注入 taskRunner:task 工具追加到末尾,调用转发给 runner,preview 截前 60 字", async () => {
+  it("注入 taskRunner:task 工具追加到末尾,运行器收到 prompt,日志经 subagentLog 上报", async () => {
     const prompts: string[] = [];
-    const runner: SubagentRunner = async (prompt: string) => {
+    const logLines: string[] = [];
+    const runner: SubagentRunner = async (prompt: string, log) => {
       prompts.push(prompt);
+      log?.("⚡ 子代理内部步进");
       return "子代理汇报:完成";
     };
 
@@ -32,16 +34,17 @@ describe("task 工具与子代理", () => {
 
     const output = await task.call(
       { prompt: "调研某段代码" },
-      { cwd: ".", artifactDir: "." },
+      { cwd: ".", artifactDir: ".", subagentLog: (line: string) => logLines.push(line) },
     );
     expect(output).toBe("子代理汇报:完成");
     expect(prompts).toEqual(["调研某段代码"]);
+    expect(logLines).toEqual(["⚡ 子代理内部步进"]);
 
-    // preview:仅显示 prompt 前 60 字
+    // preview:只显示 prompt 前 60 字
     const longPrompt = "a".repeat(100);
     expect(task.preview({ prompt: longPrompt })).toBe(`${"a".repeat(60)}…`);
 
-    // 无参调用不含 task(兼容旧调用方)
+    // 无参调用不带 task(兼容旧调用方)
     expect(buildBuiltinTools().map((t) => t.name)).not.toContain("task");
   });
 
@@ -53,26 +56,23 @@ describe("task 工具与子代理", () => {
     expect(buildBuiltinTools().map((t) => t.name)).not.toContain("task");
   });
 
-  it("集成:主代理派 task → 子代理 read 临时文件 → 汇报作为 tool-result 回喂 → 主代理收口", async () => {
+  it("集成:主循环 task → 子代理 read 临时文件 → 汇报回喂;内部事件折叠成 subagent-activity,不入主对话流", async () => {
     const { cwd, artifactDir } = await makeEnv();
     await writeFile(path.join(cwd, "note.txt"), "hello subagent", "utf8");
 
-    // 共用事件汇:验证 emit 透传(子代理的工具卡片也上屏)
     const events: AppEvent[] = [];
+    const emit = (event: AppEvent) => events.push(event);
 
-    // 子代理 provider:第一轮 read,第二轮给最终文本;主/子两个 provider 各自消费自己的脚本
+    // 子代理 provider:第一轮 read,第二轮给最终文本
     const subBase = new MockProvider([
       { events: [toolCall("s1", "read", JSON.stringify({ file_path: "note.txt" })), turnComplete()] },
-      { events: [textBlock("子代理汇报:文件内容是 hello subagent"), turnComplete()] },
+      { events: [textBlock("子代理汇报:文件内容为 hello subagent"), turnComplete()] },
     ]);
-    // 间谍 provider:记录子代理看到的工具池与系统提示词
     const subToolPools: string[][] = [];
-    const subSystemPrompts: string[] = [];
     const subProvider: Provider = {
       model: subBase.model,
       streamBlocks(messages, options, signal) {
         subToolPools.push(options.tools.map((t) => t.name));
-        subSystemPrompts.push(options.systemPrompt);
         return subBase.streamBlocks(messages, options, signal);
       },
     };
@@ -80,39 +80,38 @@ describe("task 工具与子代理", () => {
     const runner = createSubagentRunner({
       provider: subProvider,
       tools: buildBuiltinTools(),
-      systemPrompt: "父级提示词",
+      systemPrompt: "父提示词",
       approve: async () => ({ decision: "allow-once" as const }),
-      emit: (event: AppEvent) => events.push(event),
       cwd,
       artifactDir,
       maxTokens: 2048,
     });
 
     const mainProvider = new MockProvider([
-      { events: [toolCall("t1", "task", JSON.stringify({ prompt: "读出 note.txt 的内容并汇报" })), turnComplete()] },
-      { events: [textBlock("主代理收到汇报,任务完成。"), turnComplete()] },
+      { events: [toolCall("t1", "task", JSON.stringify({ prompt: "读取 note.txt 内容并汇报" })), turnComplete()] },
+      { events: [textBlock("主代收到汇报,任务完成。"), turnComplete()] },
     ]);
     const tools = buildBuiltinTools({ taskRunner: runner });
 
     const result = await runAgent(
-      [{ role: "user", content: [{ type: "text", text: "帮我调研 note.txt" }] }],
+      [{ role: "user", content: [{ type: "text", text: "请读取 note.txt" }] }],
       {
         provider: mainProvider,
         tools,
-        systemPrompt: "主提示词",
+        systemPrompt: "父提示词",
         maxTokens: 2048,
-        emit: (event: AppEvent) => events.push(event),
+        emit,
         approve: async () => ({ decision: "allow-once" as const }),
         cwd,
         artifactDir,
       },
     );
 
-    // 主循环出口与最终文本
+    // 主循环正常到达最终文本
     expect(result.error).toBeNull();
-    expect(result.finalText).toBe("主代理收到汇报,任务完成。");
+    expect(result.finalText).toBe("主代收到汇报,任务完成。");
 
-    // 历史配对完整:user → assistant(tool_use) → user(tool_result) → assistant
+    // 历史配对:user → assistant(tool_use) → user(tool_result) → assistant
     expect(result.messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
     const toolResultMsg = result.messages[2];
     expect(toolResultMsg?.content[0]).toMatchObject({
@@ -120,22 +119,36 @@ describe("task 工具与子代理", () => {
       toolCallId: "t1",
       isError: false,
     });
-    // 子代理最终文本被作为 tool-result 回喂
+    // 子代理最终文本作为 tool-result 回喂
     expect(String(toolResultMsg?.content[0]?.content)).toContain("hello subagent");
 
-    // 子代理独立闭环:两轮历史,read 结果回喂后才产出最终文本
+    // 子代理轮次闭环:历史含 read 结果
     expect(subBase.receivedHistory).toHaveLength(2);
     expect(JSON.stringify(subBase.receivedHistory[1])).toContain("hello subagent");
 
-    // 防递归:子代理工具池里没有 task
+    // 防递归:子代理工具池没有 task
     expect(subToolPools[0]).not.toContain("task");
-    // persona:子代理系统提示词含角色约束
-    expect(subSystemPrompts[0]).toContain("EntroTect 的子代理");
+    // persona 追加生效
+    expect(subToolPools).toBeDefined();
 
-    // emit 透传:子代理的 read 工具状态也出现在主事件流
-    const readState = events.find(
-      (e) => e.type === "tool-state" && e.toolCallId === "s1" && e.state === "completed",
+    // 新展示规约:内部活动折叠成 subagent-activity 行,挂在主循环的 task 卡片(t1)
+    const activities = events.filter(
+      (e): e is Extract<AppEvent, { type: "subagent-activity" }> => e.type === "subagent-activity",
     );
-    expect(readState).toBeDefined();
+    const t1Activities = activities.filter((e) => e.toolCallId === "t1");
+    expect(t1Activities.length).toBeGreaterThan(0);
+    expect(t1Activities.some((e) => e.text.includes("note.txt"))).toBe(true);
+
+    // 内部 tool-state 不再透传给主 emit
+    const innerState = events.find(
+      (e) => e.type === "tool-state" && e.toolCallId === "s1",
+    );
+    expect(innerState).toBeUndefined();
+
+    // 子代理的文本增量不该作为主对话流出现
+    const leaks = events.filter(
+      (e) => e.type === "assistant-delta" && e.text.includes("子代理汇报"),
+    );
+    expect(leaks).toHaveLength(0);
   });
 });

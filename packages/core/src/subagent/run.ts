@@ -3,6 +3,10 @@
 // 设计依据:ClaudeCode/09 §1——子代理不是新循环,而是过滤工具池后的
 // 又一次 runAgent 调用,复用主循环全部能力(审批、截断、事件、轮次)。
 // v1 深度固定 1 层:子代理工具池里没有 task,防无限递归派生。
+//
+// 展示规约(v0.2.1):内部事件不进入主对话流——工具执行被折叠成
+// "活动日志行"经 log 回调挂在对应 task 工具卡片上;
+// 审批仍透传父级(弹用户),最终答复作为 tool-result 回喂。
 // =====================================================================
 
 import type { AppEvent, ApprovalRequest, Message } from "@entrotect/shared";
@@ -11,8 +15,10 @@ import type { Tool } from "../tools/types.js";
 import type { ApprovalOutcome } from "../permission/gate.js";
 import { runAgent } from "../loop/agent.js";
 
+type LogLine = (line: string) => void;
+
 /** 子代理运行器:入参任务描述,返回最终答复文本;异常抛给主循环包成 is_error */
-export type SubagentRunner = (prompt: string) => Promise<string>;
+export type SubagentRunner = (prompt: string, log?: LogLine) => Promise<string>;
 
 export interface SubagentRunnerDeps {
   provider: Provider;
@@ -22,8 +28,6 @@ export interface SubagentRunnerDeps {
   systemPrompt: string;
   /** 审批回调:透传父级,审批仍然弹给用户 */
   approve: (request: ApprovalRequest) => Promise<ApprovalOutcome>;
-  /** 事件汇:透传父级,子代理的工具卡片照常上屏 */
-  emit: (event: AppEvent) => void;
   cwd: string;
   artifactDir: string;
   maxTokens?: number;
@@ -41,9 +45,21 @@ const SUBAGENT_MAX_TURNS = 12;
 /** 子代理单轮 token 上限(未显式传入时的默认值) */
 const SUBAGENT_MAX_TOKENS = 2048;
 
+/** 内部事件 → 活动日志行(只挑"可读步进",丢弃文本增量) */
+function logForEvent(event: AppEvent): string | null {
+  if (event.type !== "tool-state") return null;
+  const symbol =
+    event.state === "completed" ? "✓"
+    : event.state === "failed" ? "✗"
+    : event.state === "denied" ? "⊘"
+    : "⚡";
+  return `${symbol} ${event.preview}`;
+}
+
 /**
  * 创建子代理运行器。每次调用 runner 都递归跑一轮 runAgent:
  * 独立历史(只有任务 prompt)、过滤后的工具池、固定轮次上限。
+ * 内部事件被折叠成活动日志经 log(即工具卡片的 subagentLog)上报。
  */
 export function createSubagentRunner(deps: SubagentRunnerDeps): SubagentRunner {
   // 过滤工具池:去掉 task 自身,子代理不能再派生子代理(v1 深度 1 层)
@@ -51,11 +67,18 @@ export function createSubagentRunner(deps: SubagentRunnerDeps): SubagentRunner {
   // 父提示词提供环境上下文,persona 追加在后(后文角色约束优先级更高)
   const systemPrompt = `${deps.systemPrompt}\n\n${SUBAGENT_SYSTEM_PROMPT}`;
 
-  return async (prompt: string): Promise<string> => {
+  return async (prompt: string, log?: LogLine): Promise<string> => {
     const initialMessages: Message[] = [
       { role: "user", content: [{ type: "text", text: prompt }] },
     ];
 
+    // 内部事件在此收口:只有可读步进换成日志行,其余(文本增量/回合事件)不入主对话
+    const emitInner = (event: AppEvent) => {
+      const line = logForEvent(event);
+      if (line) log?.(line);
+    };
+
+    log?.("子代理启动");
     const result = await runAgent(initialMessages, {
       provider: deps.provider,
       tools,
@@ -65,11 +88,12 @@ export function createSubagentRunner(deps: SubagentRunnerDeps): SubagentRunner {
       reasoningEffort: deps.reasoningEffort,
       maxTurns: SUBAGENT_MAX_TURNS,
       abortSignal: deps.abortSignal,
-      emit: deps.emit,
+      emit: emitInner,
       approve: deps.approve,
       cwd: deps.cwd,
       artifactDir: deps.artifactDir,
     });
+    log?.("子代理完成");
 
     return result.finalText ?? result.error ?? "(子代理无输出)";
   };

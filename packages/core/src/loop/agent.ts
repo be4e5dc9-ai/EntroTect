@@ -194,7 +194,7 @@ export async function runAgent(
 
     // 4. 串行执行(v1 不做并行;权限闸门 = approve 回调)
     const results: ContentBlock[] = [];
-    const toolContext: ToolContext = {
+    const toolContextBase = {
       cwd: deps.cwd,
       artifactDir: deps.artifactDir,
       abortSignal: deps.abortSignal,
@@ -203,6 +203,13 @@ export async function runAgent(
     for (const call of toolCalls) {
       const tool = toolsByName.get(call.name);
       const preview = previewFor(tool, call);
+      // 活动日志挂在当前 toolCallId 上:task 工具的内部步进只进对应卡片
+      const toolContext: ToolContext = {
+        ...toolContextBase,
+        subagentLog: (line: string) => {
+          deps.emit({ type: "subagent-activity", toolCallId: call.id, text: line });
+        },
+      };
 
       if (deps.abortSignal?.aborted) {
         results.push({
