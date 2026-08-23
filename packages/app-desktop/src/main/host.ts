@@ -7,12 +7,21 @@
 import { homedir } from "node:os";
 import path from "node:path";
 import type { BrowserWindow } from "electron";
-import type { AppConfig, AppEvent, Message, Op, SessionMeta } from "@entrotect/shared";
+import type {
+  AppConfig,
+  AppEvent,
+  ApprovalRequest,
+  Message,
+  Op,
+  ProviderConfig,
+  SessionMeta,
+} from "@entrotect/shared";
 import {
   buildBuiltinTools,
   buildSystemPrompt,
   createProvider,
-  listModels,
+  createSubagentRunner,
+  listModelsForProvider,
   loadConfig,
   runAgent,
   saveConfig,
@@ -20,6 +29,7 @@ import {
   SessionStore,
   applyChatMessage,
   loadPluginsFromDir,
+  setSandboxMode,
   type PluginHooks,
   type Provider,
 } from "@entrotect/core";
@@ -54,13 +64,31 @@ export class SessionHost {
 
   async init(): Promise<void> {
     this.config = await loadConfig(this.deps.appDataDir);
+    // 沙箱模块级状态随配置注入(加载时一次,SetConfig 后再同步)
+    setSandboxMode(this.config.sandboxMode ?? "full");
     this.provider = this.makeProvider();
     const plugins = await loadPluginsFromDir(path.join(this.deps.appDataDir, "plugins"));
     this.plugins = plugins.map((plugin) => plugin.hooks);
   }
 
+  /** 当前生效的供应商:按 activeProviderId 找,失效回退第一个 */
+  private activeProvider(): ProviderConfig | undefined {
+    const providers = this.config.providers ?? [];
+    if (providers.length === 0) return undefined;
+    return (
+      providers.find((p) => p.id === this.config.activeProviderId) ?? providers[0]
+    );
+  }
+
   private makeProvider(): Provider {
-    return createProvider(this.config);
+    const provider = this.activeProvider();
+    if (!provider) return createProvider(this.config);
+    // 模型仍取顶层 model(compat 字段,切换供应商时由 UI 同步)
+    return createProvider({
+      ...this.config,
+      baseUrl: provider.baseUrl,
+      apiKey: provider.apiKey,
+    });
   }
 
   private workspaceDir(): string {
@@ -96,15 +124,22 @@ export class SessionHost {
       case "ListSessions":
         this.emit({ type: "sessions-listed", sessions: await this.store.list() });
         break;
-      case "ListModels":
+      case "ListModels": {
+        const providerId = op.providerId ?? this.config.activeProviderId ?? "";
+        const provider = this.config.providers?.find((p) => p.id === providerId);
+        if (!provider) {
+          this.emit({ type: "models-listed", providerId, models: [] });
+          break;
+        }
         try {
-          const models = await listModels(this.config);
-          this.emit({ type: "models-listed", models });
+          const models = await listModelsForProvider(provider);
+          this.emit({ type: "models-listed", providerId, models });
         } catch {
-          // 拉取失败不阻塞:至少保证当前模型可选
-          this.emit({ type: "models-listed", models: [this.config.model] });
+          // 拉取失败不打扰用户:renderer 显示"拉取失败"
+          this.emit({ type: "models-listed", providerId, models: [] });
         }
         break;
+      }
       case "ApprovalDecision":
         this.active?.gate.respond(op.toolCallId, op.decision, op.reason);
         break;
@@ -114,6 +149,8 @@ export class SessionHost {
       case "SetConfig": {
         this.config = op.config;
         await saveConfig(this.deps.appDataDir, this.config);
+        // 沙箱模式即时同步到模块级策略状态
+        setSandboxMode(this.config.sandboxMode ?? "full");
         this.provider = this.makeProvider();
         this.emit({ type: "config", config: this.config });
         break;
@@ -252,24 +289,42 @@ export class SessionHost {
     run.running = true;
 
     const gate = run.gate;
+    // 主循环与子代理共用的装配:同源提示词 / 审批 / 事件 / 工作目录
+    const systemPrompt = buildSystemPrompt({
+      cwd: run.meta.cwd,
+      model: this.config.model,
+      platform: process.platform,
+      date: new Date().toISOString().slice(0, 10),
+    });
+    const approve = (request: ApprovalRequest) => {
+      this.emit({ type: "approval-requested", request });
+      return gate.request(request);
+    };
     try {
       const result = await runAgent(messages, {
         provider: this.provider,
-        tools: buildBuiltinTools(),
-        systemPrompt: buildSystemPrompt({
-          cwd: run.meta.cwd,
-          model: this.config.model,
-          platform: process.platform,
-          date: new Date().toISOString().slice(0, 10),
+        // 注入子代理运行器 → task 工具可用;子代理工具池无 task,防递归
+        tools: buildBuiltinTools({
+          taskRunner: createSubagentRunner({
+            provider: this.provider,
+            tools: buildBuiltinTools(),
+            systemPrompt,
+            approve,
+            emit: (event) => this.emit(event),
+            cwd: run.meta.cwd,
+            artifactDir: this.store.artifactDir(run.meta.id),
+            maxTokens: this.config.maxTokens ?? MAX_TOKENS_DEFAULT,
+            temperature: this.config.temperature,
+            reasoningEffort: this.config.reasoningEffort,
+            abortSignal: run.abort.signal,
+          }),
         }),
+        systemPrompt,
         maxTokens: this.config.maxTokens ?? MAX_TOKENS_DEFAULT,
         temperature: this.config.temperature,
         reasoningEffort: this.config.reasoningEffort,
         emit: (event) => this.emit(event),
-        approve: (request) => {
-          this.emit({ type: "approval-requested", request });
-          return gate.request(request);
-        },
+        approve,
         cwd: run.meta.cwd,
         artifactDir: this.store.artifactDir(run.meta.id),
         abortSignal: run.abort.signal,

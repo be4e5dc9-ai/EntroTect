@@ -1,5 +1,6 @@
 // =====================================================================
-// App 骨架:事件订阅 + 布局(titlebar 拖拽区 / 侧栏 / 聊天区)
+// App 骨架:事件订阅 + 布局(titlebar 拖拽区 / 侧栏 / 主区)
+// 主区按 view 切换:chat = 聊天区,settings = 设置页(独立成页)。
 // 侧栏宽度与收起状态持久化(localStorage)。
 // =====================================================================
 
@@ -10,7 +11,7 @@ import { Sidebar } from "./components/Sidebar";
 import { MessageList } from "./components/MessageList";
 import { Composer } from "./components/Composer";
 import { ApprovalModal } from "./components/ApprovalModal";
-import { SettingsModal } from "./components/SettingsModal";
+import { SettingsPage } from "./components/SettingsPage";
 import { Toasts } from "./components/Toasts";
 
 const DEFAULT_SIDEBAR_WIDTH = 248;
@@ -19,6 +20,8 @@ export function App(): React.JSX.Element {
   const session = useStore((s) => s.currentSession);
   const usage = useStore((s) => s.usage);
   const busy = useStore((s) => s.busy);
+  const view = useStore((s) => s.view);
+  const activeProviderId = useStore((s) => s.config?.activeProviderId);
 
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = Number(localStorage.getItem("entrotect-sidebar-width"));
@@ -32,9 +35,15 @@ export function App(): React.JSX.Element {
     const unsubscribe = bridge().onEvent(applyEvent);
     bridge().send({ kind: "ListSessions" });
     bridge().send({ kind: "GetConfig" });
-    bridge().send({ kind: "ListModels" });
     return unsubscribe;
   }, []);
+
+  // 启动(config 到达)与切换供应商后,拉取当前供应商的模型列表
+  useEffect(() => {
+    if (activeProviderId) {
+      bridge().send({ kind: "ListModels", providerId: activeProviderId });
+    }
+  }, [activeProviderId]);
 
   const persistWidth = (width: number) => {
     setSidebarWidth(width);
@@ -67,28 +76,31 @@ export function App(): React.JSX.Element {
         {!sidebarCollapsed && (
           <Sidebar width={sidebarWidth} onWidthChange={persistWidth} onCollapse={collapse} />
         )}
-        <main className="main">
-          <header className="chat-header">
-            <div className="chat-title">
-              <span className="chat-title-text">{session?.title || "EntroTect"}</span>
-              {busy && <span className="chat-busy" aria-label="运行中">运行中</span>}
+        {view === "settings" ? (
+          <SettingsPage />
+        ) : (
+          <main className="main">
+            <header className="chat-header">
+              <div className="chat-title">
+                <span className="chat-title-text">{session?.title || "EntroTect"}</span>
+                {busy && <span className="chat-busy" aria-label="运行中">运行中</span>}
+              </div>
+              <div className="chat-meta">
+                {usage && (
+                  <span className="chat-usage">
+                    ↑{usage.inputTokens.toLocaleString()} ↓{usage.outputTokens.toLocaleString()}
+                  </span>
+                )}
+              </div>
+            </header>
+            <div className="chat-scroll">
+              <MessageList />
             </div>
-            <div className="chat-meta">
-              {usage && (
-                <span className="chat-usage">
-                  ↑{usage.inputTokens.toLocaleString()} ↓{usage.outputTokens.toLocaleString()}
-                </span>
-              )}
-            </div>
-          </header>
-          <div className="chat-scroll">
-            <MessageList />
-          </div>
-          <Composer />
-        </main>
+            <Composer />
+          </main>
+        )}
       </div>
       <ApprovalModal />
-      <SettingsModal />
       <Toasts />
     </div>
   );

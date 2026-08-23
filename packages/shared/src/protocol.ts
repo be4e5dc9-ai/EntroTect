@@ -41,10 +41,28 @@ export interface SessionMeta {
 // 应用配置
 // =====================================================================
 
+/** 单条供应商配置:baseUrl/apiKey 决定模型来源,models 为缓存列表 */
+export interface ProviderConfig {
+  /** 稳定 id:预设用固定名,自定义用 "custom-<randomUUID 前 8 位>" */
+  id: string;
+  /** 显示名,用户可改 */
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  /** 拉取到的模型列表(缓存;用户可手动增删) */
+  models: string[];
+  /** 预设供应商不可删除(可编辑) */
+  builtin?: boolean;
+}
+
 export interface AppConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** 多供应商配置(缺省时由 core 迁移生成) */
+  providers?: ProviderConfig[];
+  /** 当前生效的供应商 id(缺省回退 deepseek) */
+  activeProviderId?: string;
   /** 会话工作目录(空 = 用户主目录) */
   workspaceDir?: string;
   /** 思考强度(OpenAI 兼容 reasoning_effort;off = 不发) */
@@ -65,6 +83,41 @@ export const DEFAULT_CONFIG: AppConfig = {
   baseUrl: "https://api.deepseek.com/v1",
   apiKey: "",
   model: "deepseek-chat",
+  providers: [
+    {
+      id: "deepseek",
+      name: "DeepSeek",
+      baseUrl: "https://api.deepseek.com/v1",
+      apiKey: "",
+      models: [],
+      builtin: true,
+    },
+    {
+      id: "openai",
+      name: "OpenAI",
+      baseUrl: "https://api.openai.com/v1",
+      apiKey: "",
+      models: [],
+      builtin: true,
+    },
+    {
+      id: "moonshot",
+      name: "Moonshot",
+      baseUrl: "https://api.moonshot.cn/v1",
+      apiKey: "",
+      models: [],
+      builtin: true,
+    },
+    {
+      id: "ollama",
+      name: "Ollama(本地)",
+      baseUrl: "http://localhost:11434/v1",
+      apiKey: "",
+      models: [],
+      builtin: true,
+    },
+  ],
+  activeProviderId: "deepseek",
   workspaceDir: "",
   reasoningEffort: "high",
   permissionMode: "write",
@@ -86,7 +139,7 @@ export type Op =
   | { kind: "ResumeSession"; sessionId: string }
   | { kind: "DeleteSession"; sessionId: string }
   | { kind: "ListSessions" }
-  | { kind: "ListModels" }
+  | { kind: "ListModels"; providerId?: string }
   | {
       kind: "ApprovalDecision";
       toolCallId: string;
@@ -119,7 +172,7 @@ export interface ApprovalRequest {
 export type AppEvent =
   | { type: "session-meta"; meta: SessionMeta }
   | { type: "sessions-listed"; sessions: SessionMeta[] }
-  | { type: "models-listed"; models: string[] }
+  | { type: "models-listed"; providerId: string; models: string[] }
   | { type: "message-appended"; message: Message }
   | { type: "assistant-delta"; text: string }
   | { type: "assistant-reasoning-delta"; text: string }
@@ -176,10 +229,21 @@ export const sessionMetaSchema = z.object({
   cwd: z.string(),
 });
 
+export const providerConfigSchema = z.object({
+  id: z.string().min(1),
+  name: z.string(),
+  baseUrl: z.string(),
+  apiKey: z.string(),
+  models: z.array(z.string()),
+  builtin: z.boolean().optional(),
+});
+
 export const appConfigSchema = z.object({
   baseUrl: z.string().min(1),
   apiKey: z.string(),
   model: z.string().min(1),
+  providers: z.array(providerConfigSchema).optional(),
+  activeProviderId: z.string().optional(),
   workspaceDir: z.string().optional(),
   reasoningEffort: z.enum(["off", "low", "high", "xhigh", "max"]).optional(),
   permissionMode: z.enum(["full", "write", "ask"]).optional(),
@@ -197,7 +261,7 @@ export const opSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("ResumeSession"), sessionId: z.string() }),
   z.object({ kind: z.literal("DeleteSession"), sessionId: z.string() }),
   z.object({ kind: z.literal("ListSessions") }),
-  z.object({ kind: z.literal("ListModels") }),
+  z.object({ kind: z.literal("ListModels"), providerId: z.string().optional() }),
   z.object({
     kind: z.literal("ApprovalDecision"),
     toolCallId: z.string(),
@@ -211,7 +275,11 @@ export const opSchema = z.discriminatedUnion("kind", [
 export const appEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("session-meta"), meta: sessionMetaSchema }),
   z.object({ type: z.literal("sessions-listed"), sessions: z.array(sessionMetaSchema) }),
-  z.object({ type: z.literal("models-listed"), models: z.array(z.string()) }),
+  z.object({
+    type: z.literal("models-listed"),
+    providerId: z.string(),
+    models: z.array(z.string()),
+  }),
   z.object({ type: z.literal("message-appended"), message: messageSchema }),
   z.object({ type: z.literal("assistant-delta"), text: z.string() }),
   z.object({ type: z.literal("assistant-reasoning-delta"), text: z.string() }),

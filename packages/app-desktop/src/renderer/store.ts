@@ -46,13 +46,17 @@ export interface Toast {
 
 export type Theme = "dark" | "light";
 
+/** 主区视图:chat = 聊天,settings = 设置页(替代旧设置弹窗) */
+export type View = "chat" | "settings";
+
 interface UiState {
   sessions: SessionMeta[];
   currentSession: SessionMeta | null;
   messages: UiMessage[];
   busy: boolean;
   usage: TokenUsage | null;
-  models: string[];
+  /** 各供应商的模型缓存(models-listed 事件写入,key = 供应商 id) */
+  modelsByProvider: Record<string, string[]>;
   approval: {
     toolCallId: string;
     toolName: string;
@@ -60,7 +64,7 @@ interface UiState {
     description: string;
   } | null;
   config: AppConfig | null;
-  settingsOpen: boolean;
+  view: View;
   toasts: Toast[];
   error: string | null;
   theme: Theme;
@@ -72,10 +76,10 @@ export const useStore = create<UiState>()(() => ({
   messages: [],
   busy: false,
   usage: null,
-  models: [],
+  modelsByProvider: {},
   approval: null,
   config: null,
-  settingsOpen: false,
+  view: "chat",
   toasts: [],
   error: null,
   theme: "dark",
@@ -200,7 +204,12 @@ export function applyEvent(event: AppEvent): void {
       });
       break;
     case "models-listed":
-      useStore.setState({ models: event.models });
+      useStore.setState((state) => ({
+        modelsByProvider: {
+          ...state.modelsByProvider,
+          [event.providerId]: event.models,
+        },
+      }));
       break;
     case "message-appended": {
       const message = event.message;

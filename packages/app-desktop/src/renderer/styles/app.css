@@ -1055,17 +1055,228 @@
   color: var(--text-tertiary);
 }
 
-/* ---------- 设置弹窗 ---------- */
-.settings-title {
-  margin: 0 0 16px;
-  font-size: 15.5px;
+/* ---------- 设置页(独立成页,替代旧设置弹窗) ---------- */
+.settings-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.settings-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.settings-inner {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 22px 28px 36px;
+}
+.settings-section {
+  margin-bottom: 30px;
+}
+.settings-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.settings-section-title {
+  margin: 0;
+  font-size: 14px;
   font-weight: 600;
+}
+.settings-hint {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: var(--text-tertiary);
 }
 .settings-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 18px;
+}
+
+/* 供应商卡片:hover 只动背景/边框(emil 纪律) */
+.provider-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: 14px 16px 12px;
+  margin-bottom: 12px;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .provider-card:hover {
+    border-color: var(--border-strong);
+  }
+}
+.provider-card.active {
+  border-color: var(--accent);
+}
+.provider-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.provider-name-input {
+  flex: 0 1 240px;
+  min-width: 140px;
+  height: 30px;
+  padding: 0 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 13.5px;
+  font-weight: 600;
+  outline: none;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .provider-name-input:hover {
+    border-color: var(--border);
+  }
+}
+.provider-name-input:focus {
+  border-color: var(--accent);
+  background: var(--input-bg);
+}
+.provider-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.provider-badge-active {
+  color: var(--accent-strong);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.provider-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+.provider-actions .btn {
+  height: 30px;
+  padding: 0 10px;
+}
+.provider-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.provider-grid .field {
+  margin-bottom: 4px;
+}
+
+/* 模型 chips + 手动添加 */
+.provider-models {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.provider-models-title {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.model-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  background: var(--surface-active);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 4px 2px 10px;
+  max-width: 320px;
+}
+.model-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+.model-chip-x:active {
+  transform: scale(0.9);
+}
+@media (hover: hover) and (pointer: fine) {
+  .model-chip-x:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+}
+.model-chip-empty,
+.model-chip-info {
+  border-style: dashed;
+  color: var(--text-tertiary);
+  font-family: var(--font-sans);
+}
+.model-chip-failed {
+  color: var(--danger);
+  border-color: var(--danger);
+  font-family: var(--font-sans);
+}
+.model-chip-ok {
+  color: var(--success);
+  border-color: var(--success);
+  font-family: var(--font-sans);
+}
+.model-add-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.model-add-input {
+  flex: 1;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--input-bg);
+  font-size: 12.5px;
+  font-family: var(--font-mono);
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.model-add-input:focus {
+  border-color: var(--accent);
 }
 
 /* ---------- Toast ---------- */

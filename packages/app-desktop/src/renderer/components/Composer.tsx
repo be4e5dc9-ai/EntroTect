@@ -47,7 +47,7 @@ export function Composer(): React.JSX.Element {
   const busy = useStore((s) => s.busy);
   const hasSession = useStore((s) => s.currentSession !== null);
   const config = useStore((s) => s.config);
-  const models = useStore((s) => s.models);
+  const modelsByProvider = useStore((s) => s.modelsByProvider);
   const [text, setText] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -71,6 +71,12 @@ export function Composer(): React.JSX.Element {
     bridge().send({ kind: "SetConfig", config: { ...config, ...patch } });
   };
 
+  // 当前供应商:菜单标题显示其名称,选项取其缓存模型;
+  // config.model 必须可选项(不在缓存时置顶,保证旧配置/新模型可用)。
+  const activeProviderId = config?.activeProviderId ?? "deepseek";
+  const provider = config?.providers?.find((p) => p.id === activeProviderId);
+  const providerName = provider?.name ?? "模型";
+  const models = modelsByProvider[activeProviderId] ?? [];
   const modelValues =
     config?.model && !models.includes(config.model) ? [config.model, ...models] : models;
   const modelOptions: Array<MenuOption<string>> = modelValues.map((id, index) => ({
@@ -149,7 +155,7 @@ export function Composer(): React.JSX.Element {
             value={config?.model ?? ""}
             options={modelOptions}
             onSelect={(value) => updateConfig({ model: value })}
-            heading="Models"
+            heading={providerName}
             ariaLabel="模型"
             align="right"
           />

@@ -201,7 +201,7 @@ export function Sidebar({ width, onWidthChange, onCollapse }: SidebarProps): Rea
         </button>
         <button
           className="btn btn-ghost settings-btn"
-          onClick={() => useStore.setState({ settingsOpen: true })}
+          onClick={() => useStore.setState({ view: "settings" })}
           aria-label="设置"
         >
           <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
