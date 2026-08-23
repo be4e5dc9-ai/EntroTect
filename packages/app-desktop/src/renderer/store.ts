@@ -39,6 +39,7 @@ export interface Toast {
   id: number;
   text: string;
   kind: "error" | "info";
+  leaving?: boolean;
 }
 
 interface UiState {
@@ -115,14 +116,24 @@ function finalizeText(blocks: UiAnyBlock[], finalText: string): UiAnyBlock[] {
 // ---------- 小工具 ----------
 let nextKey = 1;
 
+const TOAST_LIFETIME_MS = 5000;
+/** 退场时长须短于入场(emil:退出快于进入) */
+const TOAST_EXIT_MS = 180;
+
 function pushToast(kind: Toast["kind"], text: string): void {
   const id = Date.now() + Math.random();
   useStore.setState((state) => ({ toasts: [...state.toasts, { id, kind, text }] }));
   setTimeout(() => {
+    // 先打退场标记,transition 播完再移除
     useStore.setState((state) => ({
-      toasts: state.toasts.filter((t) => t.id !== id),
+      toasts: state.toasts.map((t) => (t.id === id ? { ...t, leaving: true } : t)),
     }));
-  }, 5000);
+    setTimeout(() => {
+      useStore.setState((state) => ({
+        toasts: state.toasts.filter((t) => t.id !== id),
+      }));
+    }, TOAST_EXIT_MS);
+  }, TOAST_LIFETIME_MS);
 }
 
 function updateToolState(toolCallId: string, patch: Partial<UiToolBlock>): void {
@@ -286,6 +297,12 @@ export function applyEvent(event: AppEvent): void {
         state: event.state,
         ...(event.summary !== undefined ? { summary: event.summary } : {}),
       });
+      // 该工具已有裁决:关闭对应审批弹窗(含超时自动 deny 路径)
+      useStore.setState((state) =>
+        state.approval?.toolCallId === event.toolCallId
+          ? { approval: null }
+          : {},
+      );
       break;
     case "approval-requested":
       useStore.setState({ approval: event.request });

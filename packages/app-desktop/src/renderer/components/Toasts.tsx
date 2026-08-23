@@ -9,7 +9,10 @@ export function Toasts(): React.JSX.Element {
   return (
     <div className="toasts" aria-live="polite">
       {toasts.map((toast) => (
-        <div key={toast.id} className={`toast toast-${toast.kind}`}>
+        <div
+          key={toast.id}
+          className={`toast toast-${toast.kind}${toast.leaving ? " toast-leaving" : ""}`}
+        >
           {toast.kind === "error" && (
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
               <circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" strokeWidth="1.2" />

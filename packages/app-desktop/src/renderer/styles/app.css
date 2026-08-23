@@ -69,7 +69,12 @@
   padding: 8px 10px;
   border-radius: var(--radius-sm);
   text-align: left;
-  transition: background-color var(--dur-fast) var(--ease-out);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+.session-item:active {
+  transform: scale(0.98);
 }
 .session-item:hover {
   background: var(--surface-hover);
@@ -378,7 +383,12 @@
   padding: 8px 12px;
   text-align: left;
   font-size: 12.5px;
-  transition: background-color var(--dur-fast) var(--ease-out);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+.tool-card-head:active {
+  transform: scale(0.985);
 }
 @media (hover: hover) and (pointer: fine) {
   .tool-card-head:hover {
@@ -698,6 +708,14 @@
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   font-size: 13px;
   animation: entro-toast-in var(--spring-toast-ms) linear both;
+  /* 退场走 transition(可中断、快于入场) */
+  transition:
+    opacity 180ms var(--ease-out),
+    transform 180ms var(--ease-out);
+}
+.toast-leaving {
+  opacity: 0;
+  transform: translateY(6px) scale(0.98);
 }
 .toast-error {
   border-color: rgba(248, 113, 113, 0.35);

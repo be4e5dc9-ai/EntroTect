@@ -33,14 +33,14 @@ DURATIONS_MS = {
     "modal": 260,
 }
 
-# 弹簧预设(Apple 风格:低 bounce,感知时长全部 < 350ms)
+# 弹簧预设(Apple 风格:低 bounce,感知时长全部 ≤ 300ms)
 SPRINGS = {
     # 弹窗/卡片入场:scale 0.96→1 + 上浮 + 淡入
-    "pop": {"stiffness": 420, "damping": 30, "duration_ms": 300},
-    # 消息/列表项入场:轻上浮 + 淡入
-    "rise": {"stiffness": 260, "damping": 30, "duration_ms": 340},
+    "pop": {"stiffness": 420, "damping": 30, "duration_ms": 260},
+    # 消息/列表项入场:轻上浮 + 淡入(高频出现,保持克制)
+    "rise": {"stiffness": 300, "damping": 32, "duration_ms": 280},
     # toast 入场:底部滑入
-    "toast": {"stiffness": 300, "damping": 26, "duration_ms": 320},
+    "toast": {"stiffness": 300, "damping": 26, "duration_ms": 280},
 }
 
 # 每种弹簧烘焙成的视觉属性(起始偏移量)
