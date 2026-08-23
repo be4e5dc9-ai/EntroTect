@@ -28,6 +28,8 @@ interface OpenAiChunk {
   choices?: Array<{
     delta?: {
       content?: string | null;
+      /** DeepSeek/OpenAI 思考链增量(reasoning 内容不回喂历史) */
+      reasoning_content?: string | null;
       tool_calls?: Array<{
         index: number;
         id?: string;
@@ -243,6 +245,9 @@ export class OpenAiCompatibleProvider implements Provider {
 
         for (const choice of chunk.choices ?? []) {
           const delta = choice.delta ?? {};
+          if (delta.reasoning_content) {
+            yield { type: "reasoning-delta", text: delta.reasoning_content };
+          }
           if (delta.content) {
             textStarted = true;
             textBuffer += delta.content;
@@ -322,6 +327,9 @@ export class OpenAiCompatibleProvider implements Provider {
               ...(options.maxTokens ? { max_tokens: options.maxTokens } : {}),
               ...(options.temperature !== undefined
                 ? { temperature: options.temperature }
+                : {}),
+              ...(options.reasoningEffort && options.reasoningEffort !== "off"
+                ? { reasoning_effort: options.reasoningEffort }
                 : {}),
             }),
             signal,

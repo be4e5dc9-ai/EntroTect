@@ -198,6 +198,7 @@ export class SessionHost {
         }),
         maxTokens: this.config.maxTokens ?? MAX_TOKENS_DEFAULT,
         temperature: this.config.temperature,
+        reasoningEffort: this.config.reasoningEffort,
         emit: (event) => this.emit(event),
         approve: (request) => {
           this.emit({ type: "approval-requested", request });

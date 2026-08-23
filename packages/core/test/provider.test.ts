@@ -133,6 +133,54 @@ describe("OpenAiCompatibleProvider.streamBlocks", () => {
     });
   });
 
+  it("reasoning_content 增量产出 reasoning-delta 事件,不进内容块", async () => {
+    const chunks = [
+      'data: {"choices":[{"index":0,"delta":{"reasoning_content":"让我想想"}}]}\n\n',
+      'data: {"choices":[{"index":0,"delta":{"reasoning_content":"…应该先读文件"}}]}\n\n',
+      'data: {"choices":[{"index":0,"delta":{"content":"结论是 42"}}]}\n\n',
+      'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n',
+      "data: [DONE]\n\n",
+    ];
+    const events = await runProvider(chunks, [userMessage]);
+
+    const reasoning = events
+      .filter((e) => e.type === "reasoning-delta")
+      .map((e) => (e.type === "reasoning-delta" ? e.text : ""));
+    expect(reasoning.join("")).toBe("让我想想…应该先读文件");
+
+    // 思考内容不进消息块(不回喂历史)
+    const blocks = events.filter((e) => e.type === "block");
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({ block: { type: "text", text: "结论是 42" } });
+  });
+
+  it("reasoning_effort 只在非 off 时发送", async () => {
+    const bodies: unknown[] = [];
+    const provider = new OpenAiCompatibleProvider({
+      baseUrl: "https://example.test/v1",
+      apiKey: "k",
+      model: "m",
+      fetchImpl: async (_url, init) => {
+        bodies.push(JSON.parse(String(init.body)));
+        return new Response(streamOf(['data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n']), { status: 200 });
+      },
+    });
+    const collect = async (effort?: "off" | "low" | "medium" | "high") => {
+      for await (const _event of provider.streamBlocks(
+        [userMessage],
+        { systemPrompt: "s", tools: [], maxTokens: 100, reasoningEffort: effort },
+      )) {
+        void _event;
+      }
+    };
+    await collect("high");
+    await collect("off");
+    await collect(undefined);
+    expect(bodies[0]).toMatchObject({ reasoning_effort: "high" });
+    expect(bodies[1]).not.toHaveProperty("reasoning_effort");
+    expect(bodies[2]).not.toHaveProperty("reasoning_effort");
+  });
+
   it("流中错误 chunk 产出 error 事件", async () => {
     const chunks = [
       'data: {"choices":[{"index":0,"delta":{"content":"部分"}}]}\n\n',

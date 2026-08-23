@@ -141,6 +141,20 @@ describe("bash 工具", () => {
     expect(out).toContain("hello-世界");
   });
 
+  it("目录跨调用持久:Set-Location 后下一次调用仍在目标目录", async () => {
+    const { ctx, root } = await makeCtx();
+    await mkdir(path.join(root, "sub", "deep"), { recursive: true });
+
+    // 第一次:切换目录(修复"Set-Location 不生效"缺陷)
+    await bashTool.call({ command: "Set-Location 'sub\\deep'" }, ctx);
+    // 第二次:未显式切换,应仍在 sub\deep(marker 回读 + 恢复)
+    const out = await bashTool.call({ command: "(Get-Location).Path" }, ctx);
+    expect(out).toContain("Exit code: 0");
+    expect(out.toLowerCase()).toContain("deep");
+    // 且 marker 不泄漏进模型可见输出
+    expect(out).not.toContain("__ENTROTECT_CWD__");
+  });
+
   it("超时强杀", async () => {
     const { ctx } = await makeCtx();
     await expect(

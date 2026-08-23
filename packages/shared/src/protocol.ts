@@ -47,6 +47,10 @@ export interface AppConfig {
   model: string;
   /** 会话工作目录(空 = 用户主目录) */
   workspaceDir?: string;
+  /** 思考强度(发给 OpenAI 兼容 reasoning_effort;off = 不发) */
+  reasoningEffort?: "off" | "low" | "medium" | "high";
+  /** UI 是否显示模型思考过程 */
+  showReasoning?: boolean;
   maxTokens?: number;
   temperature?: number;
 }
@@ -56,6 +60,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   apiKey: "",
   model: "deepseek-chat",
   workspaceDir: "",
+  reasoningEffort: "off",
+  showReasoning: false,
 };
 
 // =====================================================================
@@ -104,6 +110,7 @@ export type AppEvent =
   | { type: "sessions-listed"; sessions: SessionMeta[] }
   | { type: "message-appended"; message: Message }
   | { type: "assistant-delta"; text: string }
+  | { type: "assistant-reasoning-delta"; text: string }
   | { type: "assistant-block"; block: ContentBlock }
   | { type: "turn-started" }
   | { type: "turn-completed"; usage: TokenUsage | null }
@@ -162,6 +169,8 @@ export const appConfigSchema = z.object({
   apiKey: z.string(),
   model: z.string().min(1),
   workspaceDir: z.string().optional(),
+  reasoningEffort: z.enum(["off", "low", "medium", "high"]).optional(),
+  showReasoning: z.boolean().optional(),
   maxTokens: z.number().positive().optional(),
   temperature: z.number().min(0).max(2).optional(),
 });
@@ -187,6 +196,7 @@ export const appEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("sessions-listed"), sessions: z.array(sessionMetaSchema) }),
   z.object({ type: z.literal("message-appended"), message: messageSchema }),
   z.object({ type: z.literal("assistant-delta"), text: z.string() }),
+  z.object({ type: z.literal("assistant-reasoning-delta"), text: z.string() }),
   z.object({ type: z.literal("assistant-block"), block: contentBlockSchema }),
   z.object({ type: z.literal("turn-started") }),
   z.object({ type: z.literal("turn-completed"), usage: tokenUsageSchema.nullable() }),

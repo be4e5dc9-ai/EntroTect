@@ -23,6 +23,22 @@
   --danger: #f87171;
   --warning: #fbbf24;
   --danger-dim: rgba(248, 113, 113, 0.12);
+  --modal-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  --toast-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --scrollbar: rgba(255, 255, 255, 0.09);
+  --scrollbar-hover: rgba(255, 255, 255, 0.16);
+  --code-bg: #16161d;
+  --input-bg: #101015;
+
+  /* 代码高亮(暗):github-dark 取向 */
+  --hl-text: #e6edf3;
+  --hl-keyword: #ff7b72;
+  --hl-string: #a5d6ff;
+  --hl-comment: #8b949e;
+  --hl-number: #79c0ff;
+  --hl-title: #d2a8ff;
+  --hl-attr: #79c0ff;
+  --hl-literal: #79c0ff;
 
   /* 几何 */
   --radius-sm: 6px;
@@ -32,6 +48,44 @@
   /* 字体 */
   --font-sans: "Inter", "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei", sans-serif;
   --font-mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+}
+
+/* ---------- 日间模式:同一套 token 换值,组件零改动 ---------- */
+[data-theme="light"] {
+  --bg: #fafafc;
+  --bg-sidebar: #f3f3f8;
+  --surface: #ffffff;
+  --surface-hover: #f1f1f6;
+  --surface-active: #e9e9f0;
+  --border: rgba(20, 20, 30, 0.08);
+  --border-strong: rgba(20, 20, 30, 0.15);
+  --text: #1c1c24;
+  --text-secondary: #565664;
+  --text-tertiary: #8f8f9e;
+  --accent: #7c3aed;
+  --accent-strong: #6d28d9;
+  --accent-dim: rgba(124, 58, 237, 0.1);
+  --accent-glow: rgba(124, 58, 237, 0.25);
+  --success: #059669;
+  --danger: #dc2626;
+  --warning: #d97706;
+  --danger-dim: rgba(220, 38, 38, 0.08);
+  --modal-shadow: 0 20px 48px rgba(24, 24, 40, 0.14);
+  --toast-shadow: 0 10px 28px rgba(24, 24, 40, 0.12);
+  --scrollbar: rgba(20, 20, 30, 0.16);
+  --scrollbar-hover: rgba(20, 20, 30, 0.3);
+  --code-bg: #f6f6fa;
+  --input-bg: #ffffff;
+
+  /* 代码高亮(日):github-light 取向 */
+  --hl-text: #24292e;
+  --hl-keyword: #cf222e;
+  --hl-string: #0a3069;
+  --hl-comment: #6a737d;
+  --hl-number: #0550ae;
+  --hl-title: #8250df;
+  --hl-attr: #0550ae;
+  --hl-literal: #0550ae;
 }
 
 * {
@@ -75,13 +129,13 @@ textarea {
   height: 9px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--scrollbar);
   border-radius: 6px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--scrollbar-hover);
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-corner {
@@ -161,7 +215,7 @@ textarea {
   border-radius: var(--radius-lg);
   padding: 22px 24px;
   box-shadow:
-    0 24px 64px rgba(0, 0, 0, 0.5),
+    var(--modal-shadow),
     0 0 0 1px rgba(255, 255, 255, 0.03) inset;
 }
 
@@ -182,7 +236,7 @@ textarea {
   padding: 0 11px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-strong);
-  background: var(--bg-sidebar);
+  background: var(--input-bg);
   font-size: 13px;
   outline: none;
   transition: border-color var(--dur-fast) var(--ease-out);
@@ -196,4 +250,62 @@ textarea {
 }
 .field-row input {
   flex: 1;
+}
+
+/* ---------- 行内设置项(标题+描述+开关) ---------- */
+.field-inline {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+.field-inline-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.field-inline-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.field-inline-desc {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--surface-active);
+  border: 1px solid var(--border-strong);
+  flex-shrink: 0;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+.switch:active {
+  transform: scale(0.95);
+}
+.switch.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.switch-knob {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transform: translateY(-50%);
+  transition: transform var(--dur-fast) var(--ease-out);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.switch.on .switch-knob {
+  transform: translate(16px, -50%);
 }

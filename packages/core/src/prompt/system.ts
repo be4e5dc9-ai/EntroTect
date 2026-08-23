@@ -31,7 +31,7 @@ export function buildSystemPrompt(env: SystemPromptEnv): string {
 操作系统: ${env.platform}
 当前日期: ${env.date}
 当前模型: ${env.model}
-shell: PowerShell
+shell: PowerShell(bash 工具的工作目录在多次调用之间持久,Set-Location 会生效)
 </environment>`;
   return `${STATIC_IDENTITY}\n\n${dynamic}`;
 }

@@ -15,10 +15,19 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
+function toggleTheme(): void {
+  const next = useStore.getState().theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem("entrotect-theme", next);
+  bridge().setTheme(next);
+  useStore.setState({ theme: next });
+}
+
 export function Sidebar(): React.JSX.Element {
   const sessions = useStore((s) => s.sessions);
   const currentSession = useStore((s) => s.currentSession);
   const busy = useStore((s) => s.busy);
+  const theme = useStore((s) => s.theme);
 
   return (
     <aside className="sidebar">
@@ -56,6 +65,34 @@ export function Sidebar(): React.JSX.Element {
       </nav>
 
       <div className="sidebar-footer">
+        <button
+          className="btn btn-ghost settings-btn"
+          onClick={toggleTheme}
+          aria-label={theme === "dark" ? "切换到日间模式" : "切换到夜间模式"}
+          title={theme === "dark" ? "日间模式" : "夜间模式"}
+        >
+          {theme === "dark" ? (
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+              <circle cx="7.5" cy="7.5" r="3" stroke="currentColor" strokeWidth="1.3" />
+              <path
+                d="M7.5 1v1.6M7.5 12.4V14M1 7.5h1.6M12.4 7.5H14M2.9 2.9l1.13 1.13M10.97 10.97l1.13 1.13M12.1 2.9l-1.13 1.13M4.03 10.97l-1.13 1.13"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+              />
+            </svg>
+          ) : (
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+              <path
+                d="M12.5 9.2A5.5 5.5 0 0 1 5.8 2.5a5.5 5.5 0 1 0 6.7 6.7Z"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinejoin="round"
+              />
+            </svg>
+          )}
+          {theme === "dark" ? "日间模式" : "夜间模式"}
+        </button>
         <button
           className="btn btn-ghost settings-btn"
           onClick={() => useStore.setState({ settingsOpen: true })}

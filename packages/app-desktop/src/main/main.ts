@@ -61,6 +61,17 @@ ipcMain.handle("entrotect:choose-folder", async () => {
   return result.canceled ? null : (result.filePaths[0] ?? null);
 });
 
+// 主题切换:同步 titleBarOverlay 颜色,否则标题栏与内容区色差突兀
+ipcMain.handle("entrotect:set-theme", (_event, theme: unknown) => {
+  if (!mainWindow) return;
+  const light = theme === "light";
+  mainWindow.setTitleBarOverlay({
+    color: light ? "#fafafc" : "#0d0d10",
+    symbolColor: light ? "#5b5b66" : "#8f8f9d",
+    height: 40,
+  });
+});
+
 // 单实例:重复启动聚焦已有窗口
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {

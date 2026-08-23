@@ -100,6 +100,22 @@ export function SettingsModal(): React.JSX.Element | null {
           />
         </label>
 
+        <div className="field field-inline">
+          <div className="field-inline-text">
+            <span className="field-inline-title">显示模型思考过程</span>
+            <span className="field-inline-desc">开启后,消息中的"思考过程"区块会展示模型的推理内容</span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={form.showReasoning ?? false}
+            className={`switch${form.showReasoning ? " on" : ""}`}
+            onClick={() => set("showReasoning", !(form.showReasoning ?? false))}
+          >
+            <span className="switch-knob" />
+          </button>
+        </div>
+
         <div className="settings-actions">
           <button className="btn btn-ghost" onClick={() => useStore.setState({ settingsOpen: false })}>
             取消

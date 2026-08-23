@@ -33,6 +33,8 @@ export interface UiMessage {
   role: "user" | "assistant";
   blocks: UiAnyBlock[];
   streaming: boolean;
+  /** 思考过程(不回喂历史,仅 UI 展示;未持久化) */
+  reasoning: string;
 }
 
 export interface Toast {
@@ -41,6 +43,8 @@ export interface Toast {
   kind: "error" | "info";
   leaving?: boolean;
 }
+
+export type Theme = "dark" | "light";
 
 interface UiState {
   sessions: SessionMeta[];
@@ -58,6 +62,7 @@ interface UiState {
   settingsOpen: boolean;
   toasts: Toast[];
   error: string | null;
+  theme: Theme;
 }
 
 export const useStore = create<UiState>()(() => ({
@@ -71,23 +76,33 @@ export const useStore = create<UiState>()(() => ({
   settingsOpen: false,
   toasts: [],
   error: null,
+  theme: "dark",
 }));
 
 // ---------- rAF 合帧的流式文本缓冲 ----------
 let deltaBuffer = "";
+let reasoningBuffer = "";
 let rafId: number | null = null;
 
 function flushDeltas(): void {
   if (rafId !== null) return;
   rafId = requestAnimationFrame(() => {
     rafId = null;
-    const chunk = deltaBuffer;
+    const textChunk = deltaBuffer;
+    const reasoningChunk = reasoningBuffer;
     deltaBuffer = "";
-    if (!chunk) return;
+    reasoningBuffer = "";
+    if (!textChunk && !reasoningChunk) return;
     useStore.setState((state) => {
       const messages = state.messages.map((message, index) =>
         index === state.messages.length - 1 && message.role === "assistant"
-          ? { ...message, blocks: appendText(message.blocks, chunk) }
+          ? {
+              ...message,
+              blocks: textChunk ? appendText(message.blocks, textChunk) : message.blocks,
+              reasoning: reasoningChunk
+                ? message.reasoning + reasoningChunk
+                : message.reasoning,
+            }
           : message,
       );
       return { messages };
@@ -155,6 +170,7 @@ export function applyEvent(event: AppEvent): void {
     case "session-meta": {
       flushDeltas();
       deltaBuffer = "";
+      reasoningBuffer = "";
       useStore.setState({
         currentSession: event.meta,
         messages: [],
@@ -201,6 +217,7 @@ export function applyEvent(event: AppEvent): void {
               role: "user",
               blocks: textBlocks.map((b) => ({ kind: "text" as const, text: b.text })),
               streaming: false,
+              reasoning: "",
             },
           ],
         }));
@@ -228,6 +245,7 @@ export function applyEvent(event: AppEvent): void {
               })),
             ],
             streaming: false,
+            reasoning: "",
           },
         ],
       }));
@@ -235,6 +253,10 @@ export function applyEvent(event: AppEvent): void {
     }
     case "assistant-delta":
       deltaBuffer += event.text;
+      flushDeltas();
+      break;
+    case "assistant-reasoning-delta":
+      reasoningBuffer += event.text;
       flushDeltas();
       break;
     case "assistant-block": {
@@ -277,7 +299,7 @@ export function applyEvent(event: AppEvent): void {
         busy: true,
         messages: [
           ...state.messages,
-          { key: nextKey++, role: "assistant", blocks: [], streaming: true },
+          { key: nextKey++, role: "assistant", blocks: [], streaming: true, reasoning: "" },
         ],
       }));
       break;
@@ -308,6 +330,8 @@ export function applyEvent(event: AppEvent): void {
       useStore.setState({ approval: event.request });
       break;
     case "error":
+      deltaBuffer = "";
+      reasoningBuffer = "";
       useStore.setState({ error: event.message, busy: false });
       pushToast("error", event.message);
       break;

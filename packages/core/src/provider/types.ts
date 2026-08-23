@@ -9,6 +9,7 @@ import type { ContentBlock, Message, TokenUsage } from "@entrotect/shared";
 /** provider 层统一事件(与模型协议无关) */
 export type BlockEvent =
   | { type: "text-delta"; text: string }
+  | { type: "reasoning-delta"; text: string }
   | { type: "block"; block: ContentBlock }
   | {
       type: "turn-complete";
@@ -23,6 +24,8 @@ export interface GenerateOptions {
   tools: Array<{ name: string; description: string; parameters: unknown }>;
   maxTokens: number;
   temperature?: number;
+  /** OpenAI 兼容 reasoning_effort;"off"/undefined = 不发送该参数 */
+  reasoningEffort?: "off" | "low" | "medium" | "high";
 }
 
 /**

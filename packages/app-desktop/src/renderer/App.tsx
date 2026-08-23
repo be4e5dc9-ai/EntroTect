@@ -16,6 +16,7 @@ export function App(): React.JSX.Element {
   const session = useStore((s) => s.currentSession);
   const usage = useStore((s) => s.usage);
   const busy = useStore((s) => s.busy);
+  const config = useStore((s) => s.config);
 
   useEffect(() => {
     const unsubscribe = bridge().onEvent(applyEvent);
@@ -23,6 +24,11 @@ export function App(): React.JSX.Element {
     bridge().send({ kind: "GetConfig" });
     return unsubscribe;
   }, []);
+
+  const setEffort = (value: "off" | "low" | "medium" | "high") => {
+    if (!config) return;
+    bridge().send({ kind: "SetConfig", config: { ...config, reasoningEffort: value } });
+  };
 
   return (
     <div className="app">
@@ -37,6 +43,30 @@ export function App(): React.JSX.Element {
             </div>
             <div className="chat-meta">
               {session && <span className="chat-model">{session.model}</span>}
+              <label className="effort-select" title="思考强度">
+                <span className="effort-icon" aria-hidden="true">
+                  <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                    <path
+                      d="M5.5 1 9 10l-3.5-1.5L2 10 5.5 1Z"
+                      stroke="currentColor"
+                      strokeWidth="1.1"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+                <select
+                  value={config?.reasoningEffort ?? "off"}
+                  onChange={(e) =>
+                    setEffort(e.target.value as "off" | "low" | "medium" | "high")
+                  }
+                  aria-label="思考强度"
+                >
+                  <option value="off">关</option>
+                  <option value="low">低</option>
+                  <option value="medium">中</option>
+                  <option value="high">高</option>
+                </select>
+              </label>
               {usage && (
                 <span className="chat-usage">
                   ↑{usage.inputTokens.toLocaleString()} ↓{usage.outputTokens.toLocaleString()}

@@ -1,8 +1,11 @@
 // =====================================================================
-// bash:PowerShell 命令执行
+// bash:PowerShell 命令执行(会话目录跨调用持久)
 // 设计依据:ClaudeCode BashTool(120s 超时 + tree-kill)+ opencode/05
-// (强杀进程树)。输出格式照抄 codex exec_command 的
-// "Exit code / Wall time / Output" 三段式。
+// (强杀进程树)。输出格式照抄 codex exec_command 的三段式。
+//
+// 目录持久:每次调用在子进程内完成命令后,用 marker 回读最终 $PWD,
+// 下次调用先 Set-Location 过去——Set-Location 不再"丢状态"
+// (修复模型反馈的"目录切换不生效"问题)。
 // =====================================================================
 
 import { spawn } from "node:child_process";
@@ -10,6 +13,12 @@ import { z } from "zod";
 import type { Tool, ToolContext } from "./types.js";
 
 const DEFAULT_TIMEOUT_SECONDS = 120;
+
+/** 输出里的目录回读标记(从 stdout 剥离,不进模型上下文) */
+const CWD_MARKER = "__ENTROTECT_CWD__:";
+
+/** 以会话基准目录为 key 记住上次 bash 调用结束后的工作目录 */
+const cwdMemory = new Map<string, string>();
 
 const inputSchema = z.strictObject({
   command: z.string().describe("要执行的 PowerShell 命令"),
@@ -29,11 +38,16 @@ function killTree(pid: number): void {
   spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
 }
 
+/** PowerShell 字符串字面量转义 */
+function psQuote(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
 export const bashTool: Tool = {
   name: "bash",
   description:
-    "在当前工作目录执行 PowerShell 命令。优先用只读命令探查环境;" +
-    "涉及破坏性操作(删除、强制覆盖、全局安装)前先说明并等待确认。",
+    "在当前工作目录执行 PowerShell 命令。Set-Location 切换目录会持久到后续调用;" +
+    "优先用只读命令探查环境;涉及破坏性操作(删除、强制覆盖、全局安装)前先说明并等待确认。",
   inputSchema,
   isReadOnly: false,
   preview: (args) => (args as Input).command,
@@ -41,10 +55,17 @@ export const bashTool: Tool = {
     const args = inputSchema.parse(rawArgs);
     const timeoutMs = (args.timeout ?? DEFAULT_TIMEOUT_SECONDS) * 1000;
 
+    // 目录持久:命令前恢复上次目录,命令后回读最终目录
+    const savedCwd = cwdMemory.get(ctx.cwd);
+    const restore = savedCwd
+      ? `Set-Location -LiteralPath ${psQuote(savedCwd)} -ErrorAction SilentlyContinue; `
+      : "";
+    const readBack = `; Write-Output ""; Write-Output "${CWD_MARKER}$((Get-Location).Path)"`;
+    const wrapped =
+      `[Console]::OutputEncoding=[Text.UTF8Encoding]::UTF8; ${restore}${args.command}${readBack}`;
+
     return await new Promise<string>((resolve, reject) => {
       const startedAt = Date.now();
-      // 强制 UTF-8 输出,避免中文乱码
-      const wrapped = `[Console]::OutputEncoding=[Text.UTF8Encoding]::UTF8; ${args.command}`;
       const child = spawn(
         "powershell.exe",
         ["-NoProfile", "-NonInteractive", "-Command", wrapped],
@@ -61,9 +82,21 @@ export const bashTool: Tool = {
         settled = true;
         const wallMs = Date.now() - startedAt;
         const wall = (wallMs / 1000).toFixed(2);
-        const output = `${stdout}${stderr ? `\n[stderr]\n${stderr}` : ""}`;
+
+        // 剥离目录回读 marker 行,并更新持久目录
+        let output = stdout;
+        const markerIndex = stdout.lastIndexOf(CWD_MARKER);
+        if (markerIndex !== -1) {
+          const lineStart = stdout.lastIndexOf("\n", markerIndex - 1);
+          const markerLine = stdout.slice(lineStart + 1).trim();
+          output = stdout.slice(0, lineStart > 0 ? lineStart : markerIndex).trimEnd();
+          const finalCwd = markerLine.slice(CWD_MARKER.length).trim();
+          if (finalCwd) cwdMemory.set(ctx.cwd, finalCwd);
+        }
+
+        const merged = `${output}${stderr ? `\n[stderr]\n${stderr}` : ""}`;
         const result =
-          `Exit code: ${code ?? "null"}\nWall time: ${wall}s\n\nOutput:\n${output.trim()}`;
+          `Exit code: ${code ?? "null"}\nWall time: ${wall}s\n\nOutput:\n${merged.trim()}`;
         if (timedOut) {
           reject(
             new Error(

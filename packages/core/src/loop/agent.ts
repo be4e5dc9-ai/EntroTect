@@ -26,6 +26,8 @@ export interface AgentDeps {
   systemPrompt: string;
   maxTokens: number;
   temperature?: number;
+  /** 思考强度(off = 不发送该参数) */
+  reasoningEffort?: "off" | "low" | "medium" | "high";
   /** 事件汇:主循环对 UI/持久层的唯一输出通道 */
   emit: (event: AppEvent) => void;
   /** 审批回调:await 到用户决定(M3 实现真实闸门) */
@@ -101,6 +103,7 @@ export async function runAgent(
         })),
         maxTokens: deps.maxTokens,
         temperature: deps.temperature,
+        reasoningEffort: deps.reasoningEffort,
       },
       deps.abortSignal,
     );
@@ -109,6 +112,9 @@ export async function runAgent(
       switch (event.type) {
         case "text-delta":
           deps.emit({ type: "assistant-delta", text: event.text });
+          break;
+        case "reasoning-delta":
+          deps.emit({ type: "assistant-reasoning-delta", text: event.text });
           break;
         case "block":
           assistantBlocks.push(event.block);

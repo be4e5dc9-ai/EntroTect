@@ -2,13 +2,63 @@
 // 消息与消息列表
 // =====================================================================
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore, type UiMessage } from "../store";
 import { renderMarkdown } from "../markdown";
 import { bridge } from "../bridge";
 import { ToolCard } from "./ToolCard";
 
+/** 思考过程区:流式时自动展开,结束后可手动折叠 */
+function ReasoningSection({ text, streaming }: { text: string; streaming: boolean }): React.JSX.Element {
+  const [open, setOpen] = useState(streaming);
+  useEffect(() => {
+    if (streaming) setOpen(true);
+  }, [streaming]);
+
+  if (!text) return <></>;
+
+  return (
+    <div className={`reasoning${open ? " open" : ""}`}>
+      <button
+        className="reasoning-head"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path
+            d="M2.5 7.5 6 10l3.5-2.5M2.5 4.5 6 7l3.5-2.5"
+            stroke="currentColor"
+            strokeWidth="1.3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <span className="reasoning-title">
+          思考过程{streaming ? " · 思考中…" : `(${text.length} 字)`}
+        </span>
+        <svg
+          className={`tool-chevron${open ? " open" : ""}`}
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path d="M3 4.5 6 7.5l3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open && (
+        <div className="reasoning-body">
+          <p className="reasoning-text">{text}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Message({ message }: { message: UiMessage }): React.JSX.Element {
+  const showReasoning = useStore((s) => s.config?.showReasoning ?? false);
+
   if (message.role === "user") {
     const text = message.blocks
       .filter((b) => b.kind === "text")
@@ -27,6 +77,7 @@ function Message({ message }: { message: UiMessage }): React.JSX.Element {
         <img src="./icon.png" alt="" draggable={false} />
       </div>
       <div className="msg-assistant-content">
+        {showReasoning && <ReasoningSection text={message.reasoning} streaming={message.streaming} />}
         {message.blocks.map((block, index) =>
           block.kind === "text" ? (
             <div
