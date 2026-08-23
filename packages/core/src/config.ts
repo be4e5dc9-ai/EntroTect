@@ -34,6 +34,9 @@ export async function loadConfig(appDataDir: string): Promise<AppConfig> {
     apiKey: process.env.ENTROTECT_API_KEY ?? fromFile.apiKey ?? DEFAULT_CONFIG.apiKey,
     model: process.env.ENTROTECT_MODEL ?? fromFile.model ?? DEFAULT_CONFIG.model,
     workspaceDir: fromFile.workspaceDir ?? DEFAULT_CONFIG.workspaceDir,
+    reasoningEffort: fromFile.reasoningEffort ?? DEFAULT_CONFIG.reasoningEffort,
+    permissionMode: fromFile.permissionMode ?? DEFAULT_CONFIG.permissionMode,
+    showReasoning: fromFile.showReasoning ?? DEFAULT_CONFIG.showReasoning,
     maxTokens: fromFile.maxTokens,
     temperature: fromFile.temperature,
   };
