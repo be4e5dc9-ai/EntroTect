@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { z } from "zod";
 import type { AppEvent, ApprovalRequest, Message } from "@entrotect/shared";
 import { runAgent } from "../src/loop/agent.js";
+import type { Tool } from "../src/tools/types.js";
 import { buildBuiltinTools } from "../src/tools/registry.js";
 import { buildSystemPrompt } from "../src/prompt/system.js";
 import { MockProvider, textBlock, toolCall, turnComplete } from "./helpers/mock-provider.js";
@@ -213,5 +215,105 @@ describe("runAgent 主循环", () => {
       deps,
     );
     expect(result.error).toContain("轮次上限");
+  });
+
+  it("write 成功 → file-changed 事件(相对路径,action=written)", async () => {
+    const { cwd, artifactDir } = await makeEnv();
+    const provider = new MockProvider([
+      { events: [toolCall("w1", "write", JSON.stringify({ file_path: "out.txt", content: "hello" })), turnComplete()] },
+      { events: [textBlock("写好了。"), turnComplete()] },
+    ]);
+    const { deps, events } = makeDeps(cwd, artifactDir, { provider });
+
+    const result = await runAgent(
+      [{ role: "user", content: [{ type: "text", text: "写个文件" }] }],
+      deps,
+    );
+
+    expect(result.error).toBeNull();
+    const changed = events.filter((e) => e.type === "file-changed");
+    expect(changed).toHaveLength(1);
+    expect(changed[0]).toMatchObject({
+      type: "file-changed",
+      toolCallId: "w1",
+      path: "out.txt",
+      action: "written",
+    });
+  });
+
+  it("edit 成功 → file-changed 事件(相对路径,action=edited)", async () => {
+    const { cwd, artifactDir } = await makeEnv();
+    await writeFile(path.join(cwd, "note.txt"), "alpha beta", "utf8");
+    const provider = new MockProvider([
+      { events: [toolCall("e1", "edit", JSON.stringify({ file_path: "note.txt", old_string: "alpha", new_string: "omega" })), turnComplete()] },
+      { events: [textBlock("改好了。"), turnComplete()] },
+    ]);
+    const { deps, events } = makeDeps(cwd, artifactDir, { provider });
+
+    const result = await runAgent(
+      [{ role: "user", content: [{ type: "text", text: "改个文件" }] }],
+      deps,
+    );
+
+    expect(result.error).toBeNull();
+    const changed = events.filter((e) => e.type === "file-changed");
+    expect(changed).toHaveLength(1);
+    expect(changed[0]).toMatchObject({
+      type: "file-changed",
+      toolCallId: "e1",
+      path: "note.txt",
+      action: "edited",
+    });
+  });
+
+  it("read 成功不发 file-changed", async () => {
+    const { cwd, artifactDir } = await makeEnv();
+    await writeFile(path.join(cwd, "book.txt"), "content", "utf8");
+    const provider = new MockProvider([
+      { events: [toolCall("r9", "read", JSON.stringify({ file_path: "book.txt" })), turnComplete()] },
+      { events: [textBlock("读完了。"), turnComplete()] },
+    ]);
+    const { deps, events } = makeDeps(cwd, artifactDir, { provider });
+
+    const result = await runAgent(
+      [{ role: "user", content: [{ type: "text", text: "读 book.txt" }] }],
+      deps,
+    );
+
+    expect(result.error).toBeNull();
+    expect(events.filter((e) => e.type === "file-changed")).toHaveLength(0);
+  });
+
+  it("write 失败不发 file-changed", async () => {
+    const { cwd, artifactDir } = await makeEnv();
+    const provider = new MockProvider([
+      { events: [toolCall("wf1", "write", JSON.stringify({ file_path: "x.txt", content: "x" })), turnComplete()] },
+      { events: [textBlock("写失败了,换个方式。"), turnComplete()] },
+    ]);
+    // 同款 write 工具但 call 抛错:走失败分支,不产文件
+    const failingWrite: Tool = {
+      name: "write",
+      description: "mock",
+      inputSchema: z.object({ file_path: z.string(), content: z.string() }),
+      isReadOnly: false,
+      preview: (args) => (args as { file_path: string }).file_path,
+      async call(): Promise<string> {
+        throw new Error("磁盘写入失败");
+      },
+    };
+    const { deps, events } = makeDeps(cwd, artifactDir, {
+      provider,
+      tools: [failingWrite],
+    });
+
+    const result = await runAgent(
+      [{ role: "user", content: [{ type: "text", text: "写文件" }] }],
+      deps,
+    );
+
+    expect(result.finalText).toBe("写失败了,换个方式。");
+    expect(events.filter((e) => e.type === "file-changed")).toHaveLength(0);
+    const failedState = events.find((e) => e.type === "tool-state" && e.state === "failed");
+    expect(failedState).toBeDefined();
   });
 });

@@ -26,9 +26,24 @@ export interface UiToolBlock {
   summary?: string;
   /** 子代理内部活动日志(task 工具专用,按行拼接) */
   log?: string;
+  /** 工具调用实参(JSON.parse 后的原始 arguments;解析失败为 undefined) */
+  args?: unknown;
 }
 
-export type UiAnyBlock = UiBlock | UiToolBlock;
+/** 文件产出卡片:紧跟对应工具卡片之后展示 */
+export interface UiFileBlock {
+  kind: "file";
+  path: string;
+  action: "written" | "edited";
+}
+
+export type UiAnyBlock = UiBlock | UiToolBlock | UiFileBlock;
+
+/** 右侧详情栏状态:文件详情或子代理详情,null = 隐藏 */
+export type UiDetail =
+  | { kind: "file"; path: string }
+  | { kind: "subagent"; toolCallId: string }
+  | null;
 
 export interface UiMessage {
   key: number;
@@ -70,6 +85,10 @@ interface UiState {
   toasts: Toast[];
   error: string | null;
   theme: Theme;
+  /** 右侧详情栏:null 时隐藏(回两段布局) */
+  detail: UiDetail;
+  /** 文件内容缓存(key = 展示 path;null = 读取失败) */
+  fileContents: Record<string, string | null>;
 }
 
 export const useStore = create<UiState>()(() => ({
@@ -85,6 +104,8 @@ export const useStore = create<UiState>()(() => ({
   toasts: [],
   error: null,
   theme: "dark",
+  detail: null,
+  fileContents: {},
 }));
 
 // ---------- rAF 合帧的流式文本缓冲 ----------
@@ -186,6 +207,59 @@ function appendSubagentLog(toolCallId: string, line: string): void {
   }));
 }
 
+/** JSON.parse 工具实参;解析失败返回 undefined */
+function parseToolArgs(arguments_: string): unknown {
+  try {
+    return JSON.parse(arguments_);
+  } catch {
+    return undefined;
+  }
+}
+
+/** 跨 messages 查找工具卡片 */
+function findToolBlock(toolCallId: string): UiToolBlock | undefined {
+  for (const message of useStore.getState().messages) {
+    const block = message.blocks.find(
+      (b): b is UiToolBlock => b.kind === "tool-call" && b.id === toolCallId,
+    );
+    if (block) return block;
+  }
+  return undefined;
+}
+
+/** 在对应工具卡片之后插入文件卡片;找不到(竞态)则追加到最后一条 assistant 消息 */
+function insertFileBlockAfterTool(toolCallId: string, file: UiFileBlock): void {
+  useStore.setState((state) => {
+    let inserted = false;
+    const messages = state.messages.map((message) => {
+      if (inserted) return message;
+      const index = message.blocks.findIndex(
+        (b) => b.kind === "tool-call" && b.id === toolCallId,
+      );
+      if (index === -1) return message;
+      inserted = true;
+      return {
+        ...message,
+        blocks: [
+          ...message.blocks.slice(0, index + 1),
+          file,
+          ...message.blocks.slice(index + 1),
+        ],
+      };
+    });
+    if (inserted) return { messages };
+    const lastAssistant = [...messages]
+      .reverse()
+      .find((m) => m.role === "assistant");
+    if (!lastAssistant) return { messages };
+    return {
+      messages: messages.map((m) =>
+        m.key === lastAssistant.key ? { ...m, blocks: [...m.blocks, file] } : m,
+      ),
+    };
+  });
+}
+
 // ---------- 事件归约 ----------
 export function applyEvent(event: AppEvent): void {
   switch (event.type) {
@@ -199,6 +273,8 @@ export function applyEvent(event: AppEvent): void {
         busy: false,
         usage: null,
         approval: null,
+        detail: null,
+        fileContents: {},
       });
       break;
     }
@@ -242,10 +318,31 @@ export function applyEvent(event: AppEvent): void {
       // user 消息里的 tool-result:回填工具卡片状态(重放/恢复路径)
       if (message.role === "user" && toolResults.length > 0) {
         for (const result of toolResults) {
+          const toolBlock = findToolBlock(result.toolCallId);
           updateToolState(result.toolCallId, {
             state: result.isError ? "failed" : "completed",
-            summary: result.isError ? result.content.slice(0, 200) : undefined,
+            summary: result.isError
+              ? result.content.slice(0, 200)
+              : toolBlock?.name === "task"
+                ? result.content
+                : undefined,
           });
+          // 重放也能看到历史产出文件:write/edit 成功 → 卡片后插文件块
+          if (
+            !result.isError &&
+            toolBlock &&
+            (toolBlock.name === "write" || toolBlock.name === "edit")
+          ) {
+            const filePath = (toolBlock.args as { file_path?: unknown } | null)
+              ?.file_path;
+            if (typeof filePath === "string" && filePath.length > 0) {
+              insertFileBlockAfterTool(result.toolCallId, {
+                kind: "file",
+                path: filePath,
+                action: toolBlock.name === "edit" ? "edited" : "written",
+              });
+            }
+          }
         }
         return;
       }
@@ -286,6 +383,7 @@ export function applyEvent(event: AppEvent): void {
                 name: b.name,
                 preview: b.name,
                 state: "completed" as const,
+                args: parseToolArgs(b.arguments),
               })),
             ],
             streaming: false,
@@ -305,6 +403,18 @@ export function applyEvent(event: AppEvent): void {
       break;
     case "subagent-activity":
       appendSubagentLog(event.toolCallId, event.text);
+      break;
+    case "file-changed":
+      insertFileBlockAfterTool(event.toolCallId, {
+        kind: "file",
+        path: event.path,
+        action: event.action,
+      });
+      break;
+    case "file-content":
+      useStore.setState((state) => ({
+        fileContents: { ...state.fileContents, [event.path]: event.content },
+      }));
       break;
     case "assistant-block": {
       // 文本块收口:deltas 已流式构建文本,此处只做对齐/补缺
@@ -332,6 +442,7 @@ export function applyEvent(event: AppEvent): void {
                       name: call.name,
                       preview: call.name,
                       state: "awaiting-approval",
+                      args: parseToolArgs(call.arguments),
                     },
                   ],
                 }

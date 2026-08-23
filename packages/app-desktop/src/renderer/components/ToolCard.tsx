@@ -7,7 +7,7 @@
 import { useState } from "react";
 import type { UiToolBlock } from "../store";
 
-const STATE_LABEL: Record<UiToolBlock["state"], string> = {
+export const STATE_LABEL: Record<UiToolBlock["state"], string> = {
   "awaiting-approval": "等待审批",
   executing: "执行中",
   completed: "已完成",
@@ -26,16 +26,25 @@ function SubagentIcon(): React.JSX.Element {
   );
 }
 
-export function ToolCard({ block }: { block: UiToolBlock }): React.JSX.Element {
+export interface ToolCardProps {
+  block: UiToolBlock;
+  /** task 卡点击头部时跳转右侧详情栏(其他工具卡忽略) */
+  onOpenDetail?: () => void;
+}
+
+export function ToolCard({ block, onOpenDetail }: ToolCardProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const isSubagent = block.name === "task";
   const hasLog = isSubagent && !!block.log;
+
+  const toggleInline = (): void => setOpen((v) => !v);
+  const onHeadClick = isSubagent && onOpenDetail ? onOpenDetail : toggleInline;
 
   return (
     <div className={`tool-card tool-${block.state}${isSubagent ? " tool-task" : ""}`}>
       <button
         className="tool-card-head"
-        onClick={() => setOpen((v) => !v)}
+        onClick={onHeadClick}
         aria-expanded={open}
       >
         {isSubagent ? (
@@ -51,16 +60,46 @@ export function ToolCard({ block }: { block: UiToolBlock }): React.JSX.Element {
           {block.state === "executing" && <span className="spin" aria-hidden="true" />}
           {STATE_LABEL[block.state]}
         </span>
-        <svg
-          className={`tool-chevron${open ? " open" : ""}`}
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          fill="none"
-          aria-hidden="true"
-        >
-          <path d="M3 4.5 6 7.5l3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        {isSubagent && onOpenDetail ? (
+          <span
+            className="tool-chevron-wrap"
+            role="button"
+            tabIndex={0}
+            aria-label="展开子代理日志"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleInline();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.stopPropagation();
+                toggleInline();
+              }
+            }}
+          >
+            <svg
+              className={`tool-chevron${open ? " open" : ""}`}
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path d="M3 4.5 6 7.5l3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+        ) : (
+          <svg
+            className={`tool-chevron${open ? " open" : ""}`}
+            width="12"
+            height="12"
+            viewBox="0 0 12 12"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path d="M3 4.5 6 7.5l3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
       </button>
       <div className={`tool-card-body${open ? " open" : ""}`}>
         <div className="tool-card-body-inner">

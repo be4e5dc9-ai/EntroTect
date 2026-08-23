@@ -14,6 +14,7 @@ import type {
   Message,
   TokenUsage,
 } from "@entrotect/shared";
+import path from "node:path";
 import type { Provider } from "../provider/types.js";
 import type { Tool, ToolContext } from "../tools/types.js";
 import { truncateOutput } from "../tools/output.js";
@@ -300,6 +301,24 @@ export async function runAgent(
         const truncated = await truncateOutput(output, deps.artifactDir);
         // 插件 after 钩子:只观察不修改结果
         notifyToolAfter(pluginHooks, call.name, truncated.content, false);
+        // 文件产出事件:write/edit 成功后通知 UI 渲染文件卡片
+        if (tool.name === "write" || tool.name === "edit") {
+          const filePath = (args as { file_path?: unknown } | null)?.file_path;
+          if (typeof filePath === "string" && filePath.length > 0) {
+            const absolute = path.resolve(deps.cwd, filePath);
+            const insideCwd =
+              absolute === deps.cwd || absolute.startsWith(deps.cwd + path.sep);
+            const display = insideCwd
+              ? path.relative(deps.cwd, absolute)
+              : absolute;
+            deps.emit({
+              type: "file-changed",
+              toolCallId: call.id,
+              path: display,
+              action: tool.name === "edit" ? "edited" : "written",
+            });
+          }
+        }
         results.push({
           type: "tool-result",
           toolCallId: call.id,
@@ -312,7 +331,10 @@ export async function runAgent(
           toolCallId: call.id,
           state: "completed",
           preview,
-          summary: truncated.spilledTo ?? undefined,
+          summary:
+            call.name === "task"
+              ? truncated.content
+              : (truncated.spilledTo ?? undefined),
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

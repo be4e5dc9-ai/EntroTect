@@ -151,4 +151,56 @@ describe("task 工具与子代理", () => {
     );
     expect(leaks).toHaveLength(0);
   });
+
+  it("子代理内部 write 成功后,父级 events 无 file-changed(emitInner 折叠)", async () => {
+    const { cwd, artifactDir } = await makeEnv();
+    const events: AppEvent[] = [];
+    const emit = (event: AppEvent) => events.push(event);
+
+    // 子代理:第一轮 write 内部文件,第二轮汇报
+    const subBase = new MockProvider([
+      { events: [toolCall("sw1", "write", JSON.stringify({ file_path: "inner.txt", content: "subagent wrote" })), turnComplete()] },
+      { events: [textBlock("子代理已写入 inner.txt"), turnComplete()] },
+    ]);
+    const runner = createSubagentRunner({
+      provider: subBase,
+      tools: buildBuiltinTools(),
+      systemPrompt: "父提示词",
+      approve: async () => ({ decision: "allow-once" as const }),
+      cwd,
+      artifactDir,
+      maxTokens: 2048,
+    });
+
+    const mainProvider = new MockProvider([
+      { events: [toolCall("t2", "task", JSON.stringify({ prompt: "写 inner.txt" })), turnComplete()] },
+      { events: [textBlock("主代完成。"), turnComplete()] },
+    ]);
+    const tools = buildBuiltinTools({ taskRunner: runner });
+
+    const result = await runAgent(
+      [{ role: "user", content: [{ type: "text", text: "委派写文件" }] }],
+      {
+        provider: mainProvider,
+        tools,
+        systemPrompt: "父提示词",
+        maxTokens: 2048,
+        emit,
+        approve: async () => ({ decision: "allow-once" as const }),
+        cwd,
+        artifactDir,
+      },
+    );
+
+    expect(result.error).toBeNull();
+    expect(result.finalText).toBe("主代完成。");
+    // 子代理内部的 file-changed 被 emitInner 折叠,不透传给父级 emit
+    const fileChanged = events.filter((e) => e.type === "file-changed");
+    expect(fileChanged).toHaveLength(0);
+    // 其执行步进仍以活动日志形式挂在 t2 卡片上
+    const t2Activities = events.filter(
+      (e) => e.type === "subagent-activity" && e.toolCallId === "t2",
+    );
+    expect(t2Activities.some((e) => e.text.includes("inner.txt"))).toBe(true);
+  });
 });

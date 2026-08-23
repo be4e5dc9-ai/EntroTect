@@ -147,7 +147,8 @@ export type Op =
       reason?: string;
     }
   | { kind: "GetConfig" }
-  | { kind: "SetConfig"; config: AppConfig };
+  | { kind: "SetConfig"; config: AppConfig }
+  | { kind: "ReadFile"; path: string };
 
 // =====================================================================
 // EventMsg:核心 → UI(同源信封,双向皆可演进)
@@ -189,6 +190,13 @@ export type AppEvent =
       summary?: string;
     }
   | { type: "approval-requested"; request: ApprovalRequest }
+  | {
+      type: "file-changed";
+      toolCallId: string;
+      path: string;
+      action: "written" | "edited";
+    }
+  | { type: "file-content"; path: string; content: string | null; error?: string }
   | { type: "error"; message: string }
   | { type: "config"; config: AppConfig };
 
@@ -272,6 +280,7 @@ export const opSchema = z.discriminatedUnion("kind", [
   }),
   z.object({ kind: z.literal("GetConfig") }),
   z.object({ kind: z.literal("SetConfig"), config: appConfigSchema }),
+  z.object({ kind: z.literal("ReadFile"), path: z.string().min(1) }),
 ]);
 
 export const appEventSchema = z.discriminatedUnion("type", [
@@ -314,6 +323,18 @@ export const appEventSchema = z.discriminatedUnion("type", [
       preview: z.string(),
       description: z.string(),
     }),
+  }),
+  z.object({
+    type: z.literal("file-changed"),
+    toolCallId: z.string(),
+    path: z.string(),
+    action: z.enum(["written", "edited"]),
+  }),
+  z.object({
+    type: z.literal("file-content"),
+    path: z.string(),
+    content: z.string().nullable(),
+    error: z.string().optional(),
   }),
   z.object({ type: z.literal("error"), message: z.string() }),
   z.object({ type: z.literal("config"), config: appConfigSchema }),

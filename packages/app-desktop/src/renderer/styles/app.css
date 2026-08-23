@@ -921,6 +921,270 @@
   overflow-y: auto;
 }
 
+/* task 卡头部跳右侧栏后,chevron 保留内联展开(独立点击区) */
+.tool-chevron-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 5px;
+  margin: -3px -5px -3px 0;
+  border-radius: 5px;
+  flex-shrink: 0;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .tool-chevron-wrap:hover {
+    background: var(--surface-hover);
+  }
+}
+
+/* ---------- 文件产出卡片 ---------- */
+.file-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 6px 0;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  text-align: left;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+  animation: entro-rise-in var(--spring-rise-ms) linear both;
+}
+@media (hover: hover) and (pointer: fine) {
+  .file-card:hover {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+  }
+}
+.file-card:active {
+  transform: scale(0.985);
+}
+.file-card-icon {
+  display: inline-flex;
+  color: var(--accent-strong);
+  flex-shrink: 0;
+}
+.file-card-name {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.file-card-badge {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.file-badge-written {
+  color: var(--success);
+  border: 1px solid var(--success);
+}
+.file-badge-edited {
+  color: var(--accent-strong);
+  border: 1px solid var(--accent);
+}
+.file-card-path {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 右侧详情栏(第三段布局) ---------- */
+.detail-panel {
+  width: 420px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  animation: entro-pop-in var(--spring-pop-ms) linear both;
+  transform-origin: right center;
+}
+.detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.detail-head-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.detail-title {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.detail-file-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.detail-file-path {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.detail-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  font-size: 15px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .detail-close:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+}
+.detail-close:active {
+  transform: scale(0.92);
+}
+.detail-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.detail-loading,
+.detail-error {
+  padding: 20px 16px;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+.detail-error {
+  color: var(--danger);
+}
+
+/* 文件正文:行号 + 代码 */
+.file-view {
+  padding: 10px 0 16px;
+}
+.file-line {
+  display: flex;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+@media (hover: hover) and (pointer: fine) {
+  .file-line:hover {
+    background: var(--surface-hover);
+  }
+}
+.file-num {
+  flex-shrink: 0;
+  width: 52px;
+  padding-right: 12px;
+  text-align: right;
+  color: var(--text-tertiary);
+  user-select: none;
+}
+.file-code {
+  flex: 1;
+  min-width: 0;
+  white-space: pre;
+  overflow-x: auto;
+  color: var(--text-secondary);
+  padding-right: 16px;
+}
+
+/* 子代理详情:三段(任务描述/活动日志/最终汇报) */
+.subagent-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px;
+  overflow-y: auto;
+}
+.subagent-section {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.subagent-section-grow {
+  flex: 1;
+  min-height: 120px;
+}
+.subagent-section-title {
+  margin: 0 0 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+}
+.subagent-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.subagent-log {
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--text-tertiary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.subagent-report {
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
 /* ---------- 输入区 ---------- */
 .composer {
   padding: 12px 20px 18px;

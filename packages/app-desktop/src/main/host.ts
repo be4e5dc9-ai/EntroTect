@@ -6,6 +6,7 @@
 
 import { homedir } from "node:os";
 import path from "node:path";
+import { readFile } from "node:fs/promises";
 import type { BrowserWindow } from "electron";
 import type {
   AppConfig,
@@ -47,6 +48,22 @@ interface ActiveRun {
 }
 
 const MAX_TOKENS_DEFAULT = 8192;
+/** ReadFile 应答的内容上限:超过则截断并在尾部加一行提示 */
+const MAX_FILE_CONTENT_BYTES = 256 * 1024;
+
+/** 按 UTF-8 字节数安全截断(不劈开多字节字符) */
+function truncateUtf8(content: string, maxBytes: number): string {
+  if (Buffer.byteLength(content, "utf8") <= maxBytes) return content;
+  let bytes = 0;
+  let result = "";
+  for (const char of content) {
+    const charBytes = Buffer.byteLength(char, "utf8");
+    if (bytes + charBytes > maxBytes) break;
+    bytes += charBytes;
+    result += char;
+  }
+  return result;
+}
 
 export class SessionHost {
   private readonly deps: HostDeps;
@@ -146,6 +163,23 @@ export class SessionHost {
       case "GetConfig":
         this.emit({ type: "config", config: this.config });
         break;
+      case "ReadFile": {
+        const cwd = this.active?.meta.cwd ?? this.workspaceDir();
+        const absolute = path.isAbsolute(op.path)
+          ? op.path
+          : path.resolve(cwd, op.path);
+        try {
+          let content = await readFile(absolute, "utf8");
+          if (Buffer.byteLength(content, "utf8") > MAX_FILE_CONTENT_BYTES) {
+            content = `${truncateUtf8(content, MAX_FILE_CONTENT_BYTES)}\n…(文件过大已截断)`;
+          }
+          this.emit({ type: "file-content", path: op.path, content });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.emit({ type: "file-content", path: op.path, content: null, error: message });
+        }
+        break;
+      }
       case "SetConfig": {
         this.config = op.config;
         await saveConfig(this.deps.appDataDir, this.config);

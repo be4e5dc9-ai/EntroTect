@@ -13,6 +13,7 @@ import { Composer } from "./components/Composer";
 import { ApprovalModal } from "./components/ApprovalModal";
 import { SettingsPage } from "./components/SettingsPage";
 import { Toasts } from "./components/Toasts";
+import { DetailPanel } from "./components/DetailPanel";
 
 const DEFAULT_SIDEBAR_WIDTH = 248;
 
@@ -30,6 +31,7 @@ export function App(): React.JSX.Element {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem("entrotect-sidebar-collapsed") === "1",
   );
+  const detail = useStore((s) => s.detail);
 
   useEffect(() => {
     const unsubscribe = bridge().onEvent(applyEvent);
@@ -99,6 +101,7 @@ export function App(): React.JSX.Element {
             <Composer />
           </main>
         )}
+        {detail && <DetailPanel />}
       </div>
       <ApprovalModal />
       <Toasts />

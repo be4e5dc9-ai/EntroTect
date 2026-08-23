@@ -7,6 +7,7 @@ import { useStore, type UiMessage } from "../store";
 import { renderMarkdown } from "../markdown";
 import { bridge } from "../bridge";
 import { ToolCard } from "./ToolCard";
+import { FileCard } from "./FileCard";
 
 /** 思考过程区:流式时自动展开,结束后可手动折叠 */
 function ReasoningSection({ text, streaming }: { text: string; streaming: boolean }): React.JSX.Element {
@@ -85,8 +86,18 @@ function Message({ message }: { message: UiMessage }): React.JSX.Element {
               className="markdown"
               dangerouslySetInnerHTML={{ __html: renderMarkdown(block.text) }}
             />
+          ) : block.kind === "file" ? (
+            <FileCard key={`f${index}`} block={block} />
           ) : (
-            <ToolCard key={block.id} block={block} />
+            <ToolCard
+              key={block.id}
+              block={block}
+              onOpenDetail={
+                block.name === "task"
+                  ? () => useStore.setState({ detail: { kind: "subagent", toolCallId: block.id } })
+                  : undefined
+              }
+            />
           ),
         )}
         {message.blocks.length === 0 && message.streaming && (
