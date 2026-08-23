@@ -193,43 +193,132 @@
   align-items: center;
   gap: 8px;
 }
+
+/* ---------- 菜单触发器(pill 按钮) ---------- */
+.menu {
+  position: relative;
+  display: inline-flex;
+}
 .bar-select {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 3px 5px 3px 10px;
-  transition: border-color var(--dur-fast) var(--ease-out);
+  padding: 4px 6px 4px 10px;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
 }
-.bar-select:focus-within {
+@media (hover: hover) and (pointer: fine) {
+  .menu-trigger:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-hover);
+  }
+}
+.menu-trigger.open {
   border-color: var(--accent);
+}
+.menu-trigger:active {
+  transform: scale(0.97);
 }
 .bar-select-icon {
   display: inline-flex;
   color: var(--accent-strong);
 }
-.bar-select select {
-  appearance: none;
-  border: none;
-  background: transparent;
+.menu-trigger-label {
   color: var(--text-secondary);
   font-family: var(--font-sans);
   font-size: 12.5px;
   font-weight: 500;
-  padding: 2px 15px 2px 0;
-  outline: none;
-  cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath d='M1.5 2.5 4 5l2.5-2.5' stroke='%23888899' stroke-width='1.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 1px center;
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.bar-select select:hover {
+.menu-trigger.open .menu-trigger-label {
   color: var(--text);
 }
-.bar-select option {
+
+/* ---------- 菜单面板(cmdk 式悬浮卡,origin 锚定触发器) ---------- */
+.menu-panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  z-index: 150;
+  min-width: 232px;
+  max-height: min(340px, calc(100vh - 160px));
+  overflow-y: auto;
   background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--toast-shadow);
+  padding: 6px;
+  animation: entro-pop-in var(--spring-pop-ms) linear both;
+  overscroll-behavior: contain;
+}
+.menu-left .menu-panel {
+  left: 0;
+  transform-origin: bottom left;
+}
+.menu-right .menu-panel {
+  right: 0;
+  transform-origin: bottom right;
+}
+.menu-heading {
+  padding: 6px 10px 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+  user-select: none;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: left;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.menu-item.cursor {
+  background: var(--surface-hover);
   color: var(--text);
+}
+@media (hover: hover) and (pointer: fine) {
+  .menu-item:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+}
+.menu-item:active {
+  transform: scale(0.985);
+}
+.menu-item-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.menu-item.selected .menu-item-label {
+  color: var(--text);
+  font-weight: 500;
+}
+.menu-check {
+  flex-shrink: 0;
+  color: var(--accent-strong);
+}
+.menu-item-meta {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
 }
 
 /* ---------- 思考过程区块 ---------- */
