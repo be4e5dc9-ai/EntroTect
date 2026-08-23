@@ -9,7 +9,6 @@
 
 import type {
   AppEvent,
-  ApprovalDecision,
   ApprovalRequest,
   ContentBlock,
   Message,
@@ -19,6 +18,7 @@ import type { Provider } from "../provider/types.js";
 import type { Tool, ToolContext } from "../tools/types.js";
 import { truncateOutput } from "../tools/output.js";
 import { zodToJsonSchema } from "../tools/zod-json.js";
+import type { ApprovalOutcome } from "../permission/gate.js";
 
 export interface AgentDeps {
   provider: Provider;
@@ -29,7 +29,7 @@ export interface AgentDeps {
   /** 事件汇:主循环对 UI/持久层的唯一输出通道 */
   emit: (event: AppEvent) => void;
   /** 审批回调:await 到用户决定(M3 实现真实闸门) */
-  approve: (request: ApprovalRequest) => Promise<ApprovalDecision>;
+  approve: (request: ApprovalRequest) => Promise<ApprovalOutcome>;
   cwd: string;
   artifactDir: string;
   /** 轮次上限,防无限循环烧钱(照抄 ClaudeCode maxTurns) */
@@ -224,14 +224,16 @@ export async function runAgent(
       }
 
       // 审批闸门
-      const decision = await deps.approve({
+      const outcome = await deps.approve({
         toolCallId: call.id,
         toolName: call.name,
         preview,
         description: tool.description,
       });
-      if (decision === "deny") {
-        const reason = "工具调用被用户拒绝。请改用其他方式完成任务,或向用户说明为什么需要此操作。";
+      if (outcome.decision === "deny") {
+        const reason =
+          outcome.reason ??
+          "工具调用被用户拒绝。请改用其他方式完成任务,或向用户说明为什么需要此操作。";
         results.push({
           type: "tool-result",
           toolCallId: call.id,

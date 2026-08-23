@@ -4,4 +4,5 @@ export * from "./provider/index.js";
 export * from "./tools/index.js";
 export * from "./loop/index.js";
 export * from "./prompt/index.js";
+export * from "./permission/index.js";
 export * from "./config.js";

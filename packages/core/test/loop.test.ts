@@ -22,7 +22,7 @@ function makeDeps(cwd: string, artifactDir: string, overrides: Record<string, un
     systemPrompt: buildSystemPrompt({ cwd, model: "mock", platform: "win32", date: "2026-08-23" }),
     maxTokens: 2048,
     emit: (event: AppEvent) => events.push(event),
-    approve: async (): Promise<"allow-once" | "allow-always" | "deny"> => "allow-once",
+    approve: async () => ({ decision: "allow-once" as const }),
     cwd,
     artifactDir,
     ...overrides,
@@ -117,7 +117,7 @@ describe("runAgent 主循环", () => {
     ]);
     const { deps, events } = makeDeps(cwd, artifactDir, {
       provider,
-      approve: async (_request: ApprovalRequest) => "deny",
+      approve: async (_request: ApprovalRequest) => ({ decision: "deny" }),
     });
 
     const result = await runAgent(
@@ -154,9 +154,9 @@ describe("runAgent 主循环", () => {
       calls += 1;
       if (calls === 2) {
         controller.abort();
-        return "allow-once";
+        return { decision: "allow-once" };
       }
-      return "allow-once";
+      return { decision: "allow-once" };
     };
 
     const result = await runAgent(
