@@ -1,10 +1,9 @@
 // =====================================================================
 // 文件产出卡片:紧跟工具卡片之后,展示本轮 write/edit 产出的文件
-// 点击 → 打开右侧详情栏(ReadFile 拉取内容,有缓存则不重发)。
+// 点击 → 打开或聚焦右侧详情栏文件标签(ReadFile 由 store 去重发送)。
 // =====================================================================
 
-import { useStore, type UiFileBlock } from "../store";
-import { bridge } from "../bridge";
+import { openFileTab, type UiFileBlock } from "../store";
 
 function FileIcon(): React.JSX.Element {
   return (
@@ -27,11 +26,7 @@ export function fileName(p: string): string {
 
 export function FileCard({ block }: { block: UiFileBlock }): React.JSX.Element {
   const open = (): void => {
-    useStore.setState({ detail: { kind: "file", path: block.path } });
-    const cached = useStore.getState().fileContents[block.path];
-    if (cached === undefined) {
-      bridge().send({ kind: "ReadFile", path: block.path });
-    }
+    openFileTab(block.path);
   };
 
   return (

@@ -170,6 +170,23 @@ export interface ApprovalRequest {
   description: string;
 }
 
+/**
+ * 子代理对话页的流式片段:子代理内部事件折叠/翻译后的最小集。
+ * 经主循环 "subagent-part" 事件上报,挂在 task 工具的调用 id 上。
+ */
+export type SubagentPart =
+  | { kind: "turn-start" }
+  | { kind: "delta"; text: string }
+  | { kind: "block"; block: ContentBlock }
+  | { kind: "turn-end" }
+  | {
+      kind: "tool-state";
+      toolCallId: string;
+      state: ToolCallState;
+      preview: string;
+      summary?: string;
+    };
+
 export type AppEvent =
   | { type: "session-meta"; meta: SessionMeta }
   | { type: "sessions-listed"; sessions: SessionMeta[] }
@@ -180,6 +197,8 @@ export type AppEvent =
   | { type: "assistant-block"; block: ContentBlock }
   /** 子代理活动日志(任务卡片的可展开内部活动,不进主对话流) */
   | { type: "subagent-activity"; toolCallId: string; text: string }
+  /** 子代理对话页片段(toolCallId = 主循环里 task 工具的调用 id) */
+  | { type: "subagent-part"; toolCallId: string; part: SubagentPart }
   | { type: "turn-started" }
   | { type: "turn-completed"; usage: TokenUsage | null }
   | {
@@ -283,6 +302,26 @@ export const opSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("ReadFile"), path: z.string().min(1) }),
 ]);
 
+export const subagentPartSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("turn-start") }),
+  z.object({ kind: z.literal("delta"), text: z.string() }),
+  z.object({ kind: z.literal("block"), block: contentBlockSchema }),
+  z.object({ kind: z.literal("turn-end") }),
+  z.object({
+    kind: z.literal("tool-state"),
+    toolCallId: z.string(),
+    state: z.enum([
+      "awaiting-approval",
+      "executing",
+      "completed",
+      "failed",
+      "denied",
+    ]),
+    preview: z.string(),
+    summary: z.string().optional(),
+  }),
+]);
+
 export const appEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("session-meta"), meta: sessionMetaSchema }),
   z.object({ type: z.literal("sessions-listed"), sessions: z.array(sessionMetaSchema) }),
@@ -298,6 +337,11 @@ export const appEventSchema = z.discriminatedUnion("type", [
     type: z.literal("subagent-activity"),
     toolCallId: z.string(),
     text: z.string(),
+  }),
+  z.object({
+    type: z.literal("subagent-part"),
+    toolCallId: z.string(),
+    part: subagentPartSchema,
   }),
   z.object({ type: z.literal("assistant-block"), block: contentBlockSchema }),
   z.object({ type: z.literal("turn-started") }),

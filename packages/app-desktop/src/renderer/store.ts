@@ -7,10 +7,12 @@ import { create } from "zustand";
 import type {
   AppEvent,
   SessionMeta,
+  SubagentPart,
   ToolCallState,
   TokenUsage,
   AppConfig,
 } from "@entrotect/shared";
+import { bridge } from "./bridge";
 
 export interface UiBlock {
   kind: "text";
@@ -39,11 +41,14 @@ export interface UiFileBlock {
 
 export type UiAnyBlock = UiBlock | UiToolBlock | UiFileBlock;
 
-/** 右侧详情栏状态:文件详情或子代理详情,null = 隐藏 */
-export type UiDetail =
-  | { kind: "file"; path: string }
-  | { kind: "subagent"; toolCallId: string }
-  | null;
+/**
+ * 右侧详情栏标签页:浏览器式多标签。
+ * id 生成规则:`file-<path>` / `subagent-<toolCallId>`(天然去重,
+ * 重复点击聚焦既有标签)。
+ */
+export type DetailTab =
+  | { id: string; kind: "file"; path: string }
+  | { id: string; kind: "subagent"; toolCallId: string };
 
 export interface UiMessage {
   key: number;
@@ -85,10 +90,14 @@ interface UiState {
   toasts: Toast[];
   error: string | null;
   theme: Theme;
-  /** 右侧详情栏:null 时隐藏(回两段布局) */
-  detail: UiDetail;
+  /** 右侧详情栏标签页(浏览器式,可多开) */
+  detailTabs: DetailTab[];
+  /** 当前激活标签 id;null = 详情栏隐藏(回两段布局) */
+  activeDetailId: string | null;
   /** 文件内容缓存(key = 展示 path;null = 读取失败) */
   fileContents: Record<string, string | null>;
+  /** 子代理对话页(key = task 工具调用 id;每条即一个对话流) */
+  subagentChats: Record<string, UiMessage[]>;
 }
 
 export const useStore = create<UiState>()(() => ({
@@ -104,8 +113,10 @@ export const useStore = create<UiState>()(() => ({
   toasts: [],
   error: null,
   theme: "dark",
-  detail: null,
+  detailTabs: [],
+  activeDetailId: null,
   fileContents: {},
+  subagentChats: {},
 }));
 
 // ---------- rAF 合帧的流式文本缓冲 ----------
@@ -145,6 +156,71 @@ function appendText(blocks: UiAnyBlock[], text: string): UiAnyBlock[] {
     return [...blocks.slice(0, -1), { ...last, text: last.text + text }];
   }
   return [...blocks, { kind: "text", text }];
+}
+
+// ---------- 子代理对话页:per-key 的 rAF 流式缓冲 ----------
+const subagentDeltaBuffers: Record<string, string> = {};
+const subagentRafIds: Record<string, number | null> = {};
+
+function flushSubagentDelta(toolCallId: string): void {
+  if (subagentRafIds[toolCallId] !== null && subagentRafIds[toolCallId] !== undefined) {
+    return;
+  }
+  subagentRafIds[toolCallId] = requestAnimationFrame(() => {
+    subagentRafIds[toolCallId] = null;
+    const chunk = subagentDeltaBuffers[toolCallId] ?? "";
+    subagentDeltaBuffers[toolCallId] = "";
+    if (!chunk) return;
+    useStore.setState((state) => ({
+      subagentChats: {
+        ...state.subagentChats,
+        [toolCallId]: updateSubagentLastAssistant(
+          state.subagentChats[toolCallId] ?? [],
+          (message) => ({
+            ...message,
+            blocks: appendText(message.blocks, chunk),
+          }),
+        ),
+      },
+    }));
+  });
+}
+
+/** 立即冲刷挂起的 delta(块收口/回合收口前保证顺序) */
+function flushSubagentDeltaNow(toolCallId: string): void {
+  const pending = subagentDeltaBuffers[toolCallId] ?? "";
+  subagentDeltaBuffers[toolCallId] = "";
+  if (!pending) return;
+  useStore.setState((state) => ({
+    subagentChats: {
+      ...state.subagentChats,
+      [toolCallId]: updateSubagentLastAssistant(
+        state.subagentChats[toolCallId] ?? [],
+        (message) => ({
+          ...message,
+          blocks: appendText(message.blocks, pending),
+        }),
+      ),
+    },
+  }));
+}
+
+function clearSubagentDeltaBuffers(): void {
+  for (const key of Object.keys(subagentDeltaBuffers)) {
+    delete subagentDeltaBuffers[key];
+  }
+}
+
+/** 更新对话流最后一条 assistant 消息(不存在则原样返回) */
+function updateSubagentLastAssistant(
+  messages: UiMessage[],
+  update: (message: UiMessage) => UiMessage,
+): UiMessage[] {
+  return messages.map((message, index) =>
+    index === messages.length - 1 && message.role === "assistant"
+      ? update(message)
+      : message,
+  );
 }
 
 /** 文本块收口:deltas 构建的文本与定稿对齐,缺失时补块 */
@@ -260,6 +336,194 @@ function insertFileBlockAfterTool(toolCallId: string, file: UiFileBlock): void {
   });
 }
 
+// ---------- 详情栏标签操作 ----------
+/** 子代理标签标题源:task 卡片的 args.prompt,缺省回落 preview */
+function subagentPromptOf(toolCallId: string): string {
+  const block = findToolBlock(toolCallId);
+  const prompt = (block?.args as { prompt?: unknown } | null)?.prompt;
+  if (typeof prompt === "string" && prompt.length > 0) return prompt;
+  return block?.preview ?? "";
+}
+
+/** 确保子代理对话存在:首条 user 消息 = 主代理委派的 prompt */
+export function ensureSubagentChat(toolCallId: string): void {
+  if (useStore.getState().subagentChats[toolCallId]) return;
+  const text = subagentPromptOf(toolCallId);
+  useStore.setState((state) => ({
+    subagentChats: {
+      ...state.subagentChats,
+      [toolCallId]: [
+        {
+          key: nextKey++,
+          role: "user",
+          blocks: [{ kind: "text", text }],
+          streaming: false,
+          reasoning: "",
+        },
+      ],
+    },
+  }));
+}
+
+/** 打开或聚焦文件标签;无缓存时发 ReadFile */
+export function openFileTab(path: string): void {
+  const id = `file-${path}`;
+  useStore.setState((state) => {
+    const exists = state.detailTabs.some((tab) => tab.id === id);
+    return {
+      detailTabs: exists
+        ? state.detailTabs
+        : [...state.detailTabs, { id, kind: "file", path }],
+      activeDetailId: id,
+    };
+  });
+  const cached = useStore.getState().fileContents[path];
+  if (cached === undefined) {
+    bridge().send({ kind: "ReadFile", path });
+  }
+}
+
+/** 打开或聚焦子代理标签(顺带初始化对话流) */
+export function openSubagentTab(toolCallId: string): void {
+  ensureSubagentChat(toolCallId);
+  const id = `subagent-${toolCallId}`;
+  useStore.setState((state) => {
+    const exists = state.detailTabs.some((tab) => tab.id === id);
+    return {
+      detailTabs: exists
+        ? state.detailTabs
+        : [...state.detailTabs, { id, kind: "subagent", toolCallId }],
+      activeDetailId: id,
+    };
+  });
+}
+
+/** 激活既有标签(点击标签条) */
+export function activateDetailTab(id: string): void {
+  useStore.setState({ activeDetailId: id });
+}
+
+/** 关闭标签:激活标签被关则顺延到邻位;关光则隐藏详情栏 */
+export function closeDetailTab(id: string): void {
+  useStore.setState((state) => {
+    const index = state.detailTabs.findIndex((tab) => tab.id === id);
+    if (index === -1) return {};
+    const tabs = state.detailTabs.filter((tab) => tab.id !== id);
+    let activeDetailId = state.activeDetailId;
+    if (state.activeDetailId === id) {
+      const neighbor = tabs[Math.min(index, tabs.length - 1)];
+      activeDetailId = neighbor?.id ?? null;
+    }
+    return { detailTabs: tabs, activeDetailId };
+  });
+}
+
+/** 子代理对话页:part → 对话流(镜像主对话的事件语义) */
+function applySubagentPart(toolCallId: string, part: SubagentPart): void {
+  switch (part.kind) {
+    case "turn-start":
+      ensureSubagentChat(toolCallId);
+      useStore.setState((state) => ({
+        subagentChats: {
+          ...state.subagentChats,
+          [toolCallId]: [
+            ...(state.subagentChats[toolCallId] ?? []),
+            {
+              key: nextKey++,
+              role: "assistant",
+              blocks: [],
+              streaming: true,
+              reasoning: "",
+            },
+          ],
+        },
+      }));
+      break;
+    case "delta":
+      ensureSubagentChat(toolCallId);
+      subagentDeltaBuffers[toolCallId] =
+        (subagentDeltaBuffers[toolCallId] ?? "") + part.text;
+      flushSubagentDelta(toolCallId);
+      break;
+    case "block":
+      ensureSubagentChat(toolCallId);
+      flushSubagentDeltaNow(toolCallId);
+      if (part.block.type === "text") {
+        const text = part.block.text;
+        useStore.setState((state) => ({
+          subagentChats: {
+            ...state.subagentChats,
+            [toolCallId]: updateSubagentLastAssistant(
+              state.subagentChats[toolCallId] ?? [],
+              (message) => ({
+                ...message,
+                blocks: finalizeText(message.blocks, text),
+              }),
+            ),
+          },
+        }));
+      } else if (part.block.type === "tool-call") {
+        const call = part.block;
+        useStore.setState((state) => ({
+          subagentChats: {
+            ...state.subagentChats,
+            [toolCallId]: updateSubagentLastAssistant(
+              state.subagentChats[toolCallId] ?? [],
+              (message) => ({
+                ...message,
+                blocks: [
+                  ...message.blocks,
+                  {
+                    kind: "tool-call",
+                    id: call.id,
+                    name: call.name,
+                    preview: call.name,
+                    state: "awaiting-approval",
+                    args: parseToolArgs(call.arguments),
+                  },
+                ],
+              }),
+            ),
+          },
+        }));
+      }
+      break;
+    case "turn-end":
+      ensureSubagentChat(toolCallId);
+      flushSubagentDeltaNow(toolCallId);
+      useStore.setState((state) => ({
+        subagentChats: {
+          ...state.subagentChats,
+          [toolCallId]: updateSubagentLastAssistant(
+            state.subagentChats[toolCallId] ?? [],
+            (message) => ({ ...message, streaming: false }),
+          ),
+        },
+      }));
+      break;
+    case "tool-state":
+      ensureSubagentChat(toolCallId);
+      useStore.setState((state) => ({
+        subagentChats: {
+          ...state.subagentChats,
+          [toolCallId]: (state.subagentChats[toolCallId] ?? []).map((message) => ({
+            ...message,
+            blocks: message.blocks.map((block) =>
+              block.kind === "tool-call" && block.id === part.toolCallId
+                ? {
+                    ...block,
+                    state: part.state,
+                    ...(part.summary !== undefined ? { summary: part.summary } : {}),
+                  }
+                : block,
+            ),
+          })),
+        },
+      }));
+      break;
+  }
+}
+
 // ---------- 事件归约 ----------
 export function applyEvent(event: AppEvent): void {
   switch (event.type) {
@@ -267,14 +531,17 @@ export function applyEvent(event: AppEvent): void {
       flushDeltas();
       deltaBuffer = "";
       reasoningBuffer = "";
+      clearSubagentDeltaBuffers();
       useStore.setState({
         currentSession: event.meta,
         messages: [],
         busy: false,
         usage: null,
         approval: null,
-        detail: null,
+        detailTabs: [],
+        activeDetailId: null,
         fileContents: {},
+        subagentChats: {},
       });
       break;
     }
@@ -403,6 +670,9 @@ export function applyEvent(event: AppEvent): void {
       break;
     case "subagent-activity":
       appendSubagentLog(event.toolCallId, event.text);
+      break;
+    case "subagent-part":
+      applySubagentPart(event.toolCallId, event.part);
       break;
     case "file-changed":
       insertFileBlockAfterTool(event.toolCallId, {

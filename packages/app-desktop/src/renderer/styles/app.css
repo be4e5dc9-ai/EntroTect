@@ -1001,10 +1001,11 @@
   text-overflow: ellipsis;
 }
 
-/* ---------- 右侧详情栏(第三段布局) ---------- */
+/* ---------- 右侧详情栏(浏览器式:标签条 + 地址栏 + 内容区) ---------- */
 .detail-panel {
-  width: 420px;
+  width: 420px; /* 兜底;实际宽度由 App 的 inline style 接管 */
   flex-shrink: 0;
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -1013,48 +1014,150 @@
   animation: entro-pop-in var(--spring-pop-ms) linear both;
   transform-origin: right center;
 }
-.detail-head {
+
+/* 左缘拖动手柄(复用侧栏 startResize 交互) */
+.detail-resizer {
+  position: absolute;
+  top: 0;
+  left: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 20;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.detail-resizer:hover,
+.detail-resizer:active {
+  background: var(--accent-dim);
+}
+
+/* ---------- 标签条 ---------- */
+.detail-tabs {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 12px 14px 10px;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 6px 8px 0;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
-.detail-head-main {
+.detail-tab {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
-  flex: 1;
-}
-.detail-title {
-  font-size: 13.5px;
-  font-weight: 600;
-}
-.detail-file-name {
-  font-size: 13.5px;
-  font-weight: 600;
-  font-family: var(--font-mono);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.detail-file-path {
-  font-size: 11px;
-  font-family: var(--font-mono);
+  max-width: 172px;
+  padding: 6px 6px 6px 10px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   color: var(--text-tertiary);
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+.detail-tab:active {
+  transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  .detail-tab:hover {
+    background: var(--surface-hover);
+    border-color: var(--border);
+  }
+}
+.detail-tab.active {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.detail-tab-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+.detail-tab.active .detail-tab-icon {
+  color: var(--accent-strong);
+}
+.detail-tab-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.detail-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .detail-tab-close:hover {
+    background: var(--surface-active);
+    color: var(--text);
+  }
+}
+.detail-tab-close:active {
+  transform: scale(0.88);
+}
+
+/* ---------- 地址栏 ---------- */
+.detail-address {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  margin: 8px 10px;
+  padding: 0 7px 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.detail-address-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  flex-shrink: 0;
+}
+.detail-address-dot.subagent {
+  background: var(--accent);
+}
+.detail-address-text {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
 }
 .detail-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: var(--radius-sm);
   color: var(--text-tertiary);
   font-size: 15px;
@@ -1089,6 +1192,27 @@
   color: var(--danger);
 }
 
+/* ---------- 子代理对话页(只读聊天流) ---------- */
+.subagent-chat {
+  padding: 4px 16px 20px;
+}
+.subagent-delegate {
+  text-align: right;
+  margin: 12px 0 -6px;
+}
+.subagent-delegate span {
+  display: inline-block;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--accent-strong);
+  background: var(--accent-dim);
+  border-radius: 999px;
+  padding: 1px 9px;
+}
+.subagent-chat .msg {
+  margin: 12px 0;
+}
+
 /* 文件正文:行号 + 代码 */
 .file-view {
   padding: 10px 0 16px;
@@ -1119,70 +1243,6 @@
   overflow-x: auto;
   color: var(--text-secondary);
   padding-right: 16px;
-}
-
-/* 子代理详情:三段(任务描述/活动日志/最终汇报) */
-.subagent-body {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 14px 16px;
-  overflow-y: auto;
-}
-.subagent-section {
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-}
-.subagent-section-grow {
-  flex: 1;
-  min-height: 120px;
-}
-.subagent-section-title {
-  margin: 0 0 6px;
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  color: var(--text-tertiary);
-}
-.subagent-desc {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.subagent-log {
-  margin: 0;
-  padding: 9px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  line-height: 1.7;
-  color: var(--text-tertiary);
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-y: auto;
-  flex: 1;
-  min-height: 0;
-}
-.subagent-report {
-  margin: 0;
-  padding: 9px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 200px;
-  overflow-y: auto;
 }
 
 /* ---------- 输入区 ---------- */

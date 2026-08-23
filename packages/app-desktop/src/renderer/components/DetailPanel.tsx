@@ -1,16 +1,24 @@
 // =====================================================================
-// 右侧详情栏(第三段布局):文件详情(带行号全文)与子代理详情
-// (任务描述 + 实时活动日志 + 最终汇报)。detail 为 null 时整体隐藏。
+// 右侧详情栏(浏览器式):标签页条 + 地址栏 + 内容区。
+// 打开的文件与子代理窗口都是标签页(可多个、点切换、× 关闭);
+// 地址栏显示当前页地址(file://<path> 或 subagent://<标题>);
+// 左缘手柄可拖拽调宽(pointer capture,localStorage 持久化)。
 // =====================================================================
 
-import { useEffect, useMemo, useRef } from "react";
-import { useStore, type UiMessage, type UiToolBlock } from "../store";
+import { useMemo } from "react";
+import {
+  activateDetailTab,
+  closeDetailTab,
+  useStore,
+  type DetailTab,
+  type UiMessage,
+  type UiToolBlock,
+} from "../store";
 import { fileName } from "./FileCard";
-import { STATE_LABEL } from "./ToolCard";
+import { SubagentChat } from "./SubagentChat";
 
-function closeDetail(): void {
-  useStore.setState({ detail: null });
-}
+const RESIZE_MAX = 640;
+const RESIZE_MIN = 320;
 
 /** 在全部消息里定位 task 工具卡片 */
 function findTaskBlock(messages: UiMessage[], toolCallId: string): UiToolBlock | undefined {
@@ -23,102 +31,165 @@ function findTaskBlock(messages: UiMessage[], toolCallId: string): UiToolBlock |
   return undefined;
 }
 
-function FileDetailPanel({ path }: { path: string }): React.JSX.Element {
+/** 子代理标签标题:task 卡 args.prompt 前 12 字(缺省回落 preview) */
+function subagentTitle(block: UiToolBlock | undefined): string {
+  const prompt = (block?.args as { prompt?: unknown } | null)?.prompt;
+  const text =
+    typeof prompt === "string" && prompt.length > 0
+      ? prompt
+      : block?.preview ?? "子代理任务";
+  return text.length > 12 ? `${text.slice(0, 12)}…` : text;
+}
+
+function FileIcon(): React.JSX.Element {
+  return (
+    <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path
+        d="M3.2 1.8h4.4l3.2 3.2v7.2a1 1 0 0 1-1 1H3.2a1 1 0 0 1-1-1V2.8a1 1 0 0 1 1-1Z"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
+      <path d="M7.6 1.8v3.2h3.2" stroke="currentColor" strokeWidth="1.2" />
+    </svg>
+  );
+}
+
+function SubagentIcon(): React.JSX.Element {
+  return (
+    <svg width="12" height="12" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+      <rect x="1.5" y="1.5" width="10" height="10" rx="2.5" stroke="currentColor" strokeWidth="1.2" />
+      <circle cx="4.6" cy="5" r="0.85" fill="currentColor" />
+      <circle cx="8.4" cy="5" r="0.85" fill="currentColor" />
+      <path
+        d="M4.4 8.2c.6.55 1.3.85 2.1.85s1.5-.3 2.1-.85"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function FileDetailBody({ path }: { path: string }): React.JSX.Element {
   const content = useStore((s) => s.fileContents[path]);
 
-  let body: React.JSX.Element;
   if (content === undefined) {
-    body = <div className="detail-loading">读取中…</div>;
-  } else if (content === null) {
-    body = <div className="detail-error">读取失败:文件不存在或无法访问</div>;
-  } else {
-    const lines = content.replace(/\n$/, "").split("\n");
-    body = (
-      <div className="file-view">
-        {lines.map((line, index) => (
-          <div className="file-line" key={index}>
-            <span className="file-num">{index + 1}</span>
-            <span className="file-code">{line.length > 0 ? line : "\u00A0"}</span>
+    return <div className="detail-loading">读取中…</div>;
+  }
+  if (content === null) {
+    return <div className="detail-error">读取失败:文件不存在或无法访问</div>;
+  }
+  const lines = content.replace(/\n$/, "").split("\n");
+  return (
+    <div className="file-view">
+      {lines.map((line, index) => (
+        <div className="file-line" key={index}>
+          <span className="file-num">{index + 1}</span>
+          <span className="file-code">{line.length > 0 ? line : "\u00A0"}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+interface DetailPanelProps {
+  width: number;
+  onWidthChange: (width: number) => void;
+}
+
+export function DetailPanel({ width, onWidthChange }: DetailPanelProps): React.JSX.Element | null {
+  const tabs = useStore((s) => s.detailTabs);
+  const activeDetailId = useStore((s) => s.activeDetailId);
+  const messages = useStore((s) => s.messages);
+  const active = tabs.find((tab) => tab.id === activeDetailId) ?? null;
+  if (!active) return null;
+
+  const taskBlockOf = useMemo(
+    () => (toolCallId: string) => findTaskBlock(messages, toolCallId),
+    [messages],
+  );
+
+  const tabTitle = (tab: DetailTab): string =>
+    tab.kind === "file"
+      ? fileName(tab.path)
+      : subagentTitle(taskBlockOf(tab.toolCallId));
+
+  const address = (tab: DetailTab): string =>
+    tab.kind === "file"
+      ? `file://${tab.path}`
+      : `subagent://${tabTitle(tab)}`;
+
+  const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    const startX = event.clientX;
+    const startWidth = width;
+    const handle = event.currentTarget;
+    handle.setPointerCapture(event.pointerId);
+    const move = (ev: PointerEvent) => {
+      const next = Math.min(
+        RESIZE_MAX,
+        Math.max(RESIZE_MIN, startWidth + startX - ev.clientX),
+      );
+      onWidthChange(next);
+    };
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+  };
+
+  return (
+    <aside className="detail-panel" style={{ width }}>
+      <div className="detail-tabs">
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            className={`detail-tab${tab.id === active.id ? " active" : ""}`}
+            onClick={() => activateDetailTab(tab.id)}
+            role="tab"
+            aria-selected={tab.id === active.id}
+            title={tab.kind === "file" ? tab.path : tabTitle(tab)}
+          >
+            <span className="detail-tab-icon">
+              {tab.kind === "file" ? <FileIcon /> : <SubagentIcon />}
+            </span>
+            <span className="detail-tab-title">{tabTitle(tab)}</span>
+            <button
+              className="detail-tab-close"
+              onClick={(e) => {
+                e.stopPropagation();
+                closeDetailTab(tab.id);
+              }}
+              aria-label="关闭标签页"
+            >
+              ×
+            </button>
           </div>
         ))}
       </div>
-    );
-  }
-
-  return (
-    <aside className="detail-panel">
-      <div className="detail-head">
-        <div className="detail-head-main">
-          <span className="detail-file-name">{fileName(path)}</span>
-          <span className="detail-file-path">{path}</span>
-        </div>
-        <button className="detail-close" onClick={closeDetail} aria-label="关闭详情">
+      <div className="detail-address">
+        <span className={`detail-address-dot${active.kind === "subagent" ? " subagent" : ""}`} aria-hidden="true" />
+        <span className="detail-address-text" title={address(active)}>
+          {address(active)}
+        </span>
+        <button
+          className="detail-close"
+          onClick={() => closeDetailTab(active.id)}
+          aria-label="关闭当前页"
+          title="关闭当前页"
+        >
           ×
         </button>
       </div>
-      <div className="detail-body">{body}</div>
-    </aside>
-  );
-}
-
-function SubagentDetailPanel({ toolCallId }: { toolCallId: string }): React.JSX.Element {
-  const messages = useStore((s) => s.messages);
-  const block = useMemo(() => findTaskBlock(messages, toolCallId), [messages, toolCallId]);
-  const logRef = useRef<HTMLPreElement>(null);
-
-  // 活动日志实时滚动:新行追加时贴底
-  useEffect(() => {
-    const el = logRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [block?.log]);
-
-  const body = block ? (
-    <div className="detail-body subagent-body">
-      <section className="subagent-section">
-        <h3 className="subagent-section-title">任务描述</h3>
-        <p className="subagent-desc">{block.preview}</p>
-      </section>
-      <section className="subagent-section subagent-section-grow">
-        <h3 className="subagent-section-title">活动日志</h3>
-        <pre ref={logRef} className="subagent-log">
-          {block.log ?? "(暂无活动)"}
-        </pre>
-      </section>
-      <section className="subagent-section">
-        <h3 className="subagent-section-title">最终汇报</h3>
-        <pre className="subagent-report">{block.summary ?? "(暂无汇报)"}</pre>
-      </section>
-    </div>
-  ) : (
-    <div className="detail-body">
-      <div className="detail-loading">任务已结束</div>
-    </div>
-  );
-
-  return (
-    <aside className="detail-panel">
-      <div className="detail-head">
-        <div className="detail-head-main">
-          <span className="detail-title">子代理</span>
-          {block && (
-            <span className={`tool-state-label state-${block.state}`}>
-              {block.state === "executing" && <span className="spin" aria-hidden="true" />}
-              {STATE_LABEL[block.state]}
-            </span>
-          )}
-        </div>
-        <button className="detail-close" onClick={closeDetail} aria-label="关闭详情">
-          ×
-        </button>
+      <div className="detail-body">
+        {active.kind === "file" ? (
+          <FileDetailBody path={active.path} />
+        ) : (
+          <SubagentChat toolCallId={active.toolCallId} />
+        )}
       </div>
-      {body}
+      <div className="detail-resizer" onPointerDown={startResize} />
     </aside>
   );
-}
-
-export function DetailPanel(): React.JSX.Element | null {
-  const detail = useStore((s) => s.detail);
-  if (!detail) return null;
-  if (detail.kind === "file") return <FileDetailPanel path={detail.path} />;
-  return <SubagentDetailPanel toolCallId={detail.toolCallId} />;
 }

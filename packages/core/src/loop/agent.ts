@@ -12,6 +12,7 @@ import type {
   ApprovalRequest,
   ContentBlock,
   Message,
+  SubagentPart,
   TokenUsage,
 } from "@entrotect/shared";
 import path from "node:path";
@@ -209,6 +210,9 @@ export async function runAgent(
         ...toolContextBase,
         subagentLog: (line: string) => {
           deps.emit({ type: "subagent-activity", toolCallId: call.id, text: line });
+        },
+        subagentEmit: (part: SubagentPart) => {
+          deps.emit({ type: "subagent-part", toolCallId: call.id, part });
         },
       };
 

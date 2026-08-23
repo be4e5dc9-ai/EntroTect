@@ -38,7 +38,7 @@ export const taskTool: Tool = {
     if (runner === null) {
       throw new Error("子代理运行器未配置");
     }
-    // 活动日志挂在任务卡片上(主循环注入的 subagentLog 通道)
-    return runner(args.prompt, ctx.subagentLog);
+    // 活动日志挂在任务卡片上(subagentLog),对话片段实时上报(subagentEmit)
+    return runner(args.prompt, ctx.subagentLog, ctx.subagentEmit);
   },
 };

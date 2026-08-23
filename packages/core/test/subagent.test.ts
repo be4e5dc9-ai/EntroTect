@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { AppEvent, ApprovalRequest, Message } from "@entrotect/shared";
+import type { AppEvent, ApprovalRequest, Message, SubagentPart } from "@entrotect/shared";
 import { runAgent } from "../src/loop/agent.js";
 import { buildBuiltinTools } from "../src/tools/registry.js";
 import { taskTool, setTaskRunner } from "../src/tools/task.js";
 import { createSubagentRunner, type SubagentRunner } from "../src/subagent/run.js";
 import type { Provider } from "../src/provider/types.js";
-import { MockProvider, textBlock, toolCall, turnComplete } from "./helpers/mock-provider.js";
+import { MockProvider, textBlock, textDelta, toolCall, turnComplete } from "./helpers/mock-provider.js";
 
 async function makeEnv(): Promise<{ cwd: string; artifactDir: string }> {
   const cwd = await mkdtemp(path.join(tmpdir(), "entrotect-subagent-"));
@@ -54,6 +54,102 @@ describe("task 工具与子代理", () => {
       taskTool.call({ prompt: "x" }, { cwd: ".", artifactDir: "." }),
     ).rejects.toThrow("子代理运行器未配置");
     expect(buildBuiltinTools().map((t) => t.name)).not.toContain("task");
+  });
+
+  it("createSubagentRunner:emitPart 收到完整对话片段流(read→最终文本)", async () => {
+    const { cwd, artifactDir } = await makeEnv();
+    await writeFile(path.join(cwd, "note.txt"), "hello subagent", "utf8");
+
+    // 子代理:第一轮先流式文本再调 read,第二轮给最终文本
+    const subProvider = new MockProvider([
+      {
+        events: [
+          textDelta("让我先读一下 note.txt"),
+          textBlock("让我先读一下 note.txt"),
+          toolCall("s1", "read", JSON.stringify({ file_path: "note.txt" })),
+          turnComplete(),
+        ],
+      },
+      { events: [textBlock("子代理汇报:文件内容为 hello subagent"), turnComplete()] },
+    ]);
+
+    const parts: SubagentPart[] = [];
+    const logLines: string[] = [];
+    const runner = createSubagentRunner({
+      provider: subProvider,
+      tools: buildBuiltinTools(),
+      systemPrompt: "父提示词",
+      approve: async () => ({ decision: "allow-once" as const }),
+      cwd,
+      artifactDir,
+      maxTokens: 2048,
+    });
+
+    const final = await runner(
+      "读取 note.txt 内容并汇报",
+      (line) => logLines.push(line),
+      (part) => parts.push(part),
+    );
+    expect(final).toContain("hello subagent");
+
+    // 片段序列:turn-start 打头,turn-end 收尾,中间含 delta/block/tool-state
+    expect(parts[0]?.kind).toBe("turn-start");
+    expect(parts[parts.length - 1]?.kind).toBe("turn-end");
+
+    const deltaPart = parts.find((p) => p.kind === "delta");
+    expect(deltaPart?.kind === "delta" ? deltaPart.text : "").toContain("让我先读");
+
+    const blockParts = parts.filter((p) => p.kind === "block");
+    expect(
+      blockParts.some((p) => p.kind === "block" && p.block.type === "text"),
+    ).toBe(true);
+    const readBlock = blockParts.find(
+      (p) =>
+        p.kind === "block" &&
+        p.block.type === "tool-call" &&
+        p.block.name === "read",
+    );
+    expect(readBlock).toBeDefined();
+    expect(
+      readBlock?.kind === "block" && readBlock.block.type === "tool-call"
+        ? readBlock.block.id
+        : "",
+    ).toBe("s1");
+
+    // inner tool-state:toolCallId 与工具块 id 一致,生命周期完整
+    const toolStates = parts.filter((p) => p.kind === "tool-state");
+    expect(toolStates).toHaveLength(2);
+    expect(
+      toolStates.some(
+        (p) =>
+          p.kind === "tool-state" && p.toolCallId === "s1" && p.state === "executing",
+      ),
+    ).toBe(true);
+    expect(
+      toolStates.some(
+        (p) =>
+          p.kind === "tool-state" && p.toolCallId === "s1" && p.state === "completed",
+      ),
+    ).toBe(true);
+
+    // 顺序:delta 先于 text 块;read 工具块先于其 tool-state
+    const deltaIdx = parts.findIndex((p) => p.kind === "delta");
+    const textBlockIdx = parts.findIndex(
+      (p) => p.kind === "block" && p.block.type === "text",
+    );
+    expect(deltaIdx).toBeGreaterThanOrEqual(0);
+    expect(textBlockIdx).toBeGreaterThan(deltaIdx);
+    const readIdx = parts.findIndex(
+      (p) =>
+        p.kind === "block" && p.block.type === "tool-call" && p.block.name === "read",
+    );
+    const s1StateIdx = parts.findIndex(
+      (p) => p.kind === "tool-state" && p.toolCallId === "s1",
+    );
+    expect(s1StateIdx).toBeGreaterThan(readIdx);
+
+    // 活动日志行通道不受影响(既有折叠行为)
+    expect(logLines.some((l) => l.includes("note.txt"))).toBe(true);
   });
 
   it("集成:主循环 task → 子代理 read 临时文件 → 汇报回喂;内部事件折叠成 subagent-activity,不入主对话流", async () => {
@@ -150,6 +246,39 @@ describe("task 工具与子代理", () => {
       (e) => e.type === "assistant-delta" && e.text.includes("子代理汇报"),
     );
     expect(leaks).toHaveLength(0);
+
+    // 子代理对话片段:subagent-part 挂 t1 上报,含 read 工具块与最终文本块
+    const partEvents = events.filter(
+      (e): e is Extract<AppEvent, { type: "subagent-part" }> =>
+        e.type === "subagent-part",
+    );
+    const t1Parts = partEvents.filter((e) => e.toolCallId === "t1");
+    expect(t1Parts.length).toBeGreaterThan(0);
+    expect(
+      t1Parts.some(
+        (e) =>
+          e.part.kind === "block" &&
+          e.part.block.type === "tool-call" &&
+          e.part.block.name === "read" &&
+          e.part.block.id === "s1",
+      ),
+    ).toBe(true);
+    expect(
+      t1Parts.some(
+        (e) =>
+          e.part.kind === "block" &&
+          e.part.block.type === "text" &&
+          e.part.block.text.includes("hello subagent"),
+      ),
+    ).toBe(true);
+    expect(
+      t1Parts.some(
+        (e) =>
+          e.part.kind === "tool-state" &&
+          e.part.toolCallId === "s1" &&
+          e.part.state === "completed",
+      ),
+    ).toBe(true);
   });
 
   it("子代理内部 write 成功后,父级 events 无 file-changed(emitInner 折叠)", async () => {

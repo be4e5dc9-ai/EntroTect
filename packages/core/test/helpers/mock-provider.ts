@@ -49,6 +49,11 @@ export function textBlock(text: string): BlockEvent {
   return { type: "block", block: { type: "text", text } };
 }
 
+/** 文本增量(流式) */
+export function textDelta(text: string): BlockEvent {
+  return { type: "text-delta", text };
+}
+
 /** 回合收口 */
 export function turnComplete(usage: { inputTokens: number; outputTokens: number } | null = null): BlockEvent {
   return { type: "turn-complete", finishReason: "stop", usage };

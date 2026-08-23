@@ -9,7 +9,12 @@
 // 审批仍透传父级(弹用户),最终答复作为 tool-result 回喂。
 // =====================================================================
 
-import type { AppEvent, ApprovalRequest, Message } from "@entrotect/shared";
+import type {
+  AppEvent,
+  ApprovalRequest,
+  Message,
+  SubagentPart,
+} from "@entrotect/shared";
 import type { Provider } from "../provider/types.js";
 import type { Tool } from "../tools/types.js";
 import type { ApprovalOutcome } from "../permission/gate.js";
@@ -17,8 +22,15 @@ import { runAgent } from "../loop/agent.js";
 
 type LogLine = (line: string) => void;
 
-/** 子代理运行器:入参任务描述,返回最终答复文本;异常抛给主循环包成 is_error */
-export type SubagentRunner = (prompt: string, log?: LogLine) => Promise<string>;
+/**
+ * 子代理运行器:入参任务描述,返回最终答复文本;异常抛给主循环包成 is_error。
+ * log = 活动日志行通道(任务卡片);emitPart = 对话页片段通道(右侧详情栏)。
+ */
+export type SubagentRunner = (
+  prompt: string,
+  log?: LogLine,
+  emitPart?: (part: SubagentPart) => void,
+) => Promise<string>;
 
 export interface SubagentRunnerDeps {
   provider: Provider;
@@ -56,10 +68,35 @@ function logForEvent(event: AppEvent): string | null {
   return `${symbol} ${event.preview}`;
 }
 
+/** 内部事件 → 对话页片段(只翻译对话语义;error 等不进入) */
+function partForEvent(event: AppEvent): SubagentPart | null {
+  switch (event.type) {
+    case "turn-started":
+      return { kind: "turn-start" };
+    case "assistant-delta":
+      return { kind: "delta", text: event.text };
+    case "assistant-block":
+      return { kind: "block", block: event.block };
+    case "turn-completed":
+      return { kind: "turn-end" };
+    case "tool-state":
+      return {
+        kind: "tool-state",
+        toolCallId: event.toolCallId,
+        state: event.state,
+        preview: event.preview,
+        ...(event.summary !== undefined ? { summary: event.summary } : {}),
+      };
+    default:
+      return null;
+  }
+}
+
 /**
  * 创建子代理运行器。每次调用 runner 都递归跑一轮 runAgent:
  * 独立历史(只有任务 prompt)、过滤后的工具池、固定轮次上限。
- * 内部事件被折叠成活动日志经 log(即工具卡片的 subagentLog)上报。
+ * 内部事件被折叠成活动日志经 log(即工具卡片的 subagentLog)上报,
+ * 同时翻译成 part 经 emitPart 实时流给右侧详情栏对话页。
  */
 export function createSubagentRunner(deps: SubagentRunnerDeps): SubagentRunner {
   // 过滤工具池:去掉 task 自身,子代理不能再派生子代理(v1 深度 1 层)
@@ -67,15 +104,22 @@ export function createSubagentRunner(deps: SubagentRunnerDeps): SubagentRunner {
   // 父提示词提供环境上下文,persona 追加在后(后文角色约束优先级更高)
   const systemPrompt = `${deps.systemPrompt}\n\n${SUBAGENT_SYSTEM_PROMPT}`;
 
-  return async (prompt: string, log?: LogLine): Promise<string> => {
+  return async (
+    prompt: string,
+    log?: LogLine,
+    emitPart?: (part: SubagentPart) => void,
+  ): Promise<string> => {
     const initialMessages: Message[] = [
       { role: "user", content: [{ type: "text", text: prompt }] },
     ];
 
-    // 内部事件在此收口:只有可读步进换成日志行,其余(文本增量/回合事件)不入主对话
+    // 内部事件在此收口:可读步进换成日志行;对话语义翻译成 part;
+    // 其余(文本增量原样/回合事件)要么进 part 要么丢弃,不入主对话
     const emitInner = (event: AppEvent) => {
       const line = logForEvent(event);
       if (line) log?.(line);
+      const part = partForEvent(event);
+      if (part) emitPart?.(part);
     };
 
     log?.("子代理启动");

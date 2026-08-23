@@ -16,6 +16,7 @@ import { Toasts } from "./components/Toasts";
 import { DetailPanel } from "./components/DetailPanel";
 
 const DEFAULT_SIDEBAR_WIDTH = 248;
+const DEFAULT_DETAIL_WIDTH = 420;
 
 export function App(): React.JSX.Element {
   const session = useStore((s) => s.currentSession);
@@ -31,7 +32,11 @@ export function App(): React.JSX.Element {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem("entrotect-sidebar-collapsed") === "1",
   );
-  const detail = useStore((s) => s.detail);
+  const activeDetailId = useStore((s) => s.activeDetailId);
+  const [detailWidth, setDetailWidth] = useState(() => {
+    const saved = Number(localStorage.getItem("entrotect-detail-width"));
+    return saved >= 320 && saved <= 640 ? saved : DEFAULT_DETAIL_WIDTH;
+  });
 
   useEffect(() => {
     const unsubscribe = bridge().onEvent(applyEvent);
@@ -50,6 +55,11 @@ export function App(): React.JSX.Element {
   const persistWidth = (width: number) => {
     setSidebarWidth(width);
     localStorage.setItem("entrotect-sidebar-width", String(width));
+  };
+
+  const persistDetailWidth = (width: number) => {
+    setDetailWidth(width);
+    localStorage.setItem("entrotect-detail-width", String(width));
   };
 
   const collapse = () => {
@@ -101,7 +111,9 @@ export function App(): React.JSX.Element {
             <Composer />
           </main>
         )}
-        {detail && <DetailPanel />}
+        {activeDetailId && (
+          <DetailPanel width={detailWidth} onWidthChange={persistDetailWidth} />
+        )}
       </div>
       <ApprovalModal />
       <Toasts />

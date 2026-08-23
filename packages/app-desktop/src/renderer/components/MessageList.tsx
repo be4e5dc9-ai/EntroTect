@@ -3,7 +3,7 @@
 // =====================================================================
 
 import { useEffect, useRef, useState } from "react";
-import { useStore, type UiMessage } from "../store";
+import { useStore, openSubagentTab, type UiMessage } from "../store";
 import { renderMarkdown } from "../markdown";
 import { bridge } from "../bridge";
 import { ToolCard } from "./ToolCard";
@@ -57,7 +57,8 @@ function ReasoningSection({ text, streaming }: { text: string; streaming: boolea
   );
 }
 
-function Message({ message }: { message: UiMessage }): React.JSX.Element {
+/** 单条消息渲染(导出供子代理对话页复用) */
+export function Message({ message }: { message: UiMessage }): React.JSX.Element {
   const showReasoning = useStore((s) => s.config?.showReasoning ?? false);
 
   if (message.role === "user") {
@@ -94,7 +95,7 @@ function Message({ message }: { message: UiMessage }): React.JSX.Element {
               block={block}
               onOpenDetail={
                 block.name === "task"
-                  ? () => useStore.setState({ detail: { kind: "subagent", toolCallId: block.id } })
+                  ? () => openSubagentTab(block.id)
                   : undefined
               }
             />
