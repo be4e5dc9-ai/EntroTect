@@ -38,12 +38,14 @@
   "build": {
     "appId": "com.entrotect.app",
     "productName": "EntroTect",
+    "artifactName": "EntroTect-Setup-${version}.${ext}",
     "directories": {
       "output": "../../release"
     },
     "files": [
       "dist/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/**"
     ],
     "win": {
       "target": [
@@ -61,7 +63,9 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "EntroTect"
+      "shortcutName": "EntroTect",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
     }
   }
 }
