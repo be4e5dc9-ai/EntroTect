@@ -1,0 +1,23 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+out/
+release/
+*.tsbuildinfo
+
+# Python
+tools/.venv/
+tools/**/__pycache__/
+tools/**/*.pyc
+
+# 环境与密钥
+.env
+.env.*
+*.local.json
+
+# 日志与临时
+*.log
+.DS_Store
+Thumbs.db
