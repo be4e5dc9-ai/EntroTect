@@ -1,6 +1,6 @@
 {
   "name": "@entrotect/app-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "EntroTect - Windows 桌面 Coding Agent",
   "author": "EntroTect",
   "type": "module",
