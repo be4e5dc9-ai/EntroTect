@@ -8,7 +8,11 @@
 //   - fail-closed:审批超时默认 deny,deny 理由回喂模型。
 // =====================================================================
 
-import type { ApprovalDecision, ApprovalRequest } from "@entrotect/shared";
+import type {
+  ApprovalDecision,
+  ApprovalRequest,
+  PermissionMode,
+} from "@entrotect/shared";
 import type { Tool } from "../tools/types.js";
 
 export interface ApprovalOutcome {
@@ -26,27 +30,40 @@ interface PendingApproval {
 /** 审批超时(fail-closed 兜底):10 分钟未响应默认拒绝 */
 const APPROVAL_TIMEOUT_MS = 10 * 60 * 1000;
 
+/**
+ * 权限闸门。模式:
+ *   full  - 完全访问:全部自动放行(免审批)
+ *   write - 修改需批准:只读工具放行,写工具(write/edit/bash)需批准
+ *   ask   - 每项操作需批准:所有工具调用(含只读)都需批准
+ * fail-closed:审批超时默认拒绝,deny 理由回喂模型。
+ */
 export class SessionPermissionGate {
   /** 会话内允许名单(allow-always 按工具名记忆) */
   private readonly alwaysAllowed = new Set<string>();
   private readonly readOnlyTools = new Set<string>();
   private readonly pending = new Map<string, PendingApproval>();
   private readonly timeoutMs: number;
+  private readonly mode: PermissionMode;
 
-  constructor(tools: Tool[], timeoutMs: number = APPROVAL_TIMEOUT_MS) {
+  constructor(tools: Tool[], timeoutMs: number = APPROVAL_TIMEOUT_MS, mode: PermissionMode = "write") {
     for (const tool of tools) {
       if (tool.isReadOnly) this.readOnlyTools.add(tool.name);
     }
     this.timeoutMs = timeoutMs;
+    this.mode = mode;
   }
 
   /**
    * 主循环在每次工具执行前调用。
-   * 只读工具/已 allow-always 的工具即时放行;
+   * full 模式/已 allow-always 的工具即时放行;write 模式只读工具即时放行;
    * 其余挂起,等待 host 调 respond() 或超时 fail-closed deny。
    */
   request(request: ApprovalRequest): Promise<ApprovalOutcome> {
-    if (this.readOnlyTools.has(request.toolName) || this.alwaysAllowed.has(request.toolName)) {
+    const autoAllow =
+      this.mode === "full" ||
+      this.alwaysAllowed.has(request.toolName) ||
+      (this.mode === "write" && this.readOnlyTools.has(request.toolName));
+    if (autoAllow) {
       return Promise.resolve({ decision: "allow-once" });
     }
     return new Promise<ApprovalOutcome>((resolve) => {

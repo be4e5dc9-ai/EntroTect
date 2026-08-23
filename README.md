@@ -21,7 +21,8 @@ Windows 桌面 Coding Agent。设计依据见 `agent-study/`（ClaudeCode / deep
 
 - Agent 主循环：流式对话 → 工具调用 → 本地执行 → 结果回喂，直至无工具调用
 - 6 个内置工具：`read` / `write` / `edit` / `glob` / `grep` / `bash`(PowerShell)
-- 权限闸门：只读工具免审；写/改/bash 三选一审批（允许一次 / 本会话总是允许 / 拒绝并回喂理由）；超时默认拒绝
+- 权限闸门:输入框底栏三模式——完全访问权限(自动放行)/ 修改需批准(只读免审,写操作审批)/ 全部请求均要人批准;审批超时默认拒绝
+- 思考强度:输入框底栏选择 low / high / xhigh / max;设置里可开关"显示模型思考过程"
 - 会话持久化：JSONL append-only 存于 `%APPDATA%\EntroTect\sessions\`，重启可续
 - 输出治理：工具输出超 50KB 自动落盘换预览，防上下文爆炸
 - 协议缝：OpenAI 兼容 provider（DeepSeek/OpenAI/Moonshot/Ollama 等可配）

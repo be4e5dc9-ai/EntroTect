@@ -47,20 +47,25 @@ export interface AppConfig {
   model: string;
   /** 会话工作目录(空 = 用户主目录) */
   workspaceDir?: string;
-  /** 思考强度(发给 OpenAI 兼容 reasoning_effort;off = 不发) */
-  reasoningEffort?: "off" | "low" | "medium" | "high";
+  /** 思考强度(OpenAI 兼容 reasoning_effort;off = 不发) */
+  reasoningEffort?: "off" | "low" | "high" | "xhigh" | "max";
+  /** 权限模式:full = 全部自动放行;write = 写操作需批准;ask = 每个工具调用都需批准 */
+  permissionMode?: PermissionMode;
   /** UI 是否显示模型思考过程 */
   showReasoning?: boolean;
   maxTokens?: number;
   temperature?: number;
 }
 
+export type PermissionMode = "full" | "write" | "ask";
+
 export const DEFAULT_CONFIG: AppConfig = {
   baseUrl: "https://api.deepseek.com/v1",
   apiKey: "",
   model: "deepseek-chat",
   workspaceDir: "",
-  reasoningEffort: "off",
+  reasoningEffort: "high",
+  permissionMode: "write",
   showReasoning: false,
 };
 
@@ -76,6 +81,7 @@ export type Op =
   | { kind: "NewSession" }
   | { kind: "ResumeSession"; sessionId: string }
   | { kind: "ListSessions" }
+  | { kind: "ListModels" }
   | {
       kind: "ApprovalDecision";
       toolCallId: string;
@@ -108,6 +114,7 @@ export interface ApprovalRequest {
 export type AppEvent =
   | { type: "session-meta"; meta: SessionMeta }
   | { type: "sessions-listed"; sessions: SessionMeta[] }
+  | { type: "models-listed"; models: string[] }
   | { type: "message-appended"; message: Message }
   | { type: "assistant-delta"; text: string }
   | { type: "assistant-reasoning-delta"; text: string }
@@ -169,7 +176,8 @@ export const appConfigSchema = z.object({
   apiKey: z.string(),
   model: z.string().min(1),
   workspaceDir: z.string().optional(),
-  reasoningEffort: z.enum(["off", "low", "medium", "high"]).optional(),
+  reasoningEffort: z.enum(["off", "low", "high", "xhigh", "max"]).optional(),
+  permissionMode: z.enum(["full", "write", "ask"]).optional(),
   showReasoning: z.boolean().optional(),
   maxTokens: z.number().positive().optional(),
   temperature: z.number().min(0).max(2).optional(),
@@ -181,6 +189,7 @@ export const opSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("NewSession") }),
   z.object({ kind: z.literal("ResumeSession"), sessionId: z.string() }),
   z.object({ kind: z.literal("ListSessions") }),
+  z.object({ kind: z.literal("ListModels") }),
   z.object({
     kind: z.literal("ApprovalDecision"),
     toolCallId: z.string(),
@@ -194,6 +203,7 @@ export const opSchema = z.discriminatedUnion("kind", [
 export const appEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("session-meta"), meta: sessionMetaSchema }),
   z.object({ type: z.literal("sessions-listed"), sessions: z.array(sessionMetaSchema) }),
+  z.object({ type: z.literal("models-listed"), models: z.array(z.string()) }),
   z.object({ type: z.literal("message-appended"), message: messageSchema }),
   z.object({ type: z.literal("assistant-delta"), text: z.string() }),
   z.object({ type: z.literal("assistant-reasoning-delta"), text: z.string() }),

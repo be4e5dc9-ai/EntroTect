@@ -24,8 +24,8 @@ export interface GenerateOptions {
   tools: Array<{ name: string; description: string; parameters: unknown }>;
   maxTokens: number;
   temperature?: number;
-  /** OpenAI 兼容 reasoning_effort;"off"/undefined = 不发送该参数 */
-  reasoningEffort?: "off" | "low" | "medium" | "high";
+  /** OpenAI 兼容 reasoning_effort(DeepSeek: low / high / xhigh / max;"off" = 不发送) */
+  reasoningEffort?: "off" | "low" | "high" | "xhigh" | "max";
 }
 
 /**

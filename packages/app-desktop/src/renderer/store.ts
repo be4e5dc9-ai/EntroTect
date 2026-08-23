@@ -52,6 +52,7 @@ interface UiState {
   messages: UiMessage[];
   busy: boolean;
   usage: TokenUsage | null;
+  models: string[];
   approval: {
     toolCallId: string;
     toolName: string;
@@ -71,6 +72,7 @@ export const useStore = create<UiState>()(() => ({
   messages: [],
   busy: false,
   usage: null,
+  models: [],
   approval: null,
   config: null,
   settingsOpen: false,
@@ -182,6 +184,9 @@ export function applyEvent(event: AppEvent): void {
     }
     case "sessions-listed":
       useStore.setState({ sessions: event.sessions });
+      break;
+    case "models-listed":
+      useStore.setState({ models: event.models });
       break;
     case "message-appended": {
       const message = event.message;

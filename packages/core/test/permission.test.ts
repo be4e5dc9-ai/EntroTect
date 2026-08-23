@@ -18,6 +18,23 @@ describe("SessionPermissionGate", () => {
     gate.respond("1", "deny");
   });
 
+  it("full 模式:全部工具(含写类)自动放行", async () => {
+    const gate = new SessionPermissionGate(buildBuiltinTools(), TIMEOUT, "full");
+    expect((await gate.request(makeRequest("bash", "f1"))).decision).toBe("allow-once");
+    expect((await gate.request(makeRequest("write", "f2"))).decision).toBe("allow-once");
+    expect((await gate.request(makeRequest("edit", "f3"))).decision).toBe("allow-once");
+  });
+
+  it("ask 模式:只读工具也要批准", async () => {
+    const gate = new SessionPermissionGate(buildBuiltinTools(), TIMEOUT, "ask");
+    const pending = gate.request(makeRequest("read", "a1"));
+    gate.respond("a1", "allow-once");
+    expect((await pending).decision).toBe("allow-once");
+    const pending2 = gate.request(makeRequest("grep", "a2"));
+    gate.respond("a2", "deny", "不需要");
+    expect((await pending2).decision).toBe("deny");
+  });
+
   it("写类工具挂起,respond allow-once 放行", async () => {
     const gate = new SessionPermissionGate(buildBuiltinTools(), TIMEOUT);
     const pending = gate.request(makeRequest("write", "2"));

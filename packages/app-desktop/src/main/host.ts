@@ -12,6 +12,7 @@ import {
   buildBuiltinTools,
   buildSystemPrompt,
   createProvider,
+  listModels,
   loadConfig,
   runAgent,
   saveConfig,
@@ -82,6 +83,15 @@ export class SessionHost {
       case "ListSessions":
         this.emit({ type: "sessions-listed", sessions: await this.store.list() });
         break;
+      case "ListModels":
+        try {
+          const models = await listModels(this.config);
+          this.emit({ type: "models-listed", models });
+        } catch {
+          // 拉取失败不阻塞:至少保证当前模型可选
+          this.emit({ type: "models-listed", models: [this.config.model] });
+        }
+        break;
       case "ApprovalDecision":
         this.active?.gate.respond(op.toolCallId, op.decision, op.reason);
         break;
@@ -98,6 +108,14 @@ export class SessionHost {
     }
   }
 
+  private makeGate(): SessionPermissionGate {
+    return new SessionPermissionGate(
+      buildBuiltinTools(),
+      undefined,
+      this.config.permissionMode ?? "write",
+    );
+  }
+
   private async handleNewSession(): Promise<void> {
     this.teardownActive();
     const meta = await this.store.create({
@@ -107,7 +125,7 @@ export class SessionHost {
     });
     this.active = {
       meta,
-      gate: new SessionPermissionGate(buildBuiltinTools()),
+      gate: this.makeGate(),
       abort: new AbortController(),
       running: false,
     };
@@ -120,7 +138,7 @@ export class SessionHost {
     const { meta, messages } = await this.store.load(sessionId);
     this.active = {
       meta,
-      gate: new SessionPermissionGate(buildBuiltinTools()),
+      gate: this.makeGate(),
       abort: new AbortController(),
       running: false,
     };
@@ -178,11 +196,11 @@ export class SessionHost {
       this.emit({ type: "sessions-listed", sessions: await this.store.list() });
     }
 
-    // 中断上一次的残留(有的话),开新 AbortController
+    // 中断上一次的残留(如果有),开新 AbortController
     run.abort.abort();
     run.gate.dispose();
     run.abort = new AbortController();
-    run.gate = new SessionPermissionGate(buildBuiltinTools());
+    run.gate = this.makeGate();
     run.running = true;
 
     const gate = run.gate;

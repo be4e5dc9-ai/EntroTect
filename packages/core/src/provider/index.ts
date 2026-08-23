@@ -1,5 +1,6 @@
 export * from "./types.js";
 export * from "./sse.js";
+export * from "./models.js";
 export {
   OpenAiCompatibleProvider,
   ProviderError,
