@@ -13,12 +13,15 @@ import "./styles/base.css";
 import "./styles/app.css";
 import { App } from "./App";
 import { bridge } from "./bridge";
-import { useStore, type Theme } from "./store";
+import { applyEvent, useStore, type Theme } from "./store";
 
 // 主题首帧生效:读 localStorage 直接落在 <html data-theme>
 const savedTheme = (localStorage.getItem("entrotect-theme") ?? "dark") as Theme;
 document.documentElement.dataset.theme = savedTheme;
 useStore.setState({ theme: savedTheme });
 bridge().setTheme(savedTheme);
+
+// 调试句柄:E2E 探针与诊断用(只读访问 store/applyEvent)
+(window as unknown as Record<string, unknown>).__entrotectDebug = { useStore, applyEvent };
 
 createRoot(document.getElementById("root")!).render(<App />);

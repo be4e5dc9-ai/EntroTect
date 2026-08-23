@@ -610,6 +610,26 @@ export function applyEvent(event: AppEvent): void {
               });
             }
           }
+          // 恢复会话后点开子代理卡片:用 tool-result 内容重建最终答复
+          // (subagent-part 是内存流,不落盘;历史恢复以此兜底)
+          if (toolBlock?.name === "task") {
+            ensureSubagentChat(result.toolCallId);
+            useStore.setState((state) => ({
+              subagentChats: {
+                ...state.subagentChats,
+                [result.toolCallId]: [
+                  ...(state.subagentChats[result.toolCallId] ?? []),
+                  {
+                    key: nextKey++,
+                    role: "assistant",
+                    blocks: [{ kind: "text", text: result.content }],
+                    streaming: false,
+                    reasoning: "",
+                  },
+                ],
+              },
+            }));
+          }
         }
         return;
       }
