@@ -1,31 +1,91 @@
-import { app, BrowserWindow } from "electron";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+// =====================================================================
+// Electron 主进程:窗口 + IPC 桥 + SessionHost 装配
+// =====================================================================
 
-const here = path.dirname(fileURLToPath(import.meta.url));
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import path from "node:path";
+import { opSchema, type Op } from "@entrotect/shared";
+import { SessionHost } from "./host.js";
+
+// 主进程产物为 CJS,直接用 __dirname 定位资源
+const here = __dirname;
+
+let mainWindow: BrowserWindow | null = null;
+let host: SessionHost | null = null;
 
 function createWindow(): void {
-  const win = new BrowserWindow({
-    width: 1180,
-    height: 800,
-    minWidth: 720,
-    minHeight: 520,
-    backgroundColor: "#0e0e11",
+  mainWindow = new BrowserWindow({
+    width: 1200,
+    height: 820,
+    minWidth: 760,
+    minHeight: 560,
+    show: false,
+    backgroundColor: "#0d0d10",
     autoHideMenuBar: true,
+    icon: path.join(here, "../../build/icon.png"),
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      color: "#0d0d10",
+      symbolColor: "#8f8f9d",
+      height: 40,
+    },
     webPreferences: {
-      preload: path.join(here, "../preload/preload.js"),
+      preload: path.join(here, "../preload/preload.cjs"),
     },
   });
-  win.loadFile(path.join(here, "../renderer/index.html"));
+
+  mainWindow.once("ready-to-show", () => mainWindow?.show());
+  mainWindow.loadFile(path.join(here, "../renderer/index.html"));
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
 }
 
-app.whenReady().then(() => {
-  createWindow();
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
+ipcMain.on("entrotect:op", (_event, raw: unknown) => {
+  const parsed = opSchema.safeParse(raw);
+  if (!parsed.success) {
+    host?.emit({ type: "error", message: `非法操作: ${parsed.error.message}` });
+    return;
+  }
+  void host?.handleOp(parsed.data as Op);
 });
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+ipcMain.handle("entrotect:choose-folder", async () => {
+  const options = {
+    properties: ["openDirectory" as const],
+    title: "选择工作目录",
+  };
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
+  return result.canceled ? null : (result.filePaths[0] ?? null);
 });
+
+// 单实例:重复启动聚焦已有窗口
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+
+  app.whenReady().then(async () => {
+    host = new SessionHost({
+      appDataDir: app.getPath("userData"),
+      getWindow: () => mainWindow,
+    });
+    await host.init();
+    createWindow();
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  });
+
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") app.quit();
+  });
+}

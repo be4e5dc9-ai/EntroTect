@@ -1,0 +1,94 @@
+// =====================================================================
+// 消息与消息列表
+// =====================================================================
+
+import { useEffect, useRef } from "react";
+import { useStore, type UiMessage } from "../store";
+import { renderMarkdown } from "../markdown";
+import { bridge } from "../bridge";
+import { ToolCard } from "./ToolCard";
+
+function Message({ message }: { message: UiMessage }): React.JSX.Element {
+  if (message.role === "user") {
+    const text = message.blocks
+      .filter((b) => b.kind === "text")
+      .map((b) => (b.kind === "text" ? b.text : ""))
+      .join("\n");
+    return (
+      <div className="msg msg-user">
+        <div className="msg-user-bubble">{text}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="msg msg-assistant">
+      <div className="msg-assistant-mark" aria-hidden="true">
+        <img src="./icon.png" alt="" draggable={false} />
+      </div>
+      <div className="msg-assistant-content">
+        {message.blocks.map((block, index) =>
+          block.kind === "text" ? (
+            <div
+              key={`t${index}`}
+              className="markdown"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(block.text) }}
+            />
+          ) : (
+            <ToolCard key={block.id} block={block} />
+          ),
+        )}
+        {message.blocks.length === 0 && message.streaming && (
+          <div className="thinking" aria-label="思考中">
+            <span /><span /><span />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function MessageList(): React.JSX.Element {
+  const messages = useStore((s) => s.messages);
+  const busy = useStore((s) => s.busy);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  // 贴底时自动跟随滚动(用户上翻则尊重其位置)
+  useEffect(() => {
+    const el = bottomRef.current;
+    if (!el) return;
+    el.scrollIntoView({ block: "end" });
+  }, [messages, busy]);
+
+  if (messages.length === 0) {
+    return (
+      <div className="empty-state">
+        <img src="./icon.png" alt="" className="empty-mark" draggable={false} />
+        <h2>让 EntroTect 帮你写代码</h2>
+        <p className="empty-hint">从侧栏新建会话,然后在下方输入任务,例如:</p>
+        <div className="empty-suggestions">
+          <Suggestion text="看看当前目录有什么文件,总结一下这个项目的结构" />
+          <Suggestion text="写一个 Python 脚本,列出磁盘占用最大的 10 个文件" />
+          <Suggestion text="找到项目里的 TODO 注释,整理成清单" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="message-list">
+      {messages.map((message) => (
+        <Message key={message.key} message={message} />
+      ))}
+      <div ref={bottomRef} />
+    </div>
+  );
+}
+
+function Suggestion({ text }: { text: string }): React.JSX.Element {
+  return (
+    <button className="suggestion" onClick={() => bridge().send({ kind: "SendMessage", text })}>
+      {text}
+    </button>
+  );
+}

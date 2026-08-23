@@ -16,8 +16,15 @@ export function configFilePath(appDataDir: string): string {
 export async function loadConfig(appDataDir: string): Promise<AppConfig> {
   let fromFile: Partial<AppConfig> = {};
   try {
-    const raw = await readFile(configFilePath(appDataDir), "utf8");
-    fromFile = appConfigSchema.partial().parse(JSON.parse(raw));
+    // 剥 BOM:兼容其他工具写出的带 BOM 的 config.json
+    const raw = (await readFile(configFilePath(appDataDir), "utf8")).replace(/^\uFEFF/, "");
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    // 兼容旧字段命名:workspace → workspaceDir
+    const normalized = { ...parsed };
+    if (normalized.workspaceDir === undefined && typeof normalized.workspace === "string") {
+      normalized.workspaceDir = normalized.workspace;
+    }
+    fromFile = appConfigSchema.partial().parse(normalized);
   } catch {
     // 文件缺失或损坏 → 回退默认
   }
@@ -26,6 +33,7 @@ export async function loadConfig(appDataDir: string): Promise<AppConfig> {
     baseUrl: process.env.ENTROTECT_BASE_URL ?? fromFile.baseUrl ?? DEFAULT_CONFIG.baseUrl,
     apiKey: process.env.ENTROTECT_API_KEY ?? fromFile.apiKey ?? DEFAULT_CONFIG.apiKey,
     model: process.env.ENTROTECT_MODEL ?? fromFile.model ?? DEFAULT_CONFIG.model,
+    workspaceDir: fromFile.workspaceDir ?? DEFAULT_CONFIG.workspaceDir,
     maxTokens: fromFile.maxTokens,
     temperature: fromFile.temperature,
   };

@@ -18,11 +18,11 @@ TOKENS_DIR = ROOT / "packages" / "shared" / "tokens"
 
 EASINGS = {
     # 强烈 ease-out:UI 出场(进入)反馈,起手快、收尾缓
-    "easeOut": "cubic-bezier(0.23, 1, 0.32, 1)",
+    "out": "cubic-bezier(0.23, 1, 0.32, 1)",
     # 强烈 ease-in-out:屏幕内移动/变形
-    "easeInOut": "cubic-bezier(0.77, 0, 0.175, 1)",
+    "in-out": "cubic-bezier(0.77, 0, 0.175, 1)",
     # iOS 抽屉曲线(Ionic Framework 来源)
-    "easeDrawer": "cubic-bezier(0.32, 0.72, 0, 1)",
+    "drawer": "cubic-bezier(0.32, 0.72, 0, 1)",
 }
 
 # UI 动画全部 < 300ms;按钮按压 100-160ms 档
@@ -83,13 +83,16 @@ def _kebab(name: str) -> str:
             out.append(ch)
     return "".join(out)
 
-
 def css_vars() -> str:
     lines = [":root {"]
     for key, curve in EASINGS.items():
-        lines.append(f"  --ease{_kebab(key)}: {curve};")
+        lines.append(f"  --ease-{key}: {curve};")
     for key, ms in DURATIONS_MS.items():
         lines.append(f"  --dur-{key}: {ms}ms;")
+    # 弹簧烘焙时长一并导出,供 CSS animation-duration 引用
+    for name, params in SPRINGS.items():
+        preset = spring_preset(**params)
+        lines.append(f"  --spring-{name}-ms: {preset['durationMs']}ms;")
     lines.append("}")
     return "\n".join(lines)
 

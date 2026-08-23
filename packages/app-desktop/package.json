@@ -2,17 +2,18 @@
   "name": "@entrotect/app-desktop",
   "version": "0.1.0",
   "type": "module",
-  "main": "dist/main/main.js",
+  "main": "dist/main/main.cjs",
   "scripts": {
     "dev": "pnpm --filter @entrotect/shared build && pnpm --filter @entrotect/core build && pnpm build && electron .",
     "build": "pnpm vite build && pnpm typecheck && pnpm esbuild:main",
     "build:min": "pnpm vite build && pnpm esbuild:main:min",
     "typecheck": "tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
-    "esbuild:main": "esbuild src/main/main.ts src/preload/preload.ts --bundle --platform=node --format=esm --external:electron --outdir=dist --out-extension:.js=.js",
-    "esbuild:main:min": "esbuild src/main/main.ts src/preload/preload.ts --bundle --platform=node --format=esm --external:electron --minify --outdir=dist --out-extension:.js=.js",
+    "esbuild:main": "esbuild src/main/main.ts src/preload/preload.ts --bundle --platform=node --format=cjs --external:electron --outdir=dist --out-extension:.js=.cjs",
+    "esbuild:main:min": "esbuild src/main/main.ts src/preload/preload.ts --bundle --platform=node --format=cjs --external:electron --minify --outdir=dist --out-extension:.js=.cjs",
     "dist": "pnpm build && electron-builder"
   },
   "dependencies": {
+    "@entrotect/core": "workspace:*",
     "@entrotect/shared": "workspace:*",
     "@fontsource/inter": "^5.0.0",
     "@fontsource/jetbrains-mono": "^5.0.0",
@@ -23,6 +24,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@types/markdown-it": "^14.2.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
@@ -47,7 +49,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.ico"

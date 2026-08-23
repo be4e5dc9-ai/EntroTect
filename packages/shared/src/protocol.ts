@@ -45,6 +45,8 @@ export interface AppConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** 会话工作目录(空 = 用户主目录) */
+  workspaceDir?: string;
   maxTokens?: number;
   temperature?: number;
 }
@@ -53,6 +55,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   baseUrl: "https://api.deepseek.com/v1",
   apiKey: "",
   model: "deepseek-chat",
+  workspaceDir: "",
 };
 
 // =====================================================================
@@ -158,6 +161,7 @@ export const appConfigSchema = z.object({
   baseUrl: z.string().min(1),
   apiKey: z.string(),
   model: z.string().min(1),
+  workspaceDir: z.string().optional(),
   maxTokens: z.number().positive().optional(),
   temperature: z.number().min(0).max(2).optional(),
 });
