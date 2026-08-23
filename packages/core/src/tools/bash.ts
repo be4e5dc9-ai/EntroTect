@@ -11,6 +11,7 @@
 import { spawn } from "node:child_process";
 import { z } from "zod";
 import type { Tool, ToolContext } from "./types.js";
+import { analyzeCommand, getSandboxMode } from "../sandbox/index.js";
 
 const DEFAULT_TIMEOUT_SECONDS = 120;
 
@@ -53,6 +54,17 @@ export const bashTool: Tool = {
   preview: (args) => (args as Input).command,
   async call(rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const args = inputSchema.parse(rawArgs);
+
+    // 沙箱:受限模式下先拦危险命令,再决定是否真正 spawn
+    if (getSandboxMode() === "restricted") {
+      const verdict = analyzeCommand(args.command);
+      if (verdict.blocked) {
+        throw new Error(
+          `[沙箱] 已拦截危险命令(${verdict.reason})。如确需执行,请切换权限模式为"完全访问权限"后重试。`,
+        );
+      }
+    }
+
     const timeoutMs = (args.timeout ?? DEFAULT_TIMEOUT_SECONDS) * 1000;
 
     // 目录持久:命令前恢复上次目录,命令后回读最终目录

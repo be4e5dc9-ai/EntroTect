@@ -19,6 +19,8 @@ import type { Tool, ToolContext } from "../tools/types.js";
 import { truncateOutput } from "../tools/output.js";
 import { zodToJsonSchema } from "../tools/zod-json.js";
 import type { ApprovalOutcome } from "../permission/gate.js";
+import type { PluginHooks } from "../plugins/types.js";
+import { applyToolBefore, notifyToolAfter } from "../plugins/manager.js";
 
 export interface AgentDeps {
   provider: Provider;
@@ -42,6 +44,8 @@ export interface AgentDeps {
    * 崩溃后可 resume;append-only,JSONL 层由宿主实现)。
    */
   onMessage?: (message: Message) => Promise<void> | void;
+  /** 插件 hooks(宿主注入):chat.message 改写 / tool.execute 换参与观察 */
+  plugins?: PluginHooks[];
 }
 
 export interface AgentRunResult {
@@ -72,6 +76,7 @@ export async function runAgent(
 ): Promise<AgentRunResult> {
   const history: Message[] = [...initialMessages];
   const toolsByName = new Map(deps.tools.map((tool) => [tool.name, tool]));
+  const pluginHooks = deps.plugins ?? [];
   const maxTurns = deps.maxTurns ?? DEFAULT_MAX_TURNS;
   let lastUsage: TokenUsage | null = null;
   let lastText: string | null = null;
@@ -271,8 +276,23 @@ export async function runAgent(
 
       // 执行 + 截断 + 错误回喂
       try {
-        const output = await tool.call(JSON.parse(call.arguments), toolContext);
+        // 插件 before 钩子:审批通过后、call 之前改写 args
+        const originalArgs = JSON.parse(call.arguments);
+        const rewritten = applyToolBefore(pluginHooks, call.name, originalArgs);
+        let args: unknown = originalArgs;
+        if (typeof rewritten === "string") {
+          try {
+            args = JSON.parse(rewritten);
+          } catch {
+            // 非法 JSON:沿用原 args(管理器内已兜底,此处双保险)
+          }
+        } else {
+          args = rewritten;
+        }
+        const output = await tool.call(args, toolContext);
         const truncated = await truncateOutput(output, deps.artifactDir);
+        // 插件 after 钩子:只观察不修改结果
+        notifyToolAfter(pluginHooks, call.name, truncated.content, false);
         results.push({
           type: "tool-result",
           toolCallId: call.id,
@@ -289,12 +309,14 @@ export async function runAgent(
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        const content = `<tool_use_error>${message}</tool_use_error>`;
+        notifyToolAfter(pluginHooks, call.name, content, true);
         results.push({
           type: "tool-result",
           toolCallId: call.id,
           name: call.name,
           isError: true,
-          content: `<tool_use_error>${message}</tool_use_error>`,
+          content,
         });
         deps.emit({
           type: "tool-state",

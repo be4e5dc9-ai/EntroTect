@@ -51,6 +51,8 @@ export interface AppConfig {
   reasoningEffort?: "off" | "low" | "high" | "xhigh" | "max";
   /** 权限模式:full = 全部自动放行;write = 写操作需批准;ask = 每个工具调用都需批准 */
   permissionMode?: PermissionMode;
+  /** 沙箱模式;restricted 拦截危险命令 */
+  sandboxMode?: "full" | "restricted";
   /** UI 是否显示模型思考过程 */
   showReasoning?: boolean;
   maxTokens?: number;
@@ -66,6 +68,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   workspaceDir: "",
   reasoningEffort: "high",
   permissionMode: "write",
+  sandboxMode: "full",
   showReasoning: false,
 };
 
@@ -180,6 +183,7 @@ export const appConfigSchema = z.object({
   workspaceDir: z.string().optional(),
   reasoningEffort: z.enum(["off", "low", "high", "xhigh", "max"]).optional(),
   permissionMode: z.enum(["full", "write", "ask"]).optional(),
+  sandboxMode: z.enum(["full", "restricted"]).optional(),
   showReasoning: z.boolean().optional(),
   maxTokens: z.number().positive().optional(),
   temperature: z.number().min(0).max(2).optional(),

@@ -18,6 +18,9 @@ import {
   saveConfig,
   SessionPermissionGate,
   SessionStore,
+  applyChatMessage,
+  loadPluginsFromDir,
+  type PluginHooks,
   type Provider,
 } from "@entrotect/core";
 
@@ -41,6 +44,8 @@ export class SessionHost {
   private config!: AppConfig;
   private provider!: Provider;
   private active: ActiveRun | null = null;
+  /** 插件 hooks:{appData}/plugins 下 *.mjs 加载而来,init 时填充 */
+  private plugins: PluginHooks[] = [];
 
   constructor(deps: HostDeps) {
     this.deps = deps;
@@ -50,6 +55,8 @@ export class SessionHost {
   async init(): Promise<void> {
     this.config = await loadConfig(this.deps.appDataDir);
     this.provider = this.makeProvider();
+    const plugins = await loadPluginsFromDir(path.join(this.deps.appDataDir, "plugins"));
+    this.plugins = plugins.map((plugin) => plugin.hooks);
   }
 
   private makeProvider(): Provider {
@@ -208,6 +215,10 @@ export class SessionHost {
   }
 
   private async handleSendMessage(text: string): Promise<void> {
+    // 插件 chat.message 钩子:发送前改写文本;改写成空则不发送
+    text = applyChatMessage(this.plugins, text);
+    if (text.length === 0) return;
+
     const run = await this.ensureSession();
     if (!run) return;
     if (run.running) {
@@ -263,6 +274,7 @@ export class SessionHost {
         artifactDir: this.store.artifactDir(run.meta.id),
         abortSignal: run.abort.signal,
         onMessage: (message) => this.store.appendMessage(run.meta.id, message),
+        plugins: this.plugins,
       });
       if (result.error && !result.interrupted) {
         this.emit({ type: "error", message: result.error });

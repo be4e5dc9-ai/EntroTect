@@ -6,4 +6,8 @@ export * from "./loop/index.js";
 export * from "./prompt/index.js";
 export * from "./permission/index.js";
 export * from "./session/index.js";
+export * from "./plugins/index.js";
+export * from "./subagent/index.js";
+export * from "./tools/task.js";
 export * from "./config.js";
+export * from "./sandbox/index.js";

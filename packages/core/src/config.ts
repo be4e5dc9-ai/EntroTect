@@ -36,6 +36,7 @@ export async function loadConfig(appDataDir: string): Promise<AppConfig> {
     workspaceDir: fromFile.workspaceDir ?? DEFAULT_CONFIG.workspaceDir,
     reasoningEffort: fromFile.reasoningEffort ?? DEFAULT_CONFIG.reasoningEffort,
     permissionMode: fromFile.permissionMode ?? DEFAULT_CONFIG.permissionMode,
+    sandboxMode: fromFile.sandboxMode ?? DEFAULT_CONFIG.sandboxMode,
     showReasoning: fromFile.showReasoning ?? DEFAULT_CONFIG.showReasoning,
     maxTokens: fromFile.maxTokens,
     temperature: fromFile.temperature,
