@@ -23,13 +23,77 @@
 
 /* ---------- 侧栏 ---------- */
 .sidebar {
-  width: 248px;
+  position: relative;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
   padding: 6px 10px 10px;
+  min-width: 0;
+}
+
+/* 右缘拖动手柄 */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 20;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.sidebar-resizer:hover {
+  background: var(--accent-dim);
+}
+.sidebar-resizer:active {
+  background: var(--accent-dim);
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 2px 10px 8px;
+}
+.sidebar-head-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.01em;
+}
+.btn-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+.btn-collapse:active {
+  transform: scale(0.94);
+}
+@media (hover: hover) and (pointer: fine) {
+  .btn-collapse:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+}
+
+/* 收起后在标题栏的展开按钮 */
+.sidebar-peek {
+  position: absolute;
+  top: 5px;
+  left: 8px;
+  height: 28px;
+  padding: 0 10px;
+  -webkit-app-region: no-drag;
 }
 
 .sidebar-brand {
@@ -62,11 +126,59 @@
   flex-direction: column;
   gap: 2px;
 }
+
+/* 任务分组行 */
+.project-group {
+  margin-bottom: 3px;
+}
+.project-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 2px 3px 8px;
+  color: var(--text-tertiary);
+}
+.project-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+}
+.project-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--text-tertiary);
+  opacity: 0;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.project-row:hover .project-add {
+  opacity: 1;
+}
+.project-add:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* 对话行 */
+.session-row {
+  position: relative;
+}
 .session-item {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 8px 10px;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 7px 30px 7px 10px;
   border-radius: var(--radius-sm);
   text-align: left;
   transition:
@@ -74,7 +186,7 @@
     transform var(--dur-press) var(--ease-out);
 }
 .session-item:active {
-  transform: scale(0.98);
+  transform: scale(0.985);
 }
 .session-item:hover {
   background: var(--surface-hover);
@@ -82,7 +194,14 @@
 .session-item.active {
   background: var(--surface-active);
 }
+.session-dot {
+  color: var(--text-tertiary);
+  font-size: 9px;
+  flex-shrink: 0;
+}
 .session-title {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -92,9 +211,41 @@
 .session-item.active .session-title {
   color: var(--text);
 }
-.session-time {
-  font-size: 11px;
+.session-more {
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
   color: var(--text-tertiary);
+  opacity: 0;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.session-row:hover .session-more {
+  opacity: 1;
+}
+.session-more:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.session-confirm {
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: var(--danger);
+  padding: 3px 6px;
+  cursor: pointer;
+  white-space: nowrap;
 }
 .session-empty {
   margin: 12px 10px;
@@ -105,6 +256,9 @@
 .sidebar-footer {
   border-top: 1px solid var(--border);
   padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .settings-btn {
   width: 100%;

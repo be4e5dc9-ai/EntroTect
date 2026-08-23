@@ -10,7 +10,7 @@
 // =====================================================================
 
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   messageSchema,
@@ -90,6 +90,11 @@ export class SessionStore {
     }
     if (!meta) throw new Error(`会话 ${sessionId} 无 meta 行,可能已损坏`);
     return { meta: { ...meta, title: title ?? meta.title }, messages };
+  }
+
+  /** 删除会话(对话)及其产物 */
+  async deleteSession(sessionId: string): Promise<void> {
+    await rm(this.sessionDir(sessionId), { recursive: true, force: true });
   }
 
   /** 列出全部会话,按创建时间倒序 */

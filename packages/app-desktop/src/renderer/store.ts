@@ -183,7 +183,21 @@ export function applyEvent(event: AppEvent): void {
       break;
     }
     case "sessions-listed":
-      useStore.setState({ sessions: event.sessions });
+      useStore.setState((state) => {
+        const current = state.currentSession;
+        const stillExists = current && event.sessions.some((s) => s.id === current.id);
+        if (current && !stillExists) {
+          // 当前对话已被删除:清空视图
+          return {
+            sessions: event.sessions,
+            currentSession: null,
+            messages: [],
+            busy: false,
+            approval: null,
+          };
+        }
+        return { sessions: event.sessions };
+      });
       break;
     case "models-listed":
       useStore.setState({ models: event.models });

@@ -69,7 +69,13 @@ export const bashTool: Tool = {
       const child = spawn(
         "powershell.exe",
         ["-NoProfile", "-NonInteractive", "-Command", wrapped],
-        { cwd: ctx.cwd, windowsHide: true },
+        {
+          cwd: ctx.cwd,
+          windowsHide: true,
+          // stdin 置 ignore:PS 5.1 命令结束后若 stdin pipe 仍开放会挂起不退出
+          // (这是任务管理器残留 powershell/conhost 的根因之一)
+          stdio: ["ignore", "pipe", "pipe"],
+        },
       );
 
       let stdout = "";
@@ -117,6 +123,8 @@ export const bashTool: Tool = {
 
       const onAbort = () => {
         if (child.pid) killTree(child.pid);
+        // abort 也加强势收口:3s 内进程未退则强制 resolve,避免僵尸常驻
+        setTimeout(() => finish(null), 3000);
       };
       ctx.abortSignal?.addEventListener("abort", onAbort);
 

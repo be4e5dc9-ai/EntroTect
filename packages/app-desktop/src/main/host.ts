@@ -77,8 +77,14 @@ export class SessionHost {
       case "NewSession":
         await this.handleNewSession();
         break;
+      case "NewProject":
+        await this.handleNewProject(op.cwd);
+        break;
       case "ResumeSession":
         await this.handleResume(op.sessionId);
+        break;
+      case "DeleteSession":
+        await this.handleDelete(op.sessionId);
         break;
       case "ListSessions":
         this.emit({ type: "sessions-listed", sessions: await this.store.list() });
@@ -130,6 +136,37 @@ export class SessionHost {
       running: false,
     };
     this.emit({ type: "session-meta", meta });
+    this.emit({ type: "sessions-listed", sessions: await this.store.list() });
+  }
+
+  /** 新建任务(指定工作目录)并激活其下第一个对话 */
+  private async handleNewProject(cwd: string): Promise<void> {
+    this.teardownActive();
+    const meta = await this.store.create({
+      title: "新对话",
+      model: this.config.model,
+      cwd,
+    });
+    this.active = {
+      meta,
+      gate: this.makeGate(),
+      abort: new AbortController(),
+      running: false,
+    };
+    this.emit({ type: "session-meta", meta });
+    this.emit({ type: "sessions-listed", sessions: await this.store.list() });
+  }
+
+  /** 删除对话;正在运行的对话拒绝删除 */
+  private async handleDelete(sessionId: string): Promise<void> {
+    if (this.active?.meta.id === sessionId) {
+      if (this.active.running) {
+        this.emit({ type: "error", message: "该对话正在运行中,请先停止再删除" });
+        return;
+      }
+      this.teardownActive();
+    }
+    await this.store.deleteSession(sessionId);
     this.emit({ type: "sessions-listed", sessions: await this.store.list() });
   }
 

@@ -116,7 +116,7 @@ export function MessageList(): React.JSX.Element {
       <div className="empty-state">
         <img src="./icon.png" alt="" className="empty-mark" draggable={false} />
         <h2>让 EntroTect 帮你写代码</h2>
-        <p className="empty-hint">从侧栏新建会话,然后在下方输入任务,例如:</p>
+        <p className="empty-hint">点击侧栏 New 新建任务(选择工作目录),然后在下方输入任务,例如:</p>
         <div className="empty-suggestions">
           <Suggestion text="看看当前目录有什么文件,总结一下这个项目的结构" />
           <Suggestion text="写一个 Python 脚本,列出磁盘占用最大的 10 个文件" />

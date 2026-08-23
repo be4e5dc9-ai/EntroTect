@@ -79,7 +79,9 @@ export type Op =
   | { kind: "SendMessage"; text: string }
   | { kind: "Interrupt" }
   | { kind: "NewSession" }
+  | { kind: "NewProject"; cwd: string }
   | { kind: "ResumeSession"; sessionId: string }
+  | { kind: "DeleteSession"; sessionId: string }
   | { kind: "ListSessions" }
   | { kind: "ListModels" }
   | {
@@ -187,7 +189,9 @@ export const opSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("SendMessage"), text: z.string() }),
   z.object({ kind: z.literal("Interrupt") }),
   z.object({ kind: z.literal("NewSession") }),
+  z.object({ kind: z.literal("NewProject"), cwd: z.string().min(1) }),
   z.object({ kind: z.literal("ResumeSession"), sessionId: z.string() }),
+  z.object({ kind: z.literal("DeleteSession"), sessionId: z.string() }),
   z.object({ kind: z.literal("ListSessions") }),
   z.object({ kind: z.literal("ListModels") }),
   z.object({
