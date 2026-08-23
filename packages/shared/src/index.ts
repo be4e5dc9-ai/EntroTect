@@ -1,1 +1,1 @@
-export const PACKAGE_PLACEHOLDER = "shared";
+export * from "./protocol.js";
