@@ -71,6 +71,10 @@ function cloneConfig(config: AppConfig): AppConfig {
       ...(provider.contextWindows === undefined
         ? {}
         : { contextWindows: { ...provider.contextWindows } }),
+      ...(provider.modelsUrl === undefined ? {} : { modelsUrl: provider.modelsUrl }),
+      ...(provider.apiFormat === undefined ? {} : { apiFormat: provider.apiFormat }),
+      ...(provider.category === undefined ? {} : { category: provider.category }),
+      ...(provider.icon === undefined ? {} : { icon: provider.icon }),
     })),
   };
 }

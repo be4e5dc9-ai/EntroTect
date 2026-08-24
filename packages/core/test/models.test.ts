@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AppConfig } from "@entrotect/shared";
-import { listModels } from "../src/provider/models.js";
+import { buildModelsUrlCandidates, listModels } from "../src/provider/models.js";
 
 type StubResponse = {
   ok: boolean;
@@ -35,7 +35,8 @@ describe("listModels", () => {
     });
 
     expect(requestUrl).toBe("https://api.example.test/v1/models");
-    expect(requestInit).toEqual({ headers: { Authorization: "Bearer secret-key" } });
+    expect(requestInit?.headers).toEqual({ Authorization: "Bearer secret-key" });
+    expect((requestInit as RequestInit & { signal?: AbortSignal })?.signal).toBeDefined();
     expect(result).toEqual({
       models: ["deepseek/deepseek-chat"],
       contextWindows: { "deepseek/deepseek-chat": 1000000 },
@@ -100,5 +101,104 @@ describe("listModels", () => {
     await expect(
       listModels(config, async () => response({ error: "unauthorized" }, 401)),
     ).rejects.toThrow("模型列表接口返回 401");
+  });
+});
+
+describe("buildModelsUrlCandidates", () => {
+  it("strips known compat suffix anthropic into root candidates", () => {
+    expect(buildModelsUrlCandidates("https://api.deepseek.com/anthropic")).toEqual([
+      "https://api.deepseek.com/anthropic/v1/models",
+      "https://api.deepseek.com/v1/models",
+      "https://api.deepseek.com/models",
+    ]);
+  });
+  it("ends_with version segment v4 uses /models then /v1/models fallback", () => {
+    expect(
+      buildModelsUrlCandidates("https://open.bigmodel.cn/api/coding/paas/v4"),
+    ).toEqual([
+      "https://open.bigmodel.cn/api/coding/paas/v4/models",
+      "https://open.bigmodel.cn/api/coding/paas/v4/v1/models",
+    ]);
+  });
+  it("modelsUrl override returns single candidate", () => {
+    expect(
+      buildModelsUrlCandidates("https://x.com", "https://override/models"),
+    ).toEqual(["https://override/models"]);
+  });
+  it("plain root produces single v1/models candidate", () => {
+    expect(buildModelsUrlCandidates("https://api.example.com")).toEqual([
+      "https://api.example.com/v1/models",
+    ]);
+  });
+  it("trims trailing slash", () => {
+    expect(buildModelsUrlCandidates("https://api.example.com/")).toEqual([
+      "https://api.example.com/v1/models",
+    ]);
+  });
+});
+
+describe("listModels candidate fetch", () => {
+  it("tries next candidate on 404 and sorts ids", async () => {
+    const urls: string[] = [];
+    const cfg: AppConfig & { modelsUrl?: string; apiFormat?: string } = {
+      baseUrl: "https://api.deepseek.com/anthropic",
+      apiKey: "k",
+      model: "m",
+    };
+    const fetchImpl = async (input: string | URL | Request, _init?: RequestInit) => {
+      urls.push(String(input));
+      if (urls.length === 1) return response({ error: "not found" }, 404) as unknown as Response;
+      return response({ data: [{ id: "b-model" }, { id: "a-model" }] }) as unknown as Response;
+    };
+    const result = await listModels(cfg as AppConfig, fetchImpl as typeof fetch);
+    expect(urls[0]).toBe("https://api.deepseek.com/anthropic/v1/models");
+    expect(urls[1]).toBe("https://api.deepseek.com/v1/models");
+    expect(result.models).toEqual(["a-model", "b-model"]);
+  });
+
+  it("uses x-api-key header for anthropic format", async () => {
+    let captured: RequestInit | undefined;
+    const cfg: AppConfig & { apiFormat?: string } = {
+      baseUrl: "https://api.example.com",
+      apiKey: "anth-key",
+      model: "m",
+      apiFormat: "anthropic",
+    };
+    await listModels(cfg as AppConfig, async (_input, init) => {
+      captured = init;
+      return response({ data: [{ id: "m1" }] }) as unknown as Response;
+    });
+    expect(captured?.headers).toEqual({ "x-api-key": "anth-key" });
+    expect(captured?.signal).toBeDefined();
+  });
+
+  it("uses x-goog-api-key header for google format", async () => {
+    let captured: RequestInit | undefined;
+    const cfg: AppConfig & { apiFormat?: string } = {
+      baseUrl: "https://api.example.com",
+      apiKey: "goog-key",
+      model: "m",
+      apiFormat: "google",
+    };
+    await listModels(cfg as AppConfig, async (_input, init) => {
+      captured = init;
+      return response({ data: [{ id: "m1" }] }) as unknown as Response;
+    });
+    expect(captured?.headers).toEqual({ "x-goog-api-key": "goog-key" });
+  });
+
+  it("overrides to single URL when modelsUrl provided", async () => {
+    const urls: string[] = [];
+    const cfg: AppConfig & { modelsUrl?: string } = {
+      baseUrl: "https://api.example.com/anthropic",
+      apiKey: "k",
+      model: "m",
+      modelsUrl: "https://override.example.com/models",
+    };
+    await listModels(cfg as AppConfig, async (input) => {
+      urls.push(String(input));
+      return response({ data: [{ id: "x" }] }) as unknown as Response;
+    });
+    expect(urls).toEqual(["https://override.example.com/models"]);
   });
 });

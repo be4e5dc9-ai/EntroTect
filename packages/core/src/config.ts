@@ -20,12 +20,16 @@ export function configFilePath(appDataDir: string): string {
   return path.join(appDataDir, "config.json");
 }
 
-/** 预设供应商 id 集合(迁移与合并都以 id 对齐) */
+/** 预设供应商 id 集合(迁移与合并都以 id 对齐) — 保留 modelsUrl/apiFormat/category/icon */
 function presetProviders(): ProviderConfig[] {
   return (DEFAULT_CONFIG.providers ?? []).map((p) => ({
     ...p,
     models: [...p.models],
     ...(p.contextWindows === undefined ? {} : { contextWindows: { ...p.contextWindows } }),
+    ...(p.modelsUrl === undefined ? {} : { modelsUrl: p.modelsUrl }),
+    ...(p.apiFormat === undefined ? {} : { apiFormat: p.apiFormat }),
+    ...(p.category === undefined ? {} : { category: p.category }),
+    ...(p.icon === undefined ? {} : { icon: p.icon }),
   }));
 }
 

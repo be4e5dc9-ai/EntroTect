@@ -23,13 +23,23 @@ export function createProvider(config: AppConfig): Provider {
   });
 }
 
-/** 按单条供应商配置拉模型列表(薄封装:listModels 只读 baseUrl/apiKey) */
+/** 按单条供应商配置拉模型列表(薄封装:透传 modelsUrl/apiFormat) */
 export function listModelsForProvider(
-  provider: { baseUrl: string; apiKey: string },
+  provider: {
+    baseUrl: string;
+    apiKey: string;
+    modelsUrl?: string;
+    apiFormat?: string;
+  },
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ models: string[]; contextWindows: Record<string, number> }> {
   return listModels(
-    { baseUrl: provider.baseUrl, apiKey: provider.apiKey } as AppConfig,
+    {
+      baseUrl: provider.baseUrl,
+      apiKey: provider.apiKey,
+      modelsUrl: provider.modelsUrl,
+      apiFormat: provider.apiFormat,
+    } as unknown as AppConfig,
     fetchImpl,
   );
 }

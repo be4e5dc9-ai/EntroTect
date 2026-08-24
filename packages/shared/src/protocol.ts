@@ -62,6 +62,14 @@ export interface ProviderConfig {
   contextWindows?: Record<string, number>;
   /** 预设供应商不可删除(可编辑) */
   builtin?: boolean;
+  /** 模型列表端点覆盖(非空时直连该 URL) */
+  modelsUrl?: string;
+  /** 接口协议格式,决定鉴权头 */
+  apiFormat?: "openai" | "anthropic" | "google";
+  /** 供应商分组 */
+  category?: "official" | "cn_official" | "cloud" | "aggregator";
+  /** 图标标识 */
+  icon?: string;
 }
 
 export interface AppConfig {
@@ -301,6 +309,10 @@ export const providerConfigSchema = z.object({
   models: z.array(z.string()),
   contextWindows: z.record(z.string(), z.number().positive().finite()).optional(),
   builtin: z.boolean().optional(),
+  modelsUrl: z.string().optional(),
+  apiFormat: z.enum(["openai", "anthropic", "google"]).optional(),
+  category: z.enum(["official", "cn_official", "cloud", "aggregator"]).optional(),
+  icon: z.string().optional(),
 });
 
 export const appConfigSchema = z.object({
