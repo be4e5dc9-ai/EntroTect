@@ -1,6 +1,6 @@
 // =====================================================================
 // 设置页:替代旧设置弹窗,作为主区独立页面(view === "settings")
-// 分区:供应商(多供应商管理)+ 通用(工作目录 / tokens / 开关)。
+// 分区:供应商(多供应商管理)+ 外观 + 通用(工作目录 / tokens / 开关)。
 // 文本字段走局部 form + 保存按钮(进入瞬间快照,防 config 事件覆盖);
 // showReasoning / sandboxMode 为即时生效开关(点击即保存)。
 // 双栏导航:nav-primary 160px + nav-secondary 220px + detail,active 持久化
@@ -8,11 +8,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { AppConfig, ProviderConfig } from "@entrotect/shared";
-import { mergeCachedProviderDataIntoConfig, useStore } from "../store";
+import { ACCENT_PRESETS } from "../../appearance";
+import { applyAccentColor, applyTheme } from "../appearance";
+import { mergeCachedProviderDataIntoConfig, useStore, type Theme } from "../store";
 import { bridge } from "../bridge";
 
 type FetchState = "fetching" | "ok" | "failed";
-type Primary = "general" | "providers";
+type Primary = "providers" | "appearance" | "general";
 
 /** 快照配置:深拷贝供应商数组,避免表单编辑污染 store */
 function snapshotConfig(config: AppConfig): AppConfig {
@@ -30,6 +32,8 @@ export function SettingsPage(): React.JSX.Element | null {
   const config = useStore((s) => s.config);
   const modelsByProvider = useStore((s) => s.modelsByProvider);
   const contextWindowsByProvider = useStore((s) => s.contextWindowsByProvider);
+  const theme = useStore((s) => s.theme);
+  const accentColor = useStore((s) => s.accentColor);
   // 进入设置页瞬间用最新 config 初始化;编辑期间 config 事件不覆盖表单
   const [form, setForm] = useState<AppConfig | null>(() => {
     const state = useStore.getState();
@@ -50,9 +54,11 @@ export function SettingsPage(): React.JSX.Element | null {
   const [primary, setPrimary] = useState<Primary>(() => {
     try {
       const saved = localStorage.getItem("entrotect-settings-primary");
-      return saved === "providers" ? "providers" : "general";
+      return saved === "providers" || saved === "appearance" || saved === "general"
+        ? saved
+        : "providers";
     } catch {
-      return "general";
+      return "providers";
     }
   });
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(() => {
@@ -157,6 +163,21 @@ export function SettingsPage(): React.JSX.Element | null {
 
   const save = () => {
     bridge().send({ kind: "SetConfig", config: form });
+  };
+
+  const selectTheme = (next: Theme) => {
+    const accent = useStore.getState().accentColor;
+    applyTheme(next, accent);
+    localStorage.setItem("entrotect-theme", next);
+    bridge().setTheme(next);
+    useStore.setState({ theme: next });
+  };
+
+  const selectAccent = (next: string) => {
+    const normalized = applyAccentColor(next, theme);
+    localStorage.setItem("entrotect-accent-color", normalized);
+    bridge().setAccentColor(normalized);
+    useStore.setState({ accentColor: normalized });
   };
 
   const chooseFolder = async () => {
@@ -326,18 +347,25 @@ export function SettingsPage(): React.JSX.Element | null {
       <div className="settings-layout">
         <nav className="settings-nav-primary" aria-label="主导航">
           <button
-            className={`settings-nav-item${primary === "general" ? " active" : ""}`}
-            onClick={() => setPrimary("general")}
-            type="button"
-          >
-            通用
-          </button>
-          <button
             className={`settings-nav-item${primary === "providers" ? " active" : ""}`}
             onClick={() => setPrimary("providers")}
             type="button"
           >
             供应商
+          </button>
+          <button
+            className={`settings-nav-item${primary === "appearance" ? " active" : ""}`}
+            onClick={() => setPrimary("appearance")}
+            type="button"
+          >
+            外观
+          </button>
+          <button
+            className={`settings-nav-item${primary === "general" ? " active" : ""}`}
+            onClick={() => setPrimary("general")}
+            type="button"
+          >
+            通用
           </button>
         </nav>
 
@@ -448,6 +476,77 @@ export function SettingsPage(): React.JSX.Element | null {
                   <button className="btn btn-primary" onClick={save} type="button">
                     保存
                   </button>
+                </div>
+              </section>
+            ) : primary === "appearance" ? (
+              <section className="settings-section appearance-section">
+                <h3 className="settings-section-title">外观</h3>
+
+                <div className="appearance-control">
+                  <div className="field-inline-text">
+                    <span className="field-inline-title">主题</span>
+                    <span className="field-inline-desc">选择日间或夜间模式</span>
+                  </div>
+                  <div className="appearance-theme-options" role="radiogroup" aria-label="主题">
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-label="日间模式"
+                      aria-checked={theme === "light"}
+                      className={`appearance-theme-option${theme === "light" ? " active" : ""}`}
+                      onClick={() => selectTheme("light")}
+                    >
+                      <span className="appearance-theme-option-label">日间模式</span>
+                      <span className="appearance-theme-option-desc">明亮背景，适合白天使用</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-label="夜间模式"
+                      aria-checked={theme === "dark"}
+                      className={`appearance-theme-option${theme === "dark" ? " active" : ""}`}
+                      onClick={() => selectTheme("dark")}
+                    >
+                      <span className="appearance-theme-option-label">夜间模式</span>
+                      <span className="appearance-theme-option-desc">深色背景，减少夜间眩光</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="appearance-control">
+                  <div className="field-inline-text">
+                    <span className="field-inline-title">强调色</span>
+                    <span className="field-inline-desc">选择界面中的强调颜色</span>
+                  </div>
+                  <div className="appearance-color-grid" role="radiogroup" aria-label="强调色">
+                    {ACCENT_PRESETS.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        role="radio"
+                        aria-label={preset.label}
+                        aria-checked={accentColor === preset.color}
+                        className={`appearance-color-option${accentColor === preset.color ? " active" : ""}`}
+                        onClick={() => selectAccent(preset.color)}
+                      >
+                        <span
+                          className="appearance-color-swatch"
+                          style={{ backgroundColor: preset.color }}
+                          aria-hidden="true"
+                        />
+                        <span>{preset.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <label className="appearance-custom-color">
+                    <span>自定义颜色</span>
+                    <input
+                      type="color"
+                      aria-label="自定义颜色"
+                      value={accentColor}
+                      onChange={(e) => selectAccent(e.target.value)}
+                    />
+                  </label>
                 </div>
               </section>
             ) : selectedProvider ? (

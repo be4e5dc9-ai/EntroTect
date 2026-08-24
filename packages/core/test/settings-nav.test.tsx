@@ -25,9 +25,9 @@ function mockBridge() {
   const onEvent = vi.fn(() => () => {});
   const chooseFolder = vi.fn(async () => null);
   const setTheme = vi.fn();
-  // @ts-expect-error mock
-  window.entrotect = { send, onEvent, chooseFolder, setTheme };
-  return { send, onEvent, chooseFolder, setTheme };
+  const setAccentColor = vi.fn();
+  window.entrotect = { send, onEvent, chooseFolder, setTheme, setAccentColor };
+  return { send, onEvent, chooseFolder, setTheme, setAccentColor };
 }
 
 function makeConfig(): AppConfig {
@@ -87,6 +87,7 @@ beforeEach(() => {
     toasts: [],
     error: null,
     theme: "dark",
+    accentColor: "#B8A2FF",
     detailTabs: [],
     activeDetailId: null,
     fileContents: {},
@@ -122,23 +123,48 @@ describe("settings-nav Task1: Nav Shell + State", () => {
     expect(screen.getByText("对话列表")).toBeDefined();
   });
 
-  it("renders nav-primary with 通用 and 供应商, defaults to general", async () => {
+  it("renders 供应商 first and defaults to provider detail", async () => {
     const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
     render(<SettingsPage />);
-    // primary nav exists
-    const primary = document.querySelector(".settings-nav-primary");
-    expect(primary).not.toBeNull();
-    // should have both primary items in nav
-    const nav = primary as HTMLElement;
-    expect(nav.textContent).toContain("通用");
-    expect(nav.textContent).toContain("供应商");
-    // secondary should be hidden when primary=general
+    const items = [...document.querySelectorAll(".settings-nav-item")].map((item) => item.textContent);
+    expect(items).toEqual(["供应商", "外观", "通用"]);
+    expect(document.querySelector(".settings-nav-item.active")?.textContent).toContain("供应商");
+    expect(screen.getByText("Base URL")).toBeDefined();
+    expect(document.querySelector(".settings-nav-secondary")).not.toBeNull();
+  });
+
+  it("opens Appearance with theme and accent controls", async () => {
+    const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
+    render(<SettingsPage />);
+    fireEvent.click(screen.getByRole("button", { name: "外观" }));
+    expect(screen.getByRole("radiogroup", { name: "主题" })).toBeDefined();
+    expect(screen.getByRole("radio", { name: "日间模式" })).toBeDefined();
+    expect(screen.getByRole("radio", { name: "夜间模式" })).toBeDefined();
+    expect(screen.getByRole("radiogroup", { name: "强调色" })).toBeDefined();
+    expect(screen.getByLabelText("自定义颜色")).toBeDefined();
     expect(document.querySelector(".settings-nav-secondary")).toBeNull();
-    // default primary is general -> detail shows 通用 fields
-    expect(screen.getByText(/工作目录/)).toBeDefined();
-    // primary nav active state
-    const active = document.querySelector(".settings-nav-item.active");
-    expect(active?.textContent).toContain("通用");
+  });
+
+  it("switches theme and persists a preset/custom accent immediately", async () => {
+    const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
+    render(<SettingsPage />);
+    fireEvent.click(screen.getByRole("button", { name: "外观" }));
+    fireEvent.click(screen.getByRole("radio", { name: "日间模式" }));
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(localStorage.getItem("entrotect-theme")).toBe("light");
+    fireEvent.click(screen.getByRole("radio", { name: "天空蓝" }));
+    expect(localStorage.getItem("entrotect-accent-color")).toBe("#7CA7FF");
+    expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#7CA7FF");
+    fireEvent.change(screen.getByLabelText("自定义颜色"), { target: { value: "#66c7a5" } });
+    expect(localStorage.getItem("entrotect-accent-color")).toBe("#66C7A5");
+  });
+
+  it("removes the standalone theme button from chat Sidebar", async () => {
+    const { App } = await import("../../app-desktop/src/renderer/App.js");
+    useStore.setState({ view: "chat" });
+    render(<App />);
+    expect(screen.queryByRole("button", { name: /日间模式|夜间模式/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "设置" })).toBeDefined();
   });
 
   it("click 供应商 → secondary list appears and localStorage persists", async () => {
@@ -244,6 +270,7 @@ describe("settings-nav Task2: Provider Detail Table", () => {
 describe("settings-nav Task3: General Pane + Actions", () => {
   it("moves general fields to detail when primary=general, provider detail keeps fetch/modelsUrl/apiFormat", async () => {
     const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
+    localStorage.setItem("entrotect-settings-primary", "general");
     render(<SettingsPage />);
     // general pane visible initially
     expect(screen.getByText(/工作目录/)).toBeDefined();
@@ -267,6 +294,7 @@ describe("settings-nav Task3: General Pane + Actions", () => {
   it("save persists general fields via explicit 保存", async () => {
     const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
     const { bridge } = await import("../../app-desktop/src/renderer/bridge.js");
+    localStorage.setItem("entrotect-settings-primary", "general");
     render(<SettingsPage />);
     // edit workspaceDir
     const input = screen.getByPlaceholderText("留空 = 用户主目录") as HTMLInputElement;

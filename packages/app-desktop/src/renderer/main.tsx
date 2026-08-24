@@ -12,14 +12,22 @@ import "@entrotect/shared/tokens/motion.css";
 import "./styles/base.css";
 import "./styles/app.css";
 import { App } from "./App";
+import {
+  applyAccentColor,
+  applyTheme,
+  readStoredAccentColor,
+  readStoredTheme,
+} from "./appearance";
 import { bridge } from "./bridge";
-import { applyEvent, useStore, type Theme } from "./store";
+import { applyEvent, useStore } from "./store";
 
 // 主题首帧生效:读 localStorage 直接落在 <html data-theme>
-const savedTheme = (localStorage.getItem("entrotect-theme") ?? "dark") as Theme;
-document.documentElement.dataset.theme = savedTheme;
-useStore.setState({ theme: savedTheme });
+const savedTheme = readStoredTheme();
+const savedAccentColor = readStoredAccentColor();
+applyTheme(savedTheme, savedAccentColor);
+useStore.setState({ theme: savedTheme, accentColor: savedAccentColor });
 bridge().setTheme(savedTheme);
+bridge().setAccentColor(savedAccentColor);
 
 // 调试句柄:E2E 探针与诊断用(只读访问 store/applyEvent)
 (window as unknown as Record<string, unknown>).__entrotectDebug = { useStore, applyEvent };
