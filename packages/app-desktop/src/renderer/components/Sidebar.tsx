@@ -150,7 +150,10 @@ export function Sidebar({ width, onWidthChange, onCollapse }: SidebarProps): Rea
                   onClick={() => bridge().send({ kind: "ResumeSession", sessionId: session.id })}
                   title={session.title}
                 >
-                  <span className="session-dot" aria-hidden="true">○</span>
+                  <span
+                    className={`session-dot${currentSession?.id === session.id && busy ? " is-running" : ""}`}
+                    aria-hidden="true"
+                  />
                   <span className="session-title">{session.title || "未命名"}</span>
                 </button>
                 {armedDelete === session.id ? (

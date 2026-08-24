@@ -14,7 +14,7 @@
   --border-strong: rgba(255, 255, 255, 0.13);
   --text: #ececf2;
   --text-secondary: #a3a3b3;
-  --text-tertiary: #68687a;
+  --text-tertiary: #7a7a8c;
   --accent: #b8a2ff;
   --accent-strong: #cfbeff;
   --accent-dim: rgba(184, 162, 255, 0.14);
@@ -24,12 +24,19 @@
   --danger: #f87171;
   --warning: #fbbf24;
   --danger-dim: rgba(248, 113, 113, 0.12);
+  --danger-hover: rgba(248, 113, 113, 0.2);
+  --danger-border: rgba(248, 113, 113, 0.35);
   --modal-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
-  --toast-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --toast-shadow: var(--modal-shadow);
+  /* 层级:菜单/浮层 < 通知 < 模态层 */
+  --z-menu: 150;
+  --z-toast: 200;
+  --z-modal: 300;
   --scrollbar: rgba(255, 255, 255, 0.09);
   --scrollbar-hover: rgba(255, 255, 255, 0.16);
   --code-bg: #16161d;
   --input-bg: #101015;
+  --swatch-border: rgba(255, 255, 255, 0.18);
 
   /* 代码高亮(暗):github-dark 取向 */
   --hl-text: #e6edf3;
@@ -48,6 +55,7 @@
 
   /* 字体 */
   --font-sans: "Inter", "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei", sans-serif;
+  --font-display: "Space Grotesk", "Inter", "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei", sans-serif;
   --font-mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
 }
 
@@ -63,21 +71,24 @@
   --text: #1c1c24;
   --text-secondary: #565664;
   --text-tertiary: #8f8f9e;
-  --accent: #b8a2ff;
-  --accent-strong: #9B82E8;
-  --accent-dim: rgba(184, 162, 255, 0.10);
-  --accent-glow: rgba(184, 162, 255, 0.25);
-  --accent-foreground: #241d34;
+  --accent: #8d6fea;
+  --accent-strong: #745bc0;
+  --accent-dim: rgba(141, 111, 234, 0.10);
+  --accent-glow: rgba(141, 111, 234, 0.25);
+  --accent-foreground: #000000;
   --success: #059669;
   --danger: #dc2626;
   --warning: #d97706;
   --danger-dim: rgba(220, 38, 38, 0.08);
+  --danger-hover: rgba(220, 38, 38, 0.14);
+  --danger-border: rgba(220, 38, 38, 0.35);
   --modal-shadow: 0 20px 48px rgba(24, 24, 40, 0.14);
-  --toast-shadow: 0 10px 28px rgba(24, 24, 40, 0.12);
+  --toast-shadow: var(--modal-shadow);
   --scrollbar: rgba(20, 20, 30, 0.16);
   --scrollbar-hover: rgba(20, 20, 30, 0.3);
   --code-bg: #f6f6fa;
   --input-bg: #ffffff;
+  --swatch-border: var(--border-strong);
 
   /* 代码高亮(日):github-light 取向 */
   --hl-text: #24292e;
@@ -193,14 +204,14 @@ textarea {
   color: var(--danger);
 }
 .btn-danger:hover {
-  background: rgba(248, 113, 113, 0.2);
+  background: var(--danger-hover);
 }
 
 /* ---------- 模态底衬与面板 ---------- */
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -221,9 +232,7 @@ textarea {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   padding: 22px 24px;
-  box-shadow:
-    var(--modal-shadow),
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  box-shadow: var(--modal-shadow);
 }
 
 /* ---------- 表单 ---------- */

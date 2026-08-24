@@ -17,6 +17,7 @@ if (!globalThis.crypto?.randomUUID) {
 }
 
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { deriveAccentTokens } from "../../app-desktop/src/appearance.js";
 import { useStore } from "../../app-desktop/src/renderer/store.js";
 import type { AppConfig } from "@entrotect/shared";
 
@@ -172,7 +173,9 @@ describe("settings-nav Task1: Nav Shell + State", () => {
     expect(useStore.getState().theme).toBe("light");
     fireEvent.click(screen.getByRole("radio", { name: "天空蓝" }));
     expect(localStorage.getItem("entrotect-accent-color")).toBe("#7CA7FF");
-    expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#7CA7FF");
+    expect(document.documentElement.style.getPropertyValue("--accent")).toBe(
+      deriveAccentTokens("#7CA7FF", "light").accent,
+    );
     expect(setAccentColor).toHaveBeenCalledWith("#7CA7FF");
     expect(useStore.getState().accentColor).toBe("#7CA7FF");
     fireEvent.change(screen.getByLabelText("自定义颜色"), { target: { value: "#66c7a5" } });
@@ -198,7 +201,9 @@ describe("settings-nav Task1: Nav Shell + State", () => {
       expect(setTheme).toHaveBeenCalledWith("light");
 
       fireEvent.click(screen.getByRole("radio", { name: "天空蓝" }));
-      expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#7CA7FF");
+      expect(document.documentElement.style.getPropertyValue("--accent")).toBe(
+        deriveAccentTokens("#7CA7FF", "light").accent,
+      );
       expect(useStore.getState().accentColor).toBe("#7CA7FF");
       expect(setAccentColor).toHaveBeenCalledWith("#7CA7FF");
     } finally {

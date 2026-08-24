@@ -1,7 +1,7 @@
 // =====================================================================
-// 右侧详情栏(浏览器式):标签页条 + 地址栏 + 内容区。
+// 右侧详情栏(浏览器式):标签页条 + 路径信息行 + 内容区。
 // 打开的文件与子代理窗口都是标签页(可多个、点切换、× 关闭);
-// 地址栏显示当前页地址(file://<path> 或 subagent://<标题>);
+// 路径信息行显示当前页地址(file://<path> 或 subagent://<标题>);
 // 左缘手柄可拖拽调宽(pointer capture,localStorage 持久化)。
 // =====================================================================
 
@@ -175,24 +175,26 @@ export function DetailPanel({ width, onWidthChange, onCollapse }: DetailPanelPro
         <span className="detail-address-text" title={address(active)}>
           {address(active)}
         </span>
-        <button
-          type="button"
-          className="detail-panel-collapse"
-          onClick={onCollapse}
-          aria-label="Collapse details"
-          title="Collapse details"
-        >
-          <PanelCollapseIcon direction="right" />
-        </button>
-        <button
-          type="button"
-          className="detail-close"
-          onClick={() => closeDetailTab(active.id)}
-          aria-label="关闭当前页"
-          title="关闭当前页"
-        >
-          ×
-        </button>
+        <div className="detail-address-actions">
+          <button
+            type="button"
+            className="detail-panel-collapse"
+            onClick={onCollapse}
+            aria-label="Collapse details"
+            title="Collapse details"
+          >
+            <PanelCollapseIcon direction="right" />
+          </button>
+          <button
+            type="button"
+            className="detail-close"
+            onClick={() => closeDetailTab(active.id)}
+            aria-label="关闭当前页"
+            title="关闭当前页"
+          >
+            ×
+          </button>
+        </div>
       </div>
       <div className="detail-body">
         {active.kind === "file" ? (

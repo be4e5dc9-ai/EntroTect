@@ -18,10 +18,10 @@ const PERMISSION_OPTIONS: Array<MenuOption<NonNullable<AppConfig["permissionMode
 ];
 
 const EFFORT_OPTIONS: Array<MenuOption<NonNullable<AppConfig["reasoningEffort"]>>> = [
-  { value: "low", label: "low" },
-  { value: "high", label: "high" },
-  { value: "xhigh", label: "xhigh" },
-  { value: "max", label: "max" },
+  { value: "low", label: "低 · low" },
+  { value: "high", label: "高 · high" },
+  { value: "xhigh", label: "极高 · xhigh" },
+  { value: "max", label: "最大 · max" },
 ];
 
 /** 兼容旧配置的 effort 值:off/medium 归一为 high */

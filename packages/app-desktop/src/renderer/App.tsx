@@ -91,6 +91,10 @@ export function App(): React.JSX.Element {
   return (
     <div className="app">
       <div className="titlebar">
+        <span
+          className={`titlebar-live${busy ? " is-busy" : ""}`}
+          aria-hidden="true"
+        />
         {view === "chat" && sidebarCollapsed && (
           <button
             type="button"
