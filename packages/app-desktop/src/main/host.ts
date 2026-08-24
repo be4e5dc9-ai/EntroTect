@@ -146,8 +146,8 @@ export class SessionHost {
           break;
         }
         try {
-          const models = await listModelsForProvider(provider);
-          this.emit({ type: "models-listed", providerId, models });
+          const result = await listModelsForProvider(provider);
+          this.emit({ type: "models-listed", providerId, ...result });
         } catch {
           // 拉取失败不打扰用户:renderer 显示"拉取失败"
           this.emit({ type: "models-listed", providerId, models: [] });

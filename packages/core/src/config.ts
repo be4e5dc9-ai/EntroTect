@@ -22,7 +22,11 @@ export function configFilePath(appDataDir: string): string {
 
 /** 预设供应商 id 集合(迁移与合并都以 id 对齐) */
 function presetProviders(): ProviderConfig[] {
-  return (DEFAULT_CONFIG.providers ?? []).map((p) => ({ ...p, models: [...p.models] }));
+  return (DEFAULT_CONFIG.providers ?? []).map((p) => ({
+    ...p,
+    models: [...p.models],
+    ...(p.contextWindows === undefined ? {} : { contextWindows: { ...p.contextWindows } }),
+  }));
 }
 
 /** 把合并后的供应商列表确定 activeProviderId:缺省 deepseek,失效回退第一个 */

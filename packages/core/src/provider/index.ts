@@ -25,7 +25,7 @@ export function createProvider(config: AppConfig): Provider {
 export function listModelsForProvider(
   provider: { baseUrl: string; apiKey: string },
   fetchImpl: typeof fetch = fetch,
-): Promise<string[]> {
+): Promise<{ models: string[]; contextWindows: Record<string, number> }> {
   return listModels(
     { baseUrl: provider.baseUrl, apiKey: provider.apiKey } as AppConfig,
     fetchImpl,

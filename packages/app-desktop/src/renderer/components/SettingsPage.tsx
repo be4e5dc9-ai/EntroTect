@@ -16,7 +16,11 @@ type FetchState = "fetching" | "ok" | "failed";
 function snapshotConfig(config: AppConfig): AppConfig {
   return {
     ...config,
-    providers: config.providers?.map((p) => ({ ...p, models: [...p.models] })),
+    providers: config.providers?.map((p) => ({
+      ...p,
+      models: [...p.models],
+      ...(p.contextWindows === undefined ? {} : { contextWindows: { ...p.contextWindows } }),
+    })),
   };
 }
 
@@ -49,7 +53,13 @@ export function SettingsPage(): React.JSX.Element | null {
             ? {
                 ...f,
                 providers: f.providers?.map((p) =>
-                  p.id === event.providerId ? { ...p, models: event.models } : p,
+                  p.id === event.providerId
+                    ? {
+                        ...p,
+                        models: event.models,
+                        contextWindows: event.contextWindows ?? {},
+                      }
+                    : p,
                 ),
               }
             : f,

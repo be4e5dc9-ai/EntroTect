@@ -51,6 +51,8 @@ export interface ProviderConfig {
   apiKey: string;
   /** 拉取到的模型列表(缓存;用户可手动增删) */
   models: string[];
+  /** 已知模型的上下文窗口(未知模型不写入) */
+  contextWindows?: Record<string, number>;
   /** 预设供应商不可删除(可编辑) */
   builtin?: boolean;
 }
@@ -190,7 +192,12 @@ export type SubagentPart =
 export type AppEvent =
   | { type: "session-meta"; meta: SessionMeta }
   | { type: "sessions-listed"; sessions: SessionMeta[] }
-  | { type: "models-listed"; providerId: string; models: string[] }
+  | {
+      type: "models-listed";
+      providerId: string;
+      models: string[];
+      contextWindows?: Record<string, number>;
+    }
   | { type: "message-appended"; message: Message }
   | { type: "assistant-delta"; text: string }
   | { type: "assistant-reasoning-delta"; text: string }
@@ -264,6 +271,7 @@ export const providerConfigSchema = z.object({
   baseUrl: z.string(),
   apiKey: z.string(),
   models: z.array(z.string()),
+  contextWindows: z.record(z.string(), z.number().positive().finite()).optional(),
   builtin: z.boolean().optional(),
 });
 
@@ -329,6 +337,7 @@ export const appEventSchema = z.discriminatedUnion("type", [
     type: z.literal("models-listed"),
     providerId: z.string(),
     models: z.array(z.string()),
+    contextWindows: z.record(z.string(), z.number().positive().finite()).optional(),
   }),
   z.object({ type: z.literal("message-appended"), message: messageSchema }),
   z.object({ type: z.literal("assistant-delta"), text: z.string() }),
