@@ -95,6 +95,33 @@ beforeEach(() => {
 });
 
 describe("settings-nav Task1: Nav Shell + State", () => {
+  it("hides the conversation shell in settings view while keeping settings navigation", async () => {
+    const { App } = await import("../../app-desktop/src/renderer/App.js");
+    localStorage.setItem("entrotect-sidebar-collapsed", "1");
+    localStorage.setItem("entrotect-detail-collapsed", "1");
+    useStore.setState({
+      view: "settings",
+      detailTabs: [{ id: "file-readme", kind: "file", path: "README.md" }],
+      activeDetailId: "file-readme",
+    });
+    render(<App />);
+
+    expect(screen.queryByText("对话列表")).toBeNull();
+    expect(screen.getByRole("button", { name: "通用" })).toBeDefined();
+    expect(document.querySelector(".sidebar")).toBeNull();
+    expect(document.querySelector(".sidebar-peek")).toBeNull();
+    expect(document.querySelector(".detail-panel")).toBeNull();
+    expect(document.querySelector(".detail-peek")).toBeNull();
+  });
+
+  it("keeps the conversation shell in chat view", async () => {
+    const { App } = await import("../../app-desktop/src/renderer/App.js");
+    useStore.setState({ view: "chat" });
+    render(<App />);
+
+    expect(screen.getByText("对话列表")).toBeDefined();
+  });
+
   it("renders nav-primary with 通用 and 供应商, defaults to general", async () => {
     const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
     render(<SettingsPage />);

@@ -91,7 +91,7 @@ export function App(): React.JSX.Element {
   return (
     <div className="app">
       <div className="titlebar">
-        {sidebarCollapsed && (
+        {view === "chat" && sidebarCollapsed && (
           <button
             type="button"
             className="btn btn-ghost sidebar-peek"
@@ -103,7 +103,7 @@ export function App(): React.JSX.Element {
             对话列表
           </button>
         )}
-        {detailCollapsed && hasDetail && (
+        {view === "chat" && detailCollapsed && hasDetail && (
           <button
             type="button"
             className="btn btn-ghost detail-peek"
@@ -116,7 +116,7 @@ export function App(): React.JSX.Element {
         )}
       </div>
       <div className="app-body">
-        {!sidebarCollapsed && (
+        {view === "chat" && !sidebarCollapsed && (
           <Sidebar width={sidebarWidth} onWidthChange={persistWidth} onCollapse={collapse} />
         )}
         {view === "settings" ? (
@@ -142,7 +142,7 @@ export function App(): React.JSX.Element {
             <Composer />
           </main>
         )}
-        {hasDetail && !detailCollapsed && (
+        {view === "chat" && hasDetail && !detailCollapsed && (
           <DetailPanel
             width={detailWidth}
             onWidthChange={persistDetailWidth}
