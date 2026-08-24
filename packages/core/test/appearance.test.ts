@@ -43,8 +43,15 @@ describe("appearance tokens", () => {
     const light = deriveAccentTokens("#B8A2FF", "light");
     expect(dark.accent).toBe("#B8A2FF");
     expect(dark.accentDim).toMatch(/^rgba\(184, 162, 255, /);
+    expect(dark.accentStrong).toBe("#C5B3FF");
     expect(dark.accentStrong).not.toBe(light.accentStrong);
-    expect(dark.accentForeground).toBe("#241D34");
+    expect(dark.accentForeground).toBe("#000000");
+  });
+
+  it("chooses a WCAG-readable foreground for mid-tone and bright colors", () => {
+    expect(deriveAccentTokens("#808080", "dark").accentForeground).toBe("#000000");
+    expect(deriveAccentTokens("#808080", "light").accentForeground).toBe("#000000");
+    expect(deriveAccentTokens(DEFAULT_ACCENT_COLOR, "dark").accentForeground).toBe("#000000");
   });
 
   it("applies and persists a valid custom color while invalid storage falls back", () => {

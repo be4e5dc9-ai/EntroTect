@@ -181,12 +181,56 @@ describe("settings-nav Task1: Nav Shell + State", () => {
     expect(useStore.getState().accentColor).toBe("#66C7A5");
   });
 
+  it("keeps appearance synchronization when storage persistence throws", async () => {
+    const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
+    render(<SettingsPage />);
+    fireEvent.click(screen.getByRole("button", { name: "外观" }));
+
+    const { setTheme, setAccentColor } = window.entrotect!;
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("storage unavailable");
+    });
+
+    try {
+      fireEvent.click(screen.getByRole("radio", { name: "日间模式" }));
+      expect(document.documentElement.dataset.theme).toBe("light");
+      expect(useStore.getState().theme).toBe("light");
+      expect(setTheme).toHaveBeenCalledWith("light");
+
+      fireEvent.click(screen.getByRole("radio", { name: "天空蓝" }));
+      expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#7CA7FF");
+      expect(useStore.getState().accentColor).toBe("#7CA7FF");
+      expect(setAccentColor).toHaveBeenCalledWith("#7CA7FF");
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
   it("removes the standalone theme button from chat Sidebar", async () => {
     const { App } = await import("../../app-desktop/src/renderer/App.js");
     useStore.setState({ view: "chat" });
     render(<App />);
     expect(screen.queryByRole("button", { name: /日间模式|夜间模式/ })).toBeNull();
     expect(screen.getByRole("button", { name: "设置" })).toBeDefined();
+  });
+
+  it("uses distinct gradient ids for multiple inline brand marks", async () => {
+    const { BrandMark } = await import("../../app-desktop/src/renderer/components/BrandMark.js");
+    const { container } = render(
+      <>
+        <BrandMark className="brand-mark" />
+        <BrandMark className="brand-mark" />
+      </>,
+    );
+    const marks = [...container.querySelectorAll<SVGSVGElement>("svg.brand-mark")];
+    const gradientIds = marks.map((mark) => mark.querySelector("linearGradient")?.id);
+
+    expect(gradientIds).toHaveLength(2);
+    expect(gradientIds[0]).toBeTruthy();
+    expect(new Set(gradientIds).size).toBe(2);
+    expect(marks.map((mark) => mark.querySelector("rect")?.getAttribute("fill"))).toEqual(
+      gradientIds.map((id) => `url(#${id})`),
+    );
   });
 
   it("click 供应商 → secondary list appears and localStorage persists", async () => {

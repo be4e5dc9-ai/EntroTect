@@ -109,7 +109,7 @@ describe("appearance tokens", () => {
     expect(dark.accent).toBe("#B8A2FF");
     expect(dark.accentDim).toMatch(/^rgba\(184, 162, 255, /);
     expect(dark.accentStrong).not.toBe(light.accentStrong);
-    expect(dark.accentForeground).toBe("#241D34");
+    expect(dark.accentForeground).toBe("#000000");
   });
 
   it("applies and persists a valid custom color while invalid storage falls back", () => {
@@ -161,7 +161,7 @@ export interface AccentTokens {
 }
 ```
 
-`deriveAccentTokens(color, "dark")` mixes the base 18% toward white for `accentStrong`, uses alpha `.14` for `accentDim`, and `.35` for `accentGlow`. The light variant mixes 18% toward black and uses alpha `.10` and `.25`. Use relative luminance; return `#241D34` for a luminance above `0.55`, otherwise `#FFFFFF` for `accentForeground`.
+`deriveAccentTokens(color, "dark")` mixes the base 18% toward white for `accentStrong`, uses alpha `.14` for `accentDim`, and `.35` for `accentGlow`. The light variant mixes 18% toward black and uses alpha `.10` and `.25`. Use WCAG relative luminance and contrast ratios; choose `#000000` or `#FFFFFF` for `accentForeground` based on whichever has the higher contrast ratio against the accent.
 
 In `src/renderer/appearance.ts`, wrap localStorage access in `try/catch`, use keys `entrotect-theme` and `entrotect-accent-color`, and make `applyTheme` set `data-theme` before calling `applyAccentColor`. `applyAccentColor` must apply all five returned values as inline custom properties.
 

@@ -168,14 +168,12 @@ export function SettingsPage(): React.JSX.Element | null {
   const selectTheme = (next: Theme) => {
     const accent = useStore.getState().accentColor;
     applyTheme(next, accent);
-    localStorage.setItem("entrotect-theme", next);
     bridge().setTheme(next);
     useStore.setState({ theme: next });
   };
 
   const selectAccent = (next: string) => {
     const normalized = applyAccentColor(next, theme);
-    localStorage.setItem("entrotect-accent-color", normalized);
     bridge().setAccentColor(normalized);
     useStore.setState({ accentColor: normalized });
   };

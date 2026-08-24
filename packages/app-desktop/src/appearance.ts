@@ -42,7 +42,18 @@ function toHex(channels: readonly [number, number, number]): string {
 }
 
 function relativeLuminance(red: number, green: number, blue: number): number {
-  return (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
+  const toLinear = (channel: number): number => {
+    const srgb = channel / 255;
+    return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+  };
+
+  return 0.2126 * toLinear(red) + 0.7152 * toLinear(green) + 0.0722 * toLinear(blue);
+}
+
+function contrastRatio(firstLuminance: number, secondLuminance: number): number {
+  const lighter = Math.max(firstLuminance, secondLuminance);
+  const darker = Math.min(firstLuminance, secondLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
 }
 
 export function deriveAccentTokens(color: string, theme: Theme): AccentTokens {
@@ -63,12 +74,15 @@ export function deriveAccentTokens(color: string, theme: Theme): AccentTokens {
   );
   const alpha = theme === "dark" ? 0.14 : 0.1;
   const glowAlpha = theme === "dark" ? 0.35 : 0.25;
+  const luminance = relativeLuminance(red, green, blue);
+  const blackContrast = contrastRatio(luminance, 0);
+  const whiteContrast = contrastRatio(luminance, 1);
 
   return {
     accent,
     accentStrong,
     accentDim: `rgba(${red}, ${green}, ${blue}, ${alpha})`,
     accentGlow: `rgba(${red}, ${green}, ${blue}, ${glowAlpha})`,
-    accentForeground: relativeLuminance(red, green, blue) > 0.55 ? "#241D34" : "#FFFFFF",
+    accentForeground: blackContrast >= whiteContrast ? "#000000" : "#FFFFFF",
   };
 }
