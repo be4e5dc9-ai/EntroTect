@@ -3,6 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { loadConfig, saveConfig } from "../src/config.js";
+import { PROVIDER_PRESETS } from "../src/provider/presets.js";
 import type { AppConfig } from "@entrotect/shared";describe("config 持久化回环", () => {
   it("showReasoning / reasoningEffort / permissionMode 落盘后可完整读回(回归:曾丢失)", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "entrotect-config-"));
@@ -36,7 +37,7 @@ import type { AppConfig } from "@entrotect/shared";describe("config 持久化回
 });
 
 describe("config 多供应商迁移与回环", () => {
-  it("旧配置(无 providers)迁移:生成 4 预设、旧 key 注入 deepseek、activeProviderId=deepseek", async () => {
+  it("旧配置(无 providers)迁移:生成预设、旧 key 注入 deepseek、activeProviderId=deepseek", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "entrotect-config-"));
     await saveConfig(dir, {
       baseUrl: "https://legacy.example/v1",
@@ -45,10 +46,14 @@ describe("config 多供应商迁移与回环", () => {
     } as AppConfig);
     const loaded = await loadConfig(dir);
 
-    expect(loaded.providers).toHaveLength(4);
+    expect(loaded.providers).toHaveLength(PROVIDER_PRESETS.length);
     const ids = loaded.providers?.map((p) => p.id);
-    expect(ids).toEqual(["deepseek", "openai", "moonshot", "ollama"]);
+    expect(ids).toEqual(PROVIDER_PRESETS.map((p) => p.id));
     expect(loaded.providers?.every((p) => p.builtin === true)).toBe(true);
+    // deepseek 的 modelsUrl 等预设字段应完整保留
+    expect(loaded.providers?.find((p) => p.id === "deepseek")?.modelsUrl).toBe(
+      PROVIDER_PRESETS.find((p) => p.id === "deepseek")?.modelsUrl,
+    );
 
     // 旧字段注入 deepseek 条目
     const deepseek = loaded.providers?.find((p) => p.id === "deepseek");

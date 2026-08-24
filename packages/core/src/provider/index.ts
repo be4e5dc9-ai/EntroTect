@@ -3,6 +3,7 @@ export * from "./sse.js";
 export * from "./models.js";
 export * from "./contexts.js";
 export * from "./catalog.js";
+export * from "./presets.js";
 export {
   OpenAiCompatibleProvider,
   ProviderError,
