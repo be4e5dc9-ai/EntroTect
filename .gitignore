@@ -21,3 +21,6 @@ tools/**/*.pyc
 *.log
 .DS_Store
 Thumbs.db
+
+# Git worktrees
+.worktrees/
