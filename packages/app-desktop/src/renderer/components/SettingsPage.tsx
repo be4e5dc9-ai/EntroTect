@@ -531,7 +531,12 @@ export function SettingsPage(): React.JSX.Element | null {
                       >
                         <span
                           className="appearance-color-swatch"
-                          style={{ backgroundColor: preset.color }}
+                          style={{
+                            display: "inline-block",
+                            width: 20,
+                            height: 20,
+                            backgroundColor: preset.color,
+                          }}
                           aria-hidden="true"
                         />
                         <span>{preset.label}</span>

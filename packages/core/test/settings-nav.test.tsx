@@ -142,21 +142,35 @@ describe("settings-nav Task1: Nav Shell + State", () => {
     expect(screen.getByRole("radio", { name: "夜间模式" })).toBeDefined();
     expect(screen.getByRole("radiogroup", { name: "强调色" })).toBeDefined();
     expect(screen.getByLabelText("自定义颜色")).toBeDefined();
+    const swatches = [...document.querySelectorAll<HTMLElement>(".appearance-color-swatch")];
+    expect(swatches).toHaveLength(5);
+    for (const swatch of swatches) {
+      expect(swatch.style.display).toBe("inline-block");
+      expect(swatch.style.width).toBe("20px");
+      expect(swatch.style.height).toBe("20px");
+    }
     expect(document.querySelector(".settings-nav-secondary")).toBeNull();
   });
 
   it("switches theme and persists a preset/custom accent immediately", async () => {
     const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
+    const { setTheme, setAccentColor } = window.entrotect!;
     render(<SettingsPage />);
     fireEvent.click(screen.getByRole("button", { name: "外观" }));
     fireEvent.click(screen.getByRole("radio", { name: "日间模式" }));
     expect(document.documentElement.dataset.theme).toBe("light");
     expect(localStorage.getItem("entrotect-theme")).toBe("light");
+    expect(setTheme).toHaveBeenCalledWith("light");
+    expect(useStore.getState().theme).toBe("light");
     fireEvent.click(screen.getByRole("radio", { name: "天空蓝" }));
     expect(localStorage.getItem("entrotect-accent-color")).toBe("#7CA7FF");
     expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#7CA7FF");
+    expect(setAccentColor).toHaveBeenCalledWith("#7CA7FF");
+    expect(useStore.getState().accentColor).toBe("#7CA7FF");
     fireEvent.change(screen.getByLabelText("自定义颜色"), { target: { value: "#66c7a5" } });
     expect(localStorage.getItem("entrotect-accent-color")).toBe("#66C7A5");
+    expect(setAccentColor).toHaveBeenLastCalledWith("#66C7A5");
+    expect(useStore.getState().accentColor).toBe("#66C7A5");
   });
 
   it("removes the standalone theme button from chat Sidebar", async () => {
