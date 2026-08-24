@@ -25,6 +25,8 @@ beforeEach(() => {
     activeRunId: null,
     usageUpdatesBlocked: false,
     usageBlockedRunId: null,
+    usageGeneration: 0,
+    invalidatedRunIds: [],
     modelsByProvider: {},
     models: [],
     contextWindowsByProvider: {},
@@ -298,6 +300,24 @@ describe("renderer store: context usage", () => {
     feedRunCompleted("run-1", { inputTokens: 300, outputTokens: 40 });
     expect(useStore.getState().usage).toBeNull();
     feedRunCompleted("run-2", { inputTokens: 400, outputTokens: 50 });
+    expect(useStore.getState().usage).toEqual({ inputTokens: 400, outputTokens: 50 });
+  });
+
+  it("ignores stale run events after a config switch even after the new run starts", () => {
+    const config = settingsConfig({ "saved-model": 64000 });
+    const nextConfig = { ...config, model: "other-model" };
+
+    feedOne({ type: "config", config });
+    feedRunStarted("run-old");
+    feedOne({ type: "config", config: nextConfig });
+    feedRunStarted("run-new");
+
+    feedRunStarted("run-old");
+    feedRunCompleted("run-old", { inputTokens: 900, outputTokens: 90 });
+    expect(useStore.getState().activeRunId).toBe("run-new");
+    expect(useStore.getState().usage).toBeNull();
+
+    feedRunCompleted("run-new", { inputTokens: 400, outputTokens: 50 });
     expect(useStore.getState().usage).toEqual({ inputTokens: 400, outputTokens: 50 });
   });
 

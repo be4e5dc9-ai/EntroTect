@@ -114,6 +114,8 @@ interface UiState {
   activeRunId: string | null;
   usageUpdatesBlocked: boolean;
   usageBlockedRunId: string | null;
+  usageGeneration: number;
+  invalidatedRunIds: string[];
   /** 各供应商的模型缓存(models-listed 事件写入,key = 供应商 id) */
   modelsByProvider: ModelsByProvider;
   /** 各供应商的上下文窗口缓存;仅显式保存时写入配置,供设置页/后续上下文 UI 使用 */
@@ -148,6 +150,8 @@ export const useStore = create<UiState>()(() => ({
   activeRunId: null,
   usageUpdatesBlocked: false,
   usageBlockedRunId: null,
+  usageGeneration: 0,
+  invalidatedRunIds: [],
   modelsByProvider: {},
   contextWindowsByProvider: {},
   approval: null,
@@ -592,6 +596,23 @@ function applySubagentPart(toolCallId: string, part: SubagentPart): void {
 }
 
 // ---------- 事件归约 ----------
+function invalidateUsage(state: UiState): Pick<
+  UiState,
+  "usage" | "usageUpdatesBlocked" | "usageBlockedRunId" | "usageGeneration" | "invalidatedRunIds"
+> {
+  const invalidatedRunIds =
+    state.activeRunId === null || state.invalidatedRunIds.includes(state.activeRunId)
+      ? state.invalidatedRunIds
+      : [...state.invalidatedRunIds, state.activeRunId];
+  return {
+    usage: null,
+    usageUpdatesBlocked: true,
+    usageBlockedRunId: state.activeRunId,
+    usageGeneration: state.usageGeneration + 1,
+    invalidatedRunIds,
+  };
+}
+
 export function applyEvent(event: AppEvent): void {
   switch (event.type) {
     case "session-meta": {
@@ -607,13 +628,7 @@ export function applyEvent(event: AppEvent): void {
           currentSession: event.meta,
           messages: [],
           busy: false,
-          usage: sessionChanged ? null : state.usage,
-          ...(sessionChanged
-            ? {
-                usageUpdatesBlocked: true,
-                usageBlockedRunId: state.activeRunId,
-              }
-            : {}),
+          ...(sessionChanged ? invalidateUsage(state) : { usage: state.usage }),
           approval: null,
           detailTabs: [],
           activeDetailId: null,
@@ -832,6 +847,9 @@ export function applyEvent(event: AppEvent): void {
     }
     case "turn-started":
       useStore.setState((state) => {
+        if (event.runId !== undefined && state.invalidatedRunIds.includes(event.runId)) {
+          return {};
+        }
         // A changed config/session may leave an old run in flight. Its repeated
         // turn-started events must not reopen usage updates as a new run.
         const startsNewRun =
@@ -853,6 +871,9 @@ export function applyEvent(event: AppEvent): void {
       break;
     case "turn-completed":
       useStore.setState((state) => {
+        if (event.runId !== undefined && state.invalidatedRunIds.includes(event.runId)) {
+          return {};
+        }
         const isCurrentRun =
           event.runId === undefined ||
           state.activeRunId === null ||
@@ -908,16 +929,12 @@ export function applyEvent(event: AppEvent): void {
           (state.config?.activeProviderId ?? "deepseek") !==
           (event.config.activeProviderId ?? "deepseek");
         const activeModelChanged = state.config?.model !== event.config.model;
+        const configChanged =
+          state.config && (activeProviderChanged || activeModelChanged);
         return {
           config: event.config,
           contextWindowsByProvider,
-          ...(state.config && (activeProviderChanged || activeModelChanged)
-            ? {
-                usage: null,
-                usageUpdatesBlocked: true,
-                usageBlockedRunId: state.activeRunId,
-              }
-            : {}),
+          ...(configChanged ? invalidateUsage(state) : {}),
         };
       });
       break;
