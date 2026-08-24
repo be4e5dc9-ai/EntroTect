@@ -70,6 +70,7 @@ export class SessionHost {
   private config!: AppConfig;
   private provider!: Provider;
   private active: ActiveRun | null = null;
+  private nextRunId = 0;
   /** 插件 hooks:{appData}/plugins 下 *.mjs 加载而来,init 时填充 */
   private plugins: PluginHooks[] = [];
 
@@ -318,6 +319,15 @@ export class SessionHost {
     run.gate = this.makeGate();
     run.running = true;
 
+    const runId = String(++this.nextRunId);
+    const emitRunEvent = (event: AppEvent): void => {
+      if (event.type === "turn-started" || event.type === "turn-completed") {
+        this.emit({ ...event, runId });
+        return;
+      }
+      this.emit(event);
+    };
+
     const gate = run.gate;
     // parent/child 共用 getter,SetConfig 后每次工具调用读取最新配置。
     const getSandboxMode = () => this.config.sandboxMode ?? "full";
@@ -355,7 +365,7 @@ export class SessionHost {
         maxTokens: this.config.maxTokens ?? MAX_TOKENS_DEFAULT,
         temperature: this.config.temperature,
         reasoningEffort: this.config.reasoningEffort,
-        emit: (event) => this.emit(event),
+        emit: emitRunEvent,
         approve,
         cwd: run.meta.cwd,
         artifactDir: this.store.artifactDir(run.meta.id),
@@ -370,7 +380,7 @@ export class SessionHost {
     } finally {
       run.running = false;
       // 收口:中断/异常路径也要让 UI 退出忙碌态
-      this.emit({ type: "turn-completed", usage: null });
+      this.emit({ type: "turn-completed", usage: null, runId });
     }
   }
 }

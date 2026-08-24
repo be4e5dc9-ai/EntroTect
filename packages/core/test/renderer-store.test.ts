@@ -6,7 +6,7 @@ import {
   mergeCachedProviderDataIntoConfig,
   useStore,
 } from "../../app-desktop/src/renderer/store.js";
-import type { AppConfig, AppEvent } from "@entrotect/shared";
+import type { AppConfig, AppEvent, TokenUsage } from "@entrotect/shared";
 
 // node 环境补 requestAnimationFrame(store 的流式缓冲依赖它)
 (globalThis as Record<string, unknown>).requestAnimationFrame = (
@@ -22,6 +22,9 @@ beforeEach(() => {
     messages: [],
     busy: false,
     usage: null,
+    activeRunId: null,
+    usageUpdatesBlocked: false,
+    usageBlockedRunId: null,
     modelsByProvider: {},
     models: [],
     contextWindowsByProvider: {},
@@ -47,6 +50,14 @@ function feed(events: AppEvent[]): void {
 }
 function feedOne(event: AppEvent): void {
   applyEvent(event);
+}
+
+function feedRunStarted(runId: string): void {
+  feedOne({ type: "turn-started", runId });
+}
+
+function feedRunCompleted(runId: string, usage: TokenUsage | null): void {
+  feedOne({ type: "turn-completed", runId, usage });
 }
 
 function settingsConfig(contextWindows?: Record<string, number>): AppConfig {
@@ -175,20 +186,26 @@ describe("renderer store: context usage", () => {
       type: "session-meta",
       meta: { id: "s1", createdAt: "x", title: "t", model: "m", cwd: "cwd" },
     });
+    feedOne({ type: "turn-started" });
     feedOne({
       type: "turn-completed",
       usage: { inputTokens: 2048, outputTokens: 128 },
     });
+    feedOne({
+      type: "turn-completed",
+      usage: { inputTokens: 4096, outputTokens: 256 },
+    });
     feedOne({ type: "turn-completed", usage: null });
 
-    expect(useStore.getState().usage).toEqual({ inputTokens: 2048, outputTokens: 128 });
+    expect(useStore.getState().usage).toEqual({ inputTokens: 4096, outputTokens: 256 });
   });
 
-  it("keeps usage for same-session metadata updates and clears it for a different session", () => {
+  it("ignores a stale completion after a session switch until the new run starts", () => {
     feedOne({
       type: "session-meta",
       meta: { id: "s1", createdAt: "x", title: "t", model: "m", cwd: "cwd" },
     });
+    feedOne({ type: "turn-started" });
     feedOne({
       type: "turn-completed",
       usage: { inputTokens: 100, outputTokens: 20 },
@@ -203,12 +220,24 @@ describe("renderer store: context usage", () => {
       type: "session-meta",
       meta: { id: "s2", createdAt: "y", title: "new", model: "m", cwd: "cwd" },
     });
+    feedOne({
+      type: "turn-completed",
+      usage: { inputTokens: 200, outputTokens: 30 },
+    });
     expect(useStore.getState().usage).toBeNull();
+
+    feedOne({ type: "turn-started" });
+    feedOne({
+      type: "turn-completed",
+      usage: { inputTokens: 300, outputTokens: 40 },
+    });
+    expect(useStore.getState().usage).toEqual({ inputTokens: 300, outputTokens: 40 });
   });
 
-  it("clears usage when the active model or provider changes", () => {
+  it("clears usage when the active model changes and ignores its stale completion", () => {
     const config = settingsConfig({ "saved-model": 64000 });
     feedOne({ type: "config", config });
+    feedOne({ type: "turn-started" });
     feedOne({
       type: "turn-completed",
       usage: { inputTokens: 100, outputTokens: 20 },
@@ -221,24 +250,55 @@ describe("renderer store: context usage", () => {
       type: "turn-completed",
       usage: { inputTokens: 200, outputTokens: 30 },
     });
+    expect(useStore.getState().usage).toBeNull();
+  });
+
+  it("clears usage when only the active provider changes", () => {
+    const config = settingsConfig({ "saved-model": 64000 });
+    const configWithOpenAi: AppConfig = {
+      ...config,
+      providers: [
+        ...(config.providers ?? []),
+        {
+          id: "openai",
+          name: "OpenAI",
+          baseUrl: "https://openai.example.test/v1",
+          apiKey: "key",
+          models: ["saved-model"],
+        },
+      ],
+    };
+    feedOne({ type: "config", config: configWithOpenAi });
+    feedOne({ type: "turn-started" });
+    feedOne({
+      type: "turn-completed",
+      usage: { inputTokens: 200, outputTokens: 30 },
+    });
+
     feedOne({
       type: "config",
-      config: {
-        ...config,
-        activeProviderId: "openai",
-        providers: [
-          ...(config.providers ?? []),
-          {
-            id: "openai",
-            name: "OpenAI",
-            baseUrl: "https://openai.example.test/v1",
-            apiKey: "key",
-            models: ["other-model"],
-          },
-        ],
-      },
+      config: { ...configWithOpenAi, activeProviderId: "openai" },
     });
     expect(useStore.getState().usage).toBeNull();
+    expect(useStore.getState().config?.model).toBe(configWithOpenAi.model);
+  });
+
+  it("does not accept an old run completion after a new run has started", () => {
+    const config = settingsConfig({ "saved-model": 64000 });
+    feedOne({ type: "config", config });
+    feedRunStarted("run-1");
+    feedRunCompleted("run-1", { inputTokens: 100, outputTokens: 20 });
+
+    feedOne({ type: "config", config: { ...config, model: "other-model" } });
+    feedRunStarted("run-1");
+    feedRunCompleted("run-1", { inputTokens: 200, outputTokens: 30 });
+    expect(useStore.getState().usage).toBeNull();
+
+    feedRunStarted("run-2");
+    feedRunCompleted("run-1", { inputTokens: 300, outputTokens: 40 });
+    expect(useStore.getState().usage).toBeNull();
+    feedRunCompleted("run-2", { inputTokens: 400, outputTokens: 50 });
+    expect(useStore.getState().usage).toEqual({ inputTokens: 400, outputTokens: 50 });
   });
 
   it("returns null when input tokens or context window is missing or non-positive", () => {
@@ -246,6 +306,21 @@ describe("renderer store: context usage", () => {
     expect(getContextSnapshot(2048, undefined)).toBeNull();
     expect(getContextSnapshot(0, 64000)).toBeNull();
     expect(getContextSnapshot(2048, 0)).toBeNull();
+    expect(getContextSnapshot(-1, 64000)).toBeNull();
+    expect(getContextSnapshot(2048, -1)).toBeNull();
+    expect(getContextSnapshot(Number.NaN, 64000)).toBeNull();
+    expect(getContextSnapshot(2048, Number.NaN)).toBeNull();
+    expect(getContextSnapshot(Number.POSITIVE_INFINITY, 64000)).toBeNull();
+    expect(getContextSnapshot(2048, Number.POSITIVE_INFINITY)).toBeNull();
+  });
+
+  it("calculates a normal context ratio and exact remaining tokens", () => {
+    expect(getContextSnapshot(204100, 1000000)).toEqual({
+      inputTokens: 204100,
+      contextWindow: 1000000,
+      usedRatio: 0.2041,
+      remainingTokens: 795900,
+    });
   });
 
   it("clamps context usage and never returns a negative remaining count", () => {

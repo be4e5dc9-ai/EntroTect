@@ -111,6 +111,9 @@ interface UiState {
   messages: UiMessage[];
   busy: boolean;
   usage: TokenUsage | null;
+  activeRunId: string | null;
+  usageUpdatesBlocked: boolean;
+  usageBlockedRunId: string | null;
   /** 各供应商的模型缓存(models-listed 事件写入,key = 供应商 id) */
   modelsByProvider: ModelsByProvider;
   /** 各供应商的上下文窗口缓存;仅显式保存时写入配置,供设置页/后续上下文 UI 使用 */
@@ -142,6 +145,9 @@ export const useStore = create<UiState>()(() => ({
   messages: [],
   busy: false,
   usage: null,
+  activeRunId: null,
+  usageUpdatesBlocked: false,
+  usageBlockedRunId: null,
   modelsByProvider: {},
   contextWindowsByProvider: {},
   approval: null,
@@ -593,21 +599,28 @@ export function applyEvent(event: AppEvent): void {
       deltaBuffer = "";
       reasoningBuffer = "";
       clearSubagentDeltaBuffers();
-      useStore.setState((state) => ({
-        currentSession: event.meta,
-        messages: [],
-        busy: false,
-        usage:
-          state.currentSession?.id === event.meta.id &&
-          state.currentSession.model === event.meta.model
-            ? state.usage
-            : null,
-        approval: null,
-        detailTabs: [],
-        activeDetailId: null,
-        fileContents: {},
-        subagentChats: {},
-      }));
+      useStore.setState((state) => {
+        const sessionChanged =
+          state.currentSession?.id !== event.meta.id ||
+          state.currentSession?.model !== event.meta.model;
+        return {
+          currentSession: event.meta,
+          messages: [],
+          busy: false,
+          usage: sessionChanged ? null : state.usage,
+          ...(sessionChanged
+            ? {
+                usageUpdatesBlocked: true,
+                usageBlockedRunId: state.activeRunId,
+              }
+            : {}),
+          approval: null,
+          detailTabs: [],
+          activeDetailId: null,
+          fileContents: {},
+          subagentChats: {},
+        };
+      });
       break;
     }
     case "sessions-listed":
@@ -818,24 +831,45 @@ export function applyEvent(event: AppEvent): void {
       break;
     }
     case "turn-started":
-      useStore.setState((state) => ({
-        busy: true,
-        messages: [
-          ...state.messages,
-          { key: nextKey++, role: "assistant", blocks: [], streaming: true, reasoning: "" },
-        ],
-      }));
+      useStore.setState((state) => {
+        // A changed config/session may leave an old run in flight. Its repeated
+        // turn-started events must not reopen usage updates as a new run.
+        const startsNewRun =
+          !state.usageUpdatesBlocked ||
+          state.usageBlockedRunId === null ||
+          event.runId === undefined ||
+          event.runId !== state.usageBlockedRunId;
+        return {
+          busy: true,
+          activeRunId: event.runId ?? state.activeRunId,
+          usageUpdatesBlocked: startsNewRun ? false : true,
+          usageBlockedRunId: startsNewRun ? null : state.usageBlockedRunId,
+          messages: [
+            ...state.messages,
+            { key: nextKey++, role: "assistant", blocks: [], streaming: true, reasoning: "" },
+          ],
+        };
+      });
       break;
     case "turn-completed":
-      useStore.setState((state) => ({
-        busy: false,
-        usage: event.usage ?? state.usage,
-        messages: state.messages.map((message, index) =>
-          index === state.messages.length - 1 && message.role === "assistant"
-            ? { ...message, streaming: false }
-            : message,
-        ),
-      }));
+      useStore.setState((state) => {
+        const isCurrentRun =
+          event.runId === undefined ||
+          state.activeRunId === null ||
+          event.runId === state.activeRunId;
+        return {
+          busy: false,
+          usage:
+            event.usage !== null && !state.usageUpdatesBlocked && isCurrentRun
+              ? event.usage
+              : state.usage,
+          messages: state.messages.map((message, index) =>
+            index === state.messages.length - 1 && message.role === "assistant"
+              ? { ...message, streaming: false }
+              : message,
+          ),
+        };
+      });
       break;
     case "tool-state":
       updateToolState(event.toolCallId, {
@@ -878,7 +912,11 @@ export function applyEvent(event: AppEvent): void {
           config: event.config,
           contextWindowsByProvider,
           ...(state.config && (activeProviderChanged || activeModelChanged)
-            ? { usage: null }
+            ? {
+                usage: null,
+                usageUpdatesBlocked: true,
+                usageBlockedRunId: state.activeRunId,
+              }
             : {}),
         };
       });
