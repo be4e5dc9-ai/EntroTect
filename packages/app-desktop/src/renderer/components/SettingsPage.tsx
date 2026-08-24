@@ -563,6 +563,27 @@ function ProviderCard({
             spellCheck={false}
           />
         </label>
+        <label className="field">
+          <span>Models URL</span>
+          <input
+            value={provider.modelsUrl ?? ""}
+            onChange={(e) => onPatch({ modelsUrl: e.target.value || undefined })}
+            placeholder="https://api.example.com/models"
+            spellCheck={false}
+          />
+        </label>
+        <label className="field">
+          <span>API Format</span>
+          <select
+            value={provider.apiFormat ?? "openai"}
+            onChange={(e) => onPatch({ apiFormat: e.target.value as ProviderConfig["apiFormat"] })}
+            aria-label="API Format"
+          >
+            <option value="openai">openai</option>
+            <option value="anthropic">anthropic</option>
+            <option value="google">google</option>
+          </select>
+        </label>
       </div>
 
       <div className="provider-models">

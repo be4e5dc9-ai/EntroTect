@@ -213,3 +213,89 @@ describe("settings-nav Task2: Provider Detail Table", () => {
     expect(screen.queryByText("deepseek-chat")).toBeNull();
   });
 });
+
+describe("settings-nav Task3: General Pane + Actions", () => {
+  it("moves general fields to detail when primary=general, provider detail keeps fetch/modelsUrl/apiFormat", async () => {
+    const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
+    render(<SettingsPage />);
+    // general pane visible initially
+    expect(screen.getByText(/工作目录/)).toBeDefined();
+    expect(screen.getByText(/最大输出 tokens/)).toBeDefined();
+    expect(document.querySelector(".switch")).not.toBeNull();
+    // provider detail not visible yet
+    expect(document.querySelector(".provider-grid")).toBeNull();
+    // switch to providers
+    fireEvent.click(screen.getByText("供应商"));
+    await waitFor(() => expect(document.querySelector(".provider-grid")).not.toBeNull());
+    // now general fields hidden in provider detail
+    expect(screen.queryByText(/工作目录/)).toBeNull();
+    // provider detail has baseUrl, apiKey, modelsUrl, apiFormat, fetch
+    expect(screen.getByText("Base URL")).toBeDefined();
+    expect(screen.getByText("API Key")).toBeDefined();
+    expect(screen.getByText("Models URL")).toBeDefined();
+    expect(screen.getByText("API Format")).toBeDefined();
+    expect(screen.getByText("拉取模型")).toBeDefined();
+  });
+
+  it("save persists general fields via explicit 保存", async () => {
+    const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
+    const { bridge } = await import("../../app-desktop/src/renderer/bridge.js");
+    render(<SettingsPage />);
+    // edit workspaceDir
+    const input = screen.getByPlaceholderText("留空 = 用户主目录") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "/new/workspace" } });
+    const saveBtn = screen.getByText("保存");
+    // mock send to capture
+    const sendMock = (window as unknown as { entrotect: { send: ReturnType<typeof vi.fn> } }).entrotect.send as unknown as ReturnType<typeof vi.fn>;
+    fireEvent.click(saveBtn);
+    expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "SetConfig",
+      config: expect.objectContaining({ workspaceDir: "/new/workspace" }),
+    }));
+    // also test that provider merge keeps contextWindows
+    // change maxTokens and save
+    const maxInput = document.querySelector('input[type="number"]') as HTMLInputElement;
+    fireEvent.change(maxInput, { target: { value: "8192" } });
+    fireEvent.click(saveBtn);
+    expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({ maxTokens: 8192 }),
+    }));
+  });
+
+  it("provider detail edits modelsUrl/apiFormat and save persists", async () => {
+    const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
+    render(<SettingsPage />);
+    fireEvent.click(screen.getByText("供应商"));
+    await waitFor(() => expect(document.querySelector(".provider-grid")).not.toBeNull());
+    const modelsUrlInput = screen.getByPlaceholderText("https://api.example.com/models") as HTMLInputElement;
+    fireEvent.change(modelsUrlInput, { target: { value: "https://custom.example.com/models" } });
+    const apiFormatSelect = screen.getByLabelText("API Format") as HTMLSelectElement;
+    fireEvent.change(apiFormatSelect, { target: { value: "anthropic" } });
+    const saveBtn = screen.getAllByText("保存")[0] as HTMLButtonElement;
+    const sendMock = (window as unknown as { entrotect: { send: ReturnType<typeof vi.fn> } }).entrotect.send as unknown as ReturnType<typeof vi.fn>;
+    fireEvent.click(saveBtn);
+    expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "SetConfig",
+      config: expect.objectContaining({
+        providers: expect.arrayContaining([
+          expect.objectContaining({ id: "deepseek", modelsUrl: "https://custom.example.com/models", apiFormat: "anthropic" }),
+        ]),
+      }),
+    }));
+  });
+
+  it("reuses modelsByProvider/contextWindowsByProvider cache via mergeCachedProviderDataIntoConfig", async () => {
+    // This checks that the page still merges cached data into form
+    const { applyEvent, useStore } = await import("../../app-desktop/src/renderer/store.js");
+    const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
+    // simulate cached data before mount
+    applyEvent({ type: "models-listed", providerId: "deepseek", models: ["cached-model"], contextWindows: { "cached-model": 99999 } });
+    render(<SettingsPage />);
+    fireEvent.click(screen.getByText("供应商"));
+    await waitFor(() => expect(document.querySelector(".model-table")).not.toBeNull());
+    // cached model should appear via merge
+    expect(screen.getByText("cached-model")).toBeDefined();
+    const ctx = screen.getByLabelText("cached-model 的上下文窗口(tokens),留空为自动识别") as HTMLInputElement;
+    expect(ctx.value).toBe("99999");
+  });
+});
