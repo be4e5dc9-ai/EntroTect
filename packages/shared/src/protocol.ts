@@ -213,6 +213,14 @@ export type AppEvent =
   | { type: "subagent-activity"; toolCallId: string; text: string }
   /** 子代理对话页片段(toolCallId = 主循环里 task 工具的调用 id) */
   | { type: "subagent-part"; toolCallId: string; part: SubagentPart }
+  /** SendMessage 被 host 接受时立即登记,防止首个 turn-started 迟到后借用新上下文 */
+  | {
+      type: "run-registered";
+      runId: string;
+      sessionId: string;
+      providerId: string;
+      model: string;
+    }
   | {
       type: "turn-started";
       runId?: string;
@@ -373,6 +381,13 @@ export const appEventSchema = z.discriminatedUnion("type", [
     part: subagentPartSchema,
   }),
   z.object({ type: z.literal("assistant-block"), block: contentBlockSchema }),
+  z.object({
+    type: z.literal("run-registered"),
+    runId: z.string(),
+    sessionId: z.string(),
+    providerId: z.string(),
+    model: z.string(),
+  }),
   z.object({
     type: z.literal("turn-started"),
     runId: z.string().optional(),

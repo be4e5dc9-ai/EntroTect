@@ -71,6 +71,10 @@ function feedRunStarted(runId: string, context?: TurnContext): void {
   feedOne({ type: "turn-started", runId, ...context });
 }
 
+function feedRunRegistered(runId: string, context: TurnContext): void {
+  feedOne({ type: "run-registered", runId, ...context } as AppEvent);
+}
+
 function feedRunCompleted(
   runId: string,
   usage: TokenUsage | null,
@@ -201,6 +205,21 @@ describe("renderer store: model context metadata", () => {
 
 describe("renderer store: context usage", () => {
   it("keeps turn context fields at the shared IPC schema boundary", () => {
+    expect(
+      appEventSchema.parse({
+        type: "run-registered",
+        runId: "run-1",
+        sessionId: "s1",
+        providerId: "deepseek",
+        model: "saved-model",
+      }),
+    ).toMatchObject({
+      type: "run-registered",
+      runId: "run-1",
+      sessionId: "s1",
+      providerId: "deepseek",
+      model: "saved-model",
+    });
     expect(
       appEventSchema.parse({
         type: "turn-started",
@@ -432,6 +451,35 @@ describe("renderer store: context usage", () => {
     expect(useStore.getState().busy).toBe(true);
 
     feedRunCompleted("run-new", { inputTokens: 400, outputTokens: 50 }, NEW_CONTEXT);
+    expect(useStore.getState().activeRunId).toBe("run-new");
+    expect(useStore.getState().usage).toEqual({ inputTokens: 400, outputTokens: 50 });
+    expect(useStore.getState().busy).toBe(false);
+  });
+
+  it("does not reactivate an old A run after switching A to B and back to A", () => {
+    const configA = settingsConfig({ "saved-model": 64000 });
+    const configB = { ...configA, model: "other-model" };
+
+    feedOne({ type: "config", config: configA });
+    feedOne({
+      type: "session-meta",
+      meta: { id: "s1", createdAt: "x", title: "t", model: "saved-model", cwd: "cwd" },
+    });
+    feedRunRegistered("run-old", OLD_CONTEXT);
+
+    feedOne({ type: "config", config: configB });
+    feedOne({ type: "config", config: configA });
+    feedRunRegistered("run-new", OLD_CONTEXT);
+    feedRunStarted("run-new", OLD_CONTEXT);
+
+    // The old run's first turn was delayed until after the renderer returned to A.
+    feedRunStarted("run-old", OLD_CONTEXT);
+    feedRunCompleted("run-old", { inputTokens: 900, outputTokens: 90 }, OLD_CONTEXT);
+    expect(useStore.getState().activeRunId).toBe("run-new");
+    expect(useStore.getState().busy).toBe(true);
+    expect(useStore.getState().usage).toBeNull();
+
+    feedRunCompleted("run-new", { inputTokens: 400, outputTokens: 50 }, OLD_CONTEXT);
     expect(useStore.getState().activeRunId).toBe("run-new");
     expect(useStore.getState().usage).toEqual({ inputTokens: 400, outputTokens: 50 });
     expect(useStore.getState().busy).toBe(false);

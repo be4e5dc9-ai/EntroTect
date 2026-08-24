@@ -47,9 +47,32 @@ interface ActiveRun {
   running: boolean;
 }
 
+interface AcceptedRun {
+  runId: string;
+  context: TurnContext;
+  config: AppConfig;
+  provider: Provider;
+  gate: SessionPermissionGate;
+  abort: AbortController;
+}
+
 const MAX_TOKENS_DEFAULT = 8192;
 /** ReadFile 应答的内容上限:超过则截断并在尾部加一行提示 */
 const MAX_FILE_CONTENT_BYTES = 256 * 1024;
+
+/** 复制 SendMessage 需要的完整配置,避免后续 SetConfig 改写运行参数。 */
+function cloneConfig(config: AppConfig): AppConfig {
+  return {
+    ...config,
+    providers: config.providers?.map((provider) => ({
+      ...provider,
+      models: [...provider.models],
+      ...(provider.contextWindows === undefined
+        ? {}
+        : { contextWindows: { ...provider.contextWindows } }),
+    })),
+  };
+}
 
 /** 按 UTF-8 字节数安全截断(不劈开多字节字符) */
 function truncateUtf8(content: string, maxBytes: number): string {
@@ -88,25 +111,25 @@ export class SessionHost {
   }
 
   /** 当前生效的供应商:按 activeProviderId 找,失效回退第一个 */
-  private activeProvider(): ProviderConfig | undefined {
-    const providers = this.config.providers ?? [];
+  private activeProvider(config: AppConfig = this.config): ProviderConfig | undefined {
+    const providers = config.providers ?? [];
     if (providers.length === 0) return undefined;
     return (
-      providers.find((p) => p.id === this.config.activeProviderId) ?? providers[0]
+      providers.find((p) => p.id === config.activeProviderId) ?? providers[0]
     );
   }
 
   /** 与 renderer 相同的有效供应商选择,用于绑定回合上下文。 */
-  private activeProviderId(): string {
-    return this.activeProvider()?.id ?? this.config.activeProviderId ?? "deepseek";
+  private activeProviderId(config: AppConfig = this.config): string {
+    return this.activeProvider(config)?.id ?? config.activeProviderId ?? "deepseek";
   }
 
-  private makeProvider(): Provider {
-    const provider = this.activeProvider();
-    if (!provider) return createProvider(this.config);
+  private makeProvider(config: AppConfig = this.config): Provider {
+    const provider = this.activeProvider(config);
+    if (!provider) return createProvider(config);
     // 模型仍取顶层 model(compat 字段,切换供应商时由 UI 同步)
     return createProvider({
-      ...this.config,
+      ...config,
       baseUrl: provider.baseUrl,
       apiKey: provider.apiKey,
     });
@@ -185,21 +208,22 @@ export class SessionHost {
         break;
       }
       case "SetConfig": {
-        this.config = op.config;
+        // 先完成同步共享状态更新并通知 renderer,再等待落盘,避免新 run 先发 turn 事件。
+        this.config = cloneConfig(op.config);
         this.active?.gate.setMode(this.config.permissionMode ?? "write");
-        await saveConfig(this.deps.appDataDir, this.config);
         this.provider = this.makeProvider();
         this.emit({ type: "config", config: this.config });
+        await saveConfig(this.deps.appDataDir, this.config);
         break;
       }
     }
   }
 
-  private makeGate(): SessionPermissionGate {
+  private makeGate(config: AppConfig = this.config): SessionPermissionGate {
     return new SessionPermissionGate(
       buildBuiltinTools(),
       undefined,
-      this.config.permissionMode ?? "write",
+      config.permissionMode ?? "write",
     );
   }
 
@@ -293,7 +317,8 @@ export class SessionHost {
     text = applyChatMessage(this.plugins, text);
     if (text.length === 0) return;
 
-    const run = await this.ensureSession();
+    let run = this.active;
+    if (!run) run = await this.ensureSession();
     if (!run) return;
     if (run.running) {
       this.emit({ type: "error", message: "上一轮任务仍在运行中" });
@@ -301,89 +326,113 @@ export class SessionHost {
     }
     if (text.trim().length === 0) return;
 
-    // 在所有异步持久化之前固定本次 SendMessage 的上下文,避免迟到事件借用新配置。
-    const turnContext: TurnContext = {
+    const accepted = this.acceptRun(run);
+    await this.executeSendMessage(text, run, accepted);
+  }
+
+  /** 在第一次 await 前固定本次 run 的配置、provider 和取消器。 */
+  private acceptRun(run: ActiveRun): AcceptedRun {
+    const config = cloneConfig(this.config);
+    const context: TurnContext = {
       sessionId: run.meta.id,
-      providerId: this.activeProviderId(),
-      model: this.config.model,
+      providerId: this.activeProviderId(config),
+      model: config.model,
     };
 
-    const userMessage: Message = {
-      role: "user",
-      content: [{ type: "text", text }],
-    };
-    await this.store.appendMessage(run.meta.id, userMessage);
-    this.emit({ type: "message-appended", message: userMessage });
-
-    // 首条消息提取标题
-    const messages = (await this.store.load(run.meta.id)).messages;
-    if (messages.length === 1) {
-      const title = text.trim().slice(0, 24) || "新会话";
-      await this.store.appendTitle(run.meta.id, title);
-      run.meta.title = title;
-      this.emit({ type: "session-meta", meta: run.meta });
-      this.emit({ type: "sessions-listed", sessions: await this.store.list() });
-    }
-
-    // 中断上一次的残留(如果有),开新 AbortController
+    // 中断上一次的残留(如果有),开新 AbortController 与权限闸门。
     run.abort.abort();
     run.gate.dispose();
     run.abort = new AbortController();
-    run.gate = this.makeGate();
+    run.gate = this.makeGate(config);
     run.running = true;
 
-    const runId = String(++this.nextRunId);
+    const accepted: AcceptedRun = {
+      runId: String(++this.nextRunId),
+      context,
+      config,
+      provider: this.makeProvider(config),
+      gate: run.gate,
+      abort: run.abort,
+    };
+    // registration 必须先于所有异步持久化和首个 turn-started。
+    this.emit({ type: "run-registered", runId: accepted.runId, ...context });
+    return accepted;
+  }
+
+  private async executeSendMessage(
+    text: string,
+    run: ActiveRun,
+    accepted: AcceptedRun,
+  ): Promise<void> {
+    const { config, context, provider, gate, abort, runId } = accepted;
+
     const emitRunEvent = (event: AppEvent): void => {
       if (event.type === "turn-started" || event.type === "turn-completed") {
-        this.emit({ ...event, runId, ...turnContext });
+        this.emit({ ...event, runId, ...context });
         return;
       }
       this.emit(event);
     };
 
-    const gate = run.gate;
     // parent/child 共用 getter,SetConfig 后每次工具调用读取最新配置。
     const getSandboxMode = () => this.config.sandboxMode ?? "full";
-    // 主循环与子代理共用的装配:同源提示词 / 审批 / 事件 / 工作目录
-    const systemPrompt = buildSystemPrompt({
-      cwd: run.meta.cwd,
-      model: this.config.model,
-      platform: process.platform,
-      date: new Date().toISOString().slice(0, 10),
-    });
-    const approve = (request: ApprovalRequest) => {
-      this.emit({ type: "approval-requested", request });
-      return gate.request(request);
-    };
     try {
+      const userMessage: Message = {
+        role: "user",
+        content: [{ type: "text", text }],
+      };
+      await this.store.appendMessage(run.meta.id, userMessage);
+      this.emit({ type: "message-appended", message: userMessage });
+
+      // 首条消息提取标题
+      const messages = (await this.store.load(run.meta.id)).messages;
+      if (messages.length === 1) {
+        const title = text.trim().slice(0, 24) || "新会话";
+        await this.store.appendTitle(run.meta.id, title);
+        run.meta.title = title;
+        this.emit({ type: "session-meta", meta: run.meta });
+        this.emit({ type: "sessions-listed", sessions: await this.store.list() });
+      }
+
+      // 主循环与子代理共用的装配:同源提示词 / 审批 / 事件 / 工作目录
+      const systemPrompt = buildSystemPrompt({
+        cwd: run.meta.cwd,
+        model: config.model,
+        platform: process.platform,
+        date: new Date().toISOString().slice(0, 10),
+      });
+      const approve = (request: ApprovalRequest) => {
+        this.emit({ type: "approval-requested", request });
+        return gate.request(request);
+      };
       const result = await runAgent(messages, {
-        provider: this.provider,
+        provider,
         // 注入子代理运行器 → task 工具可用;子代理工具池无 task,防递归
         tools: buildBuiltinTools({
           taskRunner: createSubagentRunner({
-            provider: this.provider,
+            provider,
             tools: buildBuiltinTools(),
             systemPrompt,
             approve,
             cwd: run.meta.cwd,
             artifactDir: this.store.artifactDir(run.meta.id),
             sandboxMode: getSandboxMode,
-            maxTokens: this.config.maxTokens ?? MAX_TOKENS_DEFAULT,
-            temperature: this.config.temperature,
-            reasoningEffort: this.config.reasoningEffort,
-            abortSignal: run.abort.signal,
+            maxTokens: config.maxTokens ?? MAX_TOKENS_DEFAULT,
+            temperature: config.temperature,
+            reasoningEffort: config.reasoningEffort,
+            abortSignal: abort.signal,
           }),
         }),
         systemPrompt,
-        maxTokens: this.config.maxTokens ?? MAX_TOKENS_DEFAULT,
-        temperature: this.config.temperature,
-        reasoningEffort: this.config.reasoningEffort,
+        maxTokens: config.maxTokens ?? MAX_TOKENS_DEFAULT,
+        temperature: config.temperature,
+        reasoningEffort: config.reasoningEffort,
         emit: emitRunEvent,
         approve,
         cwd: run.meta.cwd,
         artifactDir: this.store.artifactDir(run.meta.id),
         sandboxMode: getSandboxMode,
-        abortSignal: run.abort.signal,
+        abortSignal: abort.signal,
         onMessage: (message) => this.store.appendMessage(run.meta.id, message),
         plugins: this.plugins,
       });
@@ -393,7 +442,7 @@ export class SessionHost {
     } finally {
       run.running = false;
       // 收口:中断/异常路径也要让 UI 退出忙碌态
-      this.emit({ type: "turn-completed", usage: null, runId, ...turnContext });
+      this.emit({ type: "turn-completed", usage: null, runId, ...context });
     }
   }
 }

@@ -74,7 +74,10 @@ export type View = "chat" | "settings";
 export type ModelsByProvider = Record<string, string[]>;
 export type ContextWindowsByProvider = Record<string, Record<string, number>>;
 
-type TurnEvent = Extract<AppEvent, { type: "turn-started" | "turn-completed" }>;
+type RunContextEvent = Extract<
+  AppEvent,
+  { type: "run-registered" | "turn-started" | "turn-completed" }
+>;
 
 export type ContextSnapshot = {
   inputTokens: number;
@@ -626,7 +629,7 @@ function effectiveProviderId(config: AppConfig | null): string | null {
   );
 }
 
-function hasAnyTurnContext(event: TurnEvent): boolean {
+function hasAnyTurnContext(event: RunContextEvent): boolean {
   return (
     event.sessionId !== undefined ||
     event.providerId !== undefined ||
@@ -634,7 +637,7 @@ function hasAnyTurnContext(event: TurnEvent): boolean {
   );
 }
 
-function hasCurrentTurnContext(state: UiState, event: TurnEvent): boolean {
+function hasCurrentTurnContext(state: UiState, event: RunContextEvent): boolean {
   // Events from older producers have no context and retain the runId fallback.
   if (!hasAnyTurnContext(event)) return true;
   if (
@@ -883,6 +886,23 @@ export function applyEvent(event: AppEvent): void {
       }
       break;
     }
+    case "run-registered":
+      useStore.setState((state) => {
+        if (state.invalidatedRunIds.includes(event.runId)) {
+          return {};
+        }
+        if (!hasCurrentTurnContext(state, event)) {
+          return {
+            invalidatedRunIds: [...state.invalidatedRunIds, event.runId],
+          };
+        }
+        return {
+          activeRunId: event.runId,
+          usageUpdatesBlocked: false,
+          usageBlockedRunId: null,
+        };
+      });
+      break;
     case "turn-started":
       useStore.setState((state) => {
         if (!hasCurrentTurnContext(state, event)) {
