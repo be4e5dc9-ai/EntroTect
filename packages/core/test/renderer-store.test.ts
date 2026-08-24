@@ -2,6 +2,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import {
   applyEvent,
+  getContextSnapshot,
   mergeCachedProviderDataIntoConfig,
   useStore,
 } from "../../app-desktop/src/renderer/store.js";
@@ -21,6 +22,7 @@ beforeEach(() => {
     messages: [],
     busy: false,
     usage: null,
+    modelsByProvider: {},
     models: [],
     contextWindowsByProvider: {},
     approval: null,
@@ -163,6 +165,95 @@ describe("renderer store: model context metadata", () => {
     expect(form.providers?.[0]).toMatchObject({
       models: ["auto-fetched-model"],
       contextWindows: { "auto-fetched-model": 200000 },
+    });
+  });
+});
+
+describe("renderer store: context usage", () => {
+  it("keeps the latest non-null usage when completion later reports null", () => {
+    feedOne({
+      type: "session-meta",
+      meta: { id: "s1", createdAt: "x", title: "t", model: "m", cwd: "cwd" },
+    });
+    feedOne({
+      type: "turn-completed",
+      usage: { inputTokens: 2048, outputTokens: 128 },
+    });
+    feedOne({ type: "turn-completed", usage: null });
+
+    expect(useStore.getState().usage).toEqual({ inputTokens: 2048, outputTokens: 128 });
+  });
+
+  it("keeps usage for same-session metadata updates and clears it for a different session", () => {
+    feedOne({
+      type: "session-meta",
+      meta: { id: "s1", createdAt: "x", title: "t", model: "m", cwd: "cwd" },
+    });
+    feedOne({
+      type: "turn-completed",
+      usage: { inputTokens: 100, outputTokens: 20 },
+    });
+    feedOne({
+      type: "session-meta",
+      meta: { id: "s1", createdAt: "x", title: "renamed", model: "m", cwd: "cwd" },
+    });
+    expect(useStore.getState().usage).toEqual({ inputTokens: 100, outputTokens: 20 });
+
+    feedOne({
+      type: "session-meta",
+      meta: { id: "s2", createdAt: "y", title: "new", model: "m", cwd: "cwd" },
+    });
+    expect(useStore.getState().usage).toBeNull();
+  });
+
+  it("clears usage when the active model or provider changes", () => {
+    const config = settingsConfig({ "saved-model": 64000 });
+    feedOne({ type: "config", config });
+    feedOne({
+      type: "turn-completed",
+      usage: { inputTokens: 100, outputTokens: 20 },
+    });
+
+    feedOne({ type: "config", config: { ...config, model: "other-model" } });
+    expect(useStore.getState().usage).toBeNull();
+
+    feedOne({
+      type: "turn-completed",
+      usage: { inputTokens: 200, outputTokens: 30 },
+    });
+    feedOne({
+      type: "config",
+      config: {
+        ...config,
+        activeProviderId: "openai",
+        providers: [
+          ...(config.providers ?? []),
+          {
+            id: "openai",
+            name: "OpenAI",
+            baseUrl: "https://openai.example.test/v1",
+            apiKey: "key",
+            models: ["other-model"],
+          },
+        ],
+      },
+    });
+    expect(useStore.getState().usage).toBeNull();
+  });
+
+  it("returns null when input tokens or context window is missing or non-positive", () => {
+    expect(getContextSnapshot(undefined, 64000)).toBeNull();
+    expect(getContextSnapshot(2048, undefined)).toBeNull();
+    expect(getContextSnapshot(0, 64000)).toBeNull();
+    expect(getContextSnapshot(2048, 0)).toBeNull();
+  });
+
+  it("clamps context usage and never returns a negative remaining count", () => {
+    expect(getContextSnapshot(70000, 64000)).toEqual({
+      inputTokens: 70000,
+      contextWindow: 64000,
+      usedRatio: 1,
+      remainingTokens: 0,
     });
   });
 });

@@ -74,6 +74,37 @@ export type View = "chat" | "settings";
 export type ModelsByProvider = Record<string, string[]>;
 export type ContextWindowsByProvider = Record<string, Record<string, number>>;
 
+export type ContextSnapshot = {
+  inputTokens: number;
+  contextWindow: number;
+  usedRatio: number;
+  remainingTokens: number;
+};
+
+/** 计算当前回合的上下文占用;缺少有效窗口时不伪造百分比。 */
+export function getContextSnapshot(
+  inputTokens: number | undefined,
+  contextWindow: number | undefined,
+): ContextSnapshot | null {
+  if (
+    inputTokens === undefined ||
+    contextWindow === undefined ||
+    !Number.isFinite(inputTokens) ||
+    !Number.isFinite(contextWindow) ||
+    inputTokens <= 0 ||
+    contextWindow <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    inputTokens,
+    contextWindow,
+    usedRatio: Math.min(1, Math.max(0, inputTokens / contextWindow)),
+    remainingTokens: Math.max(0, contextWindow - inputTokens),
+  };
+}
+
 interface UiState {
   sessions: SessionMeta[];
   currentSession: SessionMeta | null;
@@ -562,17 +593,21 @@ export function applyEvent(event: AppEvent): void {
       deltaBuffer = "";
       reasoningBuffer = "";
       clearSubagentDeltaBuffers();
-      useStore.setState({
+      useStore.setState((state) => ({
         currentSession: event.meta,
         messages: [],
         busy: false,
-        usage: null,
+        usage:
+          state.currentSession?.id === event.meta.id &&
+          state.currentSession.model === event.meta.model
+            ? state.usage
+            : null,
         approval: null,
         detailTabs: [],
         activeDetailId: null,
         fileContents: {},
         subagentChats: {},
-      });
+      }));
       break;
     }
     case "sessions-listed":
@@ -794,7 +829,7 @@ export function applyEvent(event: AppEvent): void {
     case "turn-completed":
       useStore.setState((state) => ({
         busy: false,
-        usage: event.usage,
+        usage: event.usage ?? state.usage,
         messages: state.messages.map((message, index) =>
           index === state.messages.length - 1 && message.role === "assistant"
             ? { ...message, streaming: false }
@@ -835,7 +870,17 @@ export function applyEvent(event: AppEvent): void {
             contextWindowsByProvider[provider.id] = { ...provider.contextWindows };
           }
         }
-        return { config: event.config, contextWindowsByProvider };
+        const activeProviderChanged =
+          (state.config?.activeProviderId ?? "deepseek") !==
+          (event.config.activeProviderId ?? "deepseek");
+        const activeModelChanged = state.config?.model !== event.config.model;
+        return {
+          config: event.config,
+          contextWindowsByProvider,
+          ...(state.config && (activeProviderChanged || activeModelChanged)
+            ? { usage: null }
+            : {}),
+        };
       });
       break;
   }
