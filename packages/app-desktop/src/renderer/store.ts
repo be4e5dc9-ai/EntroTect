@@ -12,6 +12,8 @@ import type {
   TokenUsage,
   AppConfig,
 } from "@entrotect/shared";
+import { DEFAULT_ACCENT_COLOR } from "../appearance";
+import type { Theme as AppearanceTheme } from "../appearance";
 import { bridge } from "./bridge";
 
 export interface UiBlock {
@@ -66,7 +68,7 @@ export interface Toast {
   leaving?: boolean;
 }
 
-export type Theme = "dark" | "light";
+export type Theme = AppearanceTheme;
 
 /** 主区视图:chat = 聊天,settings = 设置页(替代旧设置弹窗) */
 export type View = "chat" | "settings";
@@ -152,6 +154,7 @@ interface UiState {
   toasts: Toast[];
   error: string | null;
   theme: Theme;
+  accentColor: string;
   /** 右侧详情栏标签页(浏览器式,可多开) */
   detailTabs: DetailTab[];
   /** 当前激活标签 id;null = 详情栏隐藏(回两段布局) */
@@ -181,6 +184,7 @@ export const useStore = create<UiState>()(() => ({
   toasts: [],
   error: null,
   theme: "dark",
+  accentColor: DEFAULT_ACCENT_COLOR,
   detailTabs: [],
   activeDetailId: null,
   fileContents: {},
