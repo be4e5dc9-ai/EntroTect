@@ -6,7 +6,7 @@
 
 import { useRef, useState } from "react";
 import type { AppConfig } from "@entrotect/shared";
-import { useStore } from "../store";
+import { useStore, contextWindowForModel } from "../store";
 import { bridge } from "../bridge";
 import { PopoverMenu, type MenuOption } from "./PopoverMenu";
 import { ContextUsagePopover } from "./ContextUsagePopover";
@@ -82,7 +82,7 @@ export function Composer(): React.JSX.Element {
   const activeProviderId = provider?.id ?? configuredProviderId;
   const providerName = provider?.name ?? "模型";
   const contextWindow = config?.model
-    ? contextWindowsByProvider[activeProviderId]?.[config.model] ?? provider?.contextWindows?.[config.model]
+    ? contextWindowForModel(config, contextWindowsByProvider, activeProviderId, config.model)
     : undefined;
   const models = modelsByProvider[activeProviderId] ?? [];
   const modelValues =

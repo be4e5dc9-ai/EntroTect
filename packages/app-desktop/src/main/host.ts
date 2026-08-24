@@ -25,6 +25,7 @@ import {
   createSubagentRunner,
   listModelsForProvider,
   loadConfig,
+  mergeContextWindows,
   runAgent,
   saveConfig,
   SessionPermissionGate,
@@ -177,7 +178,9 @@ export class SessionHost {
         }
         try {
           const result = await listModelsForProvider(provider);
-          this.emit({ type: "models-listed", providerId, ...result });
+          // /models 未必给上下文:用内置表 + id 后缀兜底识别,未知保持未知
+          const contextWindows = mergeContextWindows(result.models, result.contextWindows);
+          this.emit({ type: "models-listed", providerId, models: result.models, contextWindows });
         } catch {
           // 拉取失败不打扰用户:renderer 显示"拉取失败"
           this.emit({ type: "models-listed", providerId, models: [] });

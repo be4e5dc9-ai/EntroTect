@@ -224,6 +224,24 @@ export function SettingsPage(): React.JSX.Element | null {
     );
   };
 
+  /** 手动设置某模型的上下文窗口(tokens);留空/非法 = 自动识别 */
+  const setModelContext = (providerId: string, model: string, raw: string) => {
+    setForm((f) => {
+      if (!f) return f;
+      const next = Number.parseFloat(raw);
+      return {
+        ...f,
+        providers: f.providers?.map((p) => {
+          if (p.id !== providerId) return p;
+          const map = { ...(p.contextWindows ?? {}) };
+          if (Number.isFinite(next) && next > 0) map[model] = Math.floor(next);
+          else delete map[model];
+          return { ...p, contextWindows: map };
+        }),
+      };
+    });
+  };
+
   const providers = form.providers ?? [];
 
   return (
@@ -275,6 +293,7 @@ export function SettingsPage(): React.JSX.Element | null {
                 onRemove={() => removeProvider(provider.id)}
                 onAddModel={(model) => addModel(provider.id, model)}
                 onRemoveModel={(model) => removeModel(provider.id, model)}
+                onContextChange={(model, raw) => setModelContext(provider.id, model, raw)}
               />
             ))}
           </section>
@@ -380,6 +399,7 @@ interface ProviderCardProps {
   onRemove: () => void;
   onAddModel: (model: string) => void;
   onRemoveModel: (model: string) => void;
+  onContextChange: (model: string, raw: string) => void;
 }
 
 function ProviderCard({
@@ -392,6 +412,7 @@ function ProviderCard({
   onRemove,
   onAddModel,
   onRemoveModel,
+  onContextChange,
 }: ProviderCardProps): React.JSX.Element {
   const [newModel, setNewModel] = useState("");
 
@@ -455,6 +476,16 @@ function ProviderCard({
           {provider.models.map((model) => (
             <span className="model-chip" key={model}>
               <span className="model-chip-name" title={model}>{model}</span>
+              <input
+                className="model-chip-context"
+                value={String(provider.contextWindows?.[model] ?? "")}
+                onChange={(e) => onContextChange(model, e.target.value)}
+                placeholder="自动"
+                inputMode="numeric"
+                aria-label={`${model} 的上下文窗口(tokens),留空为自动识别`}
+                title="上下文窗口 tokens;留空 = 自动识别"
+                spellCheck={false}
+              />
               <button
                 className="model-chip-x"
                 onClick={() => onRemoveModel(model)}

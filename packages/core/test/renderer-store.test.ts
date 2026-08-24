@@ -2,6 +2,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import {
   applyEvent,
+  contextWindowForModel,
   getContextSnapshot,
   mergeCachedProviderDataIntoConfig,
   useStore,
@@ -545,6 +546,26 @@ describe("renderer store: context usage", () => {
       percentage: "unknown",
       remaining: "unknown",
     });
+  });
+});
+
+describe("renderer store: contextWindowForModel 查找", () => {
+  it("手填的配置上下文优先于拉取缓存", () => {
+    const config = {
+      baseUrl: "https://api.example.com/v1",
+      apiKey: "",
+      model: "m-a",
+      activeProviderId: "p1",
+      providers: [
+        { id: "p1", name: "P", baseUrl: "", apiKey: "", models: [], contextWindows: { "m-a": 999999 } },
+      ],
+    } as unknown as AppConfig;
+    expect(contextWindowForModel(config, { p1: { "m-a": 64000 } }, "p1", "m-a")).toBe(999999);
+    expect(contextWindowForModel(config, { p1: {} }, "p1", "m-a")).toBe(999999);
+    // 无手填时退回缓存
+    expect(contextWindowForModel(config, { p1: { "m-b": 64000 } }, "p1", "m-b")).toBe(64000);
+    // 两者皆无时未知
+    expect(contextWindowForModel(config, {}, "p1", "m-b")).toBeUndefined();
   });
 });
 

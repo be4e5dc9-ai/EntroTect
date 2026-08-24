@@ -1820,6 +1820,31 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.model-chip-context {
+  width: 58px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  text-align: right;
+  flex-shrink: 0;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.model-chip-context::placeholder {
+  color: var(--text-tertiary);
+}
+.model-chip-context:hover,
+.model-chip-context:focus {
+  border-color: var(--border-strong);
+  color: var(--text);
+  outline: none;
+}
 .model-chip-x {
   display: inline-flex;
   align-items: center;

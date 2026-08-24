@@ -110,6 +110,22 @@ export function getContextSnapshot(
   };
 }
 
+/**
+ * 查找某 active 供应商/模型的上下文窗口:
+ * 手填并保存到配置的 contextWindows 优先(用户显式覆盖),
+ * 其次自动拉取/内置识别的 renderer 缓存。
+ */
+export function contextWindowForModel(
+  config: AppConfig | null,
+  cache: ContextWindowsByProvider,
+  activeProviderId: string | undefined,
+  model: string | undefined,
+): number | undefined {
+  if (!config || !model) return undefined;
+  const provider = config.providers?.find((p) => p.id === activeProviderId);
+  return provider?.contextWindows?.[model] ?? cache[activeProviderId ?? ""]?.[model];
+}
+
 interface UiState {
   sessions: SessionMeta[];
   currentSession: SessionMeta | null;
