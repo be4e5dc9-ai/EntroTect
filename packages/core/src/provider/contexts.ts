@@ -1,46 +1,15 @@
 // =====================================================================
 // 常见模型上下文窗口兜底:供应商 /models 不一定返回 context_length,
 // 用内置表 + 模型 id 后缀(k/m)识别,未知仍保持未知。
+// 薄适配:KNOWN_MODEL_CONTEXTS 由 catalog 派生。
 // =====================================================================
 
-/** 常见公开模型的已知上下文窗口(tokens),键为模型 id */
-export const KNOWN_MODEL_CONTEXTS: Record<string, number> = {
-  // DeepSeek
-  "deepseek-chat": 131072,
-  "deepseek-reasoner": 131072,
-  // OpenAI
-  "gpt-4o": 128000,
-  "gpt-4o-mini": 128000,
-  "gpt-4-turbo": 128000,
-  "gpt-4.1": 1047576,
-  "gpt-4.1-mini": 1047576,
-  "gpt-4.1-nano": 1047576,
-  o1: 200000,
-  "o1-mini": 128000,
-  o3: 200000,
-  "o3-mini": 200000,
-  "o4-mini": 200000,
-  "gpt-5": 400000,
-  "gpt-5-mini": 400000,
-  "gpt-5-nano": 400000,
-  // Moonshot
-  "moonshot-v1-8k": 8192,
-  "moonshot-v1-32k": 32768,
-  "moonshot-v1-128k": 131072,
-  "moonshot-v1-auto": 131072,
-  "kimi-k2-0711": 131072,
-  "kimi-k2": 131072,
-  // Anthropic(经 OpenAI 兼容代理接入的常用模型)
-  "claude-opus-4-20250514": 200000,
-  "claude-sonnet-4-20250514": 200000,
-  "claude-3-7-sonnet-20250219": 200000,
-  "claude-3-5-sonnet-20241022": 200000,
-  "claude-3-5-haiku-20241022": 200000,
-  // Gemini(OpenAI 兼容接口)
-  "gemini-2.5-pro": 1048576,
-  "gemini-2.5-flash": 1048576,
-  "gemini-2.0-flash": 1048576,
-};
+import { catalog } from "./catalog.js";
+
+/** 由 catalog 派生的已知上下文窗口(tokens),键为模型 id(去前缀) */
+export const KNOWN_MODEL_CONTEXTS: Record<string, number> = Object.fromEntries(
+  Object.entries(catalog).map(([k, v]) => [k.split("/").pop()!, v.capabilities.contextWindow]),
+);
 
 /** 内置表查上下文窗口 */
 export function knownContextWindow(model: string): number | undefined {

@@ -6,12 +6,12 @@ import {
 } from "../src/provider/contexts.js";
 
 describe("known context windows", () => {
-  it("recognizes common built-in model ids", () => {
-    expect(knownContextWindow("deepseek-chat")).toBe(131072);
-    expect(knownContextWindow("deepseek-reasoner")).toBe(131072);
-    expect(knownContextWindow("gpt-4o")).toBe(128000);
-    expect(knownContextWindow("kimi-k2-0711")).toBe(131072);
-    expect(knownContextWindow("claude-sonnet-4-20250514")).toBe(200000);
+  it("recognizes catalog-derived model ids", () => {
+    expect(knownContextWindow("deepseek-v4-pro")).toBe(1_000_000);
+    expect(knownContextWindow("claude-opus-5")).toBe(1_000_000);
+    expect(knownContextWindow("kimi-k3")).toBe(1_048_576);
+    expect(knownContextWindow("gpt-5")).toBe(400_000);
+    expect(knownContextWindow("gemini-2.5-pro")).toBe(1_048_576);
     expect(knownContextWindow("definitely-unknown-hardware-model")).toBeUndefined();
   });
 });
@@ -31,11 +31,11 @@ describe("mergeContextWindows", () => {
   it("keeps api metadata and fills known/suffix fallbacks", () => {
     expect(
       mergeContextWindows(
-        ["deepseek-chat", "custom-256k", "api-model"],
+        ["deepseek-v4-pro", "custom-256k", "api-model"],
         { "api-model": 64000 },
       ),
     ).toEqual({
-      "deepseek-chat": 131072,
+      "deepseek-v4-pro": 1_000_000,
       "custom-256k": 262144,
       "api-model": 64000,
     });
