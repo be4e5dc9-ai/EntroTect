@@ -40,6 +40,26 @@ interface SidebarProps {
   onCollapse: () => void;
 }
 
+export function PanelCollapseIcon({
+  direction,
+}: {
+  direction: "left" | "right";
+}): React.JSX.Element {
+  return (
+    <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <rect x="2.25" y="2.5" width="13.5" height="13" rx="2" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M8 2.5v13" stroke="currentColor" strokeWidth="1.2" />
+      <path
+        d={direction === "left" ? "m6 6.5-2 2.5 2 2.5" : "m12 6.5 2 2.5-2 2.5"}
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function Sidebar({ width, onWidthChange, onCollapse }: SidebarProps): React.JSX.Element {
   const sessions = useStore((s) => s.sessions);
   const currentSession = useStore((s) => s.currentSession);
@@ -96,14 +116,13 @@ export function Sidebar({ width, onWidthChange, onCollapse }: SidebarProps): Rea
       <div className="sidebar-head">
         <span className="sidebar-head-title">对话列表</span>
         <button
+          type="button"
           className="btn-collapse"
           onClick={onCollapse}
-          aria-label="收起对话列表"
-          title="收起对话列表"
+          aria-label="Collapse sidebar"
+          title="Collapse sidebar"
         >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-            <path d="M6 3 3 7l3 4M10 3 7 7l3 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <PanelCollapseIcon direction="left" />
         </button>
       </div>
 

@@ -9,6 +9,7 @@ import type { AppConfig } from "@entrotect/shared";
 import { useStore } from "../store";
 import { bridge } from "../bridge";
 import { PopoverMenu, type MenuOption } from "./PopoverMenu";
+import { ContextUsagePopover } from "./ContextUsagePopover";
 
 const PERMISSION_OPTIONS: Array<MenuOption<NonNullable<AppConfig["permissionMode"]>>> = [
   { value: "full", label: "完全访问权限" },
@@ -47,7 +48,9 @@ export function Composer(): React.JSX.Element {
   const busy = useStore((s) => s.busy);
   const hasSession = useStore((s) => s.currentSession !== null);
   const config = useStore((s) => s.config);
+  const usage = useStore((s) => s.usage);
   const modelsByProvider = useStore((s) => s.modelsByProvider);
+  const contextWindowsByProvider = useStore((s) => s.contextWindowsByProvider);
   const [text, setText] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -73,9 +76,14 @@ export function Composer(): React.JSX.Element {
 
   // 当前供应商:菜单标题显示其名称,选项取其缓存模型;
   // config.model 必须可选项(不在缓存时置顶,保证旧配置/新模型可用)。
-  const activeProviderId = config?.activeProviderId ?? "deepseek";
-  const provider = config?.providers?.find((p) => p.id === activeProviderId);
+  const configuredProviderId = config?.activeProviderId ?? "deepseek";
+  const provider =
+    config?.providers?.find((p) => p.id === configuredProviderId) ?? config?.providers?.[0];
+  const activeProviderId = provider?.id ?? configuredProviderId;
   const providerName = provider?.name ?? "模型";
+  const contextWindow = config?.model
+    ? contextWindowsByProvider[activeProviderId]?.[config.model] ?? provider?.contextWindows?.[config.model]
+    : undefined;
   const models = modelsByProvider[activeProviderId] ?? [];
   const modelValues =
     config?.model && !models.includes(config.model) ? [config.model, ...models] : models;
@@ -167,6 +175,10 @@ export function Composer(): React.JSX.Element {
             icon={boltIcon}
             ariaLabel="思考强度"
             align="right"
+          />
+          <ContextUsagePopover
+            inputTokens={usage?.inputTokens}
+            contextWindow={contextWindow}
           />
         </div>
       </div>

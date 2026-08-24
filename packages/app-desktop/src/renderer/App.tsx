@@ -1,13 +1,13 @@
 // =====================================================================
 // App 骨架:事件订阅 + 布局(titlebar 拖拽区 / 侧栏 / 主区)
 // 主区按 view 切换:chat = 聊天区,settings = 设置页(独立成页)。
-// 侧栏宽度与收起状态持久化(localStorage)。
+// 侧栏/详情栏宽度与收起状态持久化(localStorage)。
 // =====================================================================
 
 import { useEffect, useState } from "react";
 import { useStore, applyEvent } from "./store";
 import { bridge } from "./bridge";
-import { Sidebar } from "./components/Sidebar";
+import { PanelCollapseIcon, Sidebar } from "./components/Sidebar";
 import { MessageList } from "./components/MessageList";
 import { Composer } from "./components/Composer";
 import { ApprovalModal } from "./components/ApprovalModal";
@@ -24,6 +24,7 @@ export function App(): React.JSX.Element {
   const busy = useStore((s) => s.busy);
   const view = useStore((s) => s.view);
   const activeProviderId = useStore((s) => s.config?.activeProviderId);
+  const detailTabs = useStore((s) => s.detailTabs);
 
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = Number(localStorage.getItem("entrotect-sidebar-width"));
@@ -37,6 +38,9 @@ export function App(): React.JSX.Element {
     const saved = Number(localStorage.getItem("entrotect-detail-width"));
     return saved >= 320 && saved <= 640 ? saved : DEFAULT_DETAIL_WIDTH;
   });
+  const [detailCollapsed, setDetailCollapsed] = useState(
+    () => localStorage.getItem("entrotect-detail-collapsed") === "1",
+  );
 
   useEffect(() => {
     const unsubscribe = bridge().onEvent(applyEvent);
@@ -72,15 +76,42 @@ export function App(): React.JSX.Element {
     localStorage.setItem("entrotect-sidebar-collapsed", "0");
   };
 
+  const collapseDetail = () => {
+    setDetailCollapsed(true);
+    localStorage.setItem("entrotect-detail-collapsed", "1");
+  };
+
+  const expandDetail = () => {
+    setDetailCollapsed(false);
+    localStorage.setItem("entrotect-detail-collapsed", "0");
+  };
+
+  const hasDetail = detailTabs.length > 0 && activeDetailId !== null;
+
   return (
     <div className="app">
       <div className="titlebar">
         {sidebarCollapsed && (
-          <button className="btn btn-ghost sidebar-peek" onClick={expand} aria-label="打开对话列表">
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
-              <path d="M2 3.5h9M2 6.5h9M2 9.5h9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-            </svg>
+          <button
+            type="button"
+            className="btn btn-ghost sidebar-peek"
+            onClick={expand}
+            aria-label="Open sidebar"
+            title="Open sidebar"
+          >
+            <PanelCollapseIcon direction="right" />
             对话列表
+          </button>
+        )}
+        {detailCollapsed && hasDetail && (
+          <button
+            type="button"
+            className="btn btn-ghost detail-peek"
+            onClick={expandDetail}
+            aria-label="Open details"
+            title="Open details"
+          >
+            <PanelCollapseIcon direction="left" />
           </button>
         )}
       </div>
@@ -111,8 +142,12 @@ export function App(): React.JSX.Element {
             <Composer />
           </main>
         )}
-        {activeDetailId && (
-          <DetailPanel width={detailWidth} onWidthChange={persistDetailWidth} />
+        {hasDetail && !detailCollapsed && (
+          <DetailPanel
+            width={detailWidth}
+            onWidthChange={persistDetailWidth}
+            onCollapse={collapseDetail}
+          />
         )}
       </div>
       <ApprovalModal />

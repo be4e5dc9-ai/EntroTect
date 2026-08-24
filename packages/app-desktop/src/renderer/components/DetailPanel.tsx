@@ -16,6 +16,7 @@ import {
 } from "../store";
 import { fileName } from "./FileCard";
 import { SubagentChat } from "./SubagentChat";
+import { PanelCollapseIcon } from "./Sidebar";
 
 const RESIZE_MAX = 640;
 const RESIZE_MIN = 320;
@@ -95,9 +96,10 @@ function FileDetailBody({ path }: { path: string }): React.JSX.Element {
 interface DetailPanelProps {
   width: number;
   onWidthChange: (width: number) => void;
+  onCollapse: () => void;
 }
 
-export function DetailPanel({ width, onWidthChange }: DetailPanelProps): React.JSX.Element | null {
+export function DetailPanel({ width, onWidthChange, onCollapse }: DetailPanelProps): React.JSX.Element | null {
   const tabs = useStore((s) => s.detailTabs);
   const activeDetailId = useStore((s) => s.activeDetailId);
   const messages = useStore((s) => s.messages);
@@ -174,6 +176,16 @@ export function DetailPanel({ width, onWidthChange }: DetailPanelProps): React.J
           {address(active)}
         </span>
         <button
+          type="button"
+          className="detail-panel-collapse"
+          onClick={onCollapse}
+          aria-label="Collapse details"
+          title="Collapse details"
+        >
+          <PanelCollapseIcon direction="right" />
+        </button>
+        <button
+          type="button"
           className="detail-close"
           onClick={() => closeDetailTab(active.id)}
           aria-label="关闭当前页"

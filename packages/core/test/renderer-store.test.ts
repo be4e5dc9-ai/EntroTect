@@ -6,6 +6,7 @@ import {
   mergeCachedProviderDataIntoConfig,
   useStore,
 } from "../../app-desktop/src/renderer/store.js";
+import { formatContextUsage } from "../../app-desktop/src/renderer/components/ContextUsagePopover.js";
 import { appEventSchema } from "../../shared/src/protocol.js";
 import type { AppConfig, AppEvent, TokenUsage, TurnContext } from "@entrotect/shared";
 
@@ -513,6 +514,36 @@ describe("renderer store: context usage", () => {
       contextWindow: 64000,
       usedRatio: 1,
       remainingTokens: 0,
+    });
+  });
+
+  it("formats known context values with compact token units", () => {
+    expect(formatContextUsage(204100, 1000000)).toEqual({
+      used: "204.1k",
+      total: "1M",
+      summary: "204.1k / 1M",
+      percentage: "20%",
+      remaining: "795.9k",
+    });
+  });
+
+  it("formats over-limit context usage as 100 percent with no negative remainder", () => {
+    expect(formatContextUsage(70000, 64000)).toEqual({
+      used: "70k",
+      total: "64k",
+      summary: "70k / 64k",
+      percentage: "100%",
+      remaining: "0",
+    });
+  });
+
+  it("marks context formatting unknown when usage metadata is unavailable", () => {
+    expect(formatContextUsage(undefined, 64000)).toEqual({
+      used: "unknown",
+      total: "unknown",
+      summary: "Context unknown",
+      percentage: "unknown",
+      remaining: "unknown",
     });
   });
 });
