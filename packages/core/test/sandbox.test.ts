@@ -1,16 +1,13 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { SubagentPart } from "@entrotect/shared";
 import type { ToolContext } from "../src/tools/types.js";
 import { bashTool } from "../src/tools/bash.js";
+import { runAgent } from "../src/loop/agent.js";
 import { createSubagentRunner } from "../src/subagent/run.js";
-import {
-  analyzeCommand,
-  getSandboxMode,
-  setSandboxMode,
-} from "../src/sandbox/index.js";
+import { analyzeCommand } from "../src/sandbox/index.js";
 import { MockProvider, textBlock, toolCall, turnComplete } from "./helpers/mock-provider.js";
 
 async function makeCtx(
@@ -22,11 +19,6 @@ async function makeCtx(
     ctx: { cwd: root, artifactDir: path.join(root, ".artifacts"), sandboxMode },
   };
 }
-
-// 每个用例结束后恢复 full,避免模式状态泄漏到其他测试
-afterEach(() => {
-  setSandboxMode("full");
-});
 
 describe("analyzeCommand 危险命令模式表", () => {
   // 危险命令:命中即 blocked=true 且 reason 非空
@@ -89,17 +81,58 @@ describe("analyzeCommand 危险命令模式表", () => {
 });
 
 describe("bash 工具与沙箱联动", () => {
+  it("运行中的主代理从 full 切到 restricted 后,后续危险 bash 立即拦截", async () => {
+    const { ctx } = await makeCtx("full");
+    let sandboxMode: ToolContext["sandboxMode"] = ctx.sandboxMode;
+    const provider = new MockProvider([
+      {
+        events: [
+          toolCall("main-full", "bash", JSON.stringify({ command: "Write-Output 'full'" })),
+          turnComplete(),
+        ],
+      },
+      {
+        events: [
+          toolCall("main-restricted", "bash", JSON.stringify({ command: "del /f x.txt" })),
+          turnComplete(),
+        ],
+      },
+      { events: [textBlock("完成"), turnComplete()] },
+    ]);
+
+    const result = await runAgent(
+      [{ role: "user", content: [{ type: "text", text: "执行两条命令" }] }],
+      {
+        provider,
+        tools: [bashTool],
+        systemPrompt: "父提示词",
+        maxTokens: 2048,
+        emit: () => {},
+        approve: async (request) => {
+          if (request.toolCallId === "main-restricted") sandboxMode = "restricted";
+          return { decision: "allow-once" as const };
+        },
+        cwd: ctx.cwd,
+        artifactDir: ctx.artifactDir,
+        sandboxMode: () => sandboxMode,
+      },
+    );
+
+    const firstResult = result.messages[2]?.content[0];
+    const secondResult = result.messages[4]?.content[0];
+    expect(firstResult).toMatchObject({ type: "tool-result", isError: false });
+    expect(secondResult).toMatchObject({ type: "tool-result", isError: true });
+    expect(String(secondResult?.content)).toMatch(/沙箱.*拦截/);
+  });
+
   it("restricted 模式拦截危险命令,full 模式放行", async () => {
     const { ctx } = await makeCtx("restricted");
 
-    setSandboxMode("restricted");
-    expect(getSandboxMode()).toBe("restricted");
     await expect(bashTool.call({ command: "del /f x.txt" }, ctx)).rejects.toThrow(
       /沙箱.*拦截/,
     );
 
     // 切回 full:危险命令可执行(安全命令必然放行,只验证后者避免真删文件)
-    setSandboxMode("full");
     const out = await bashTool.call(
       { command: "Write-Output 'ok'" },
       { ...ctx, sandboxMode: "full" },
@@ -110,7 +143,6 @@ describe("bash 工具与沙箱联动", () => {
 
   it("restricted 模式下安全命令不受影响", async () => {
     const { ctx } = await makeCtx("restricted");
-    setSandboxMode("restricted");
     const out = await bashTool.call({ command: "Write-Output 'safe-通过'" }, ctx);
     expect(out).toContain("Exit code: 0");
     expect(out).toContain("safe-通过");

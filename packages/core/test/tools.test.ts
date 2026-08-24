@@ -17,7 +17,7 @@ async function makeCtx(): Promise<{ ctx: ToolContext; root: string }> {
   const root = await mkdtemp(path.join(tmpdir(), "entrotect-tools-"));
   return {
     root,
-    ctx: { cwd: root, artifactDir: path.join(root, ".artifacts") },
+    ctx: { cwd: root, artifactDir: path.join(root, ".artifacts"), sandboxMode: "full" },
   };
 }
 

@@ -30,7 +30,6 @@ import {
   SessionStore,
   applyChatMessage,
   loadPluginsFromDir,
-  setSandboxMode,
   type PluginHooks,
   type Provider,
 } from "@entrotect/core";
@@ -81,8 +80,6 @@ export class SessionHost {
 
   async init(): Promise<void> {
     this.config = await loadConfig(this.deps.appDataDir);
-    // 沙箱模块级状态随配置注入(加载时一次,SetConfig 后再同步)
-    setSandboxMode(this.config.sandboxMode ?? "full");
     this.provider = this.makeProvider();
     const plugins = await loadPluginsFromDir(path.join(this.deps.appDataDir, "plugins"));
     this.plugins = plugins.map((plugin) => plugin.hooks);
@@ -184,8 +181,6 @@ export class SessionHost {
         this.config = op.config;
         this.active?.gate.setMode(this.config.permissionMode ?? "write");
         await saveConfig(this.deps.appDataDir, this.config);
-        // 沙箱模式即时同步到模块级策略状态
-        setSandboxMode(this.config.sandboxMode ?? "full");
         this.provider = this.makeProvider();
         this.emit({ type: "config", config: this.config });
         break;
@@ -324,6 +319,8 @@ export class SessionHost {
     run.running = true;
 
     const gate = run.gate;
+    // parent/child 共用 getter,SetConfig 后每次工具调用读取最新配置。
+    const getSandboxMode = () => this.config.sandboxMode ?? "full";
     // 主循环与子代理共用的装配:同源提示词 / 审批 / 事件 / 工作目录
     const systemPrompt = buildSystemPrompt({
       cwd: run.meta.cwd,
@@ -347,7 +344,7 @@ export class SessionHost {
             approve,
             cwd: run.meta.cwd,
             artifactDir: this.store.artifactDir(run.meta.id),
-            sandboxMode: this.config.sandboxMode ?? "full",
+            sandboxMode: getSandboxMode,
             maxTokens: this.config.maxTokens ?? MAX_TOKENS_DEFAULT,
             temperature: this.config.temperature,
             reasoningEffort: this.config.reasoningEffort,
@@ -362,7 +359,7 @@ export class SessionHost {
         approve,
         cwd: run.meta.cwd,
         artifactDir: this.store.artifactDir(run.meta.id),
-        sandboxMode: this.config.sandboxMode ?? "full",
+        sandboxMode: getSandboxMode,
         abortSignal: run.abort.signal,
         onMessage: (message) => this.store.appendMessage(run.meta.id, message),
         plugins: this.plugins,

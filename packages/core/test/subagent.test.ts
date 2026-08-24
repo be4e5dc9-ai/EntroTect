@@ -45,7 +45,12 @@ describe("task 工具与子代理", () => {
 
     const output = await task.call(
       { prompt: "调研某段代码" },
-      { cwd: ".", artifactDir: ".", subagentLog: (line: string) => logLines.push(line) },
+      {
+        cwd: ".",
+        artifactDir: ".",
+        sandboxMode: "full",
+        subagentLog: (line: string) => logLines.push(line),
+      },
     );
     expect(output).toBe("子代理汇报:完成");
     expect(prompts).toEqual(["调研某段代码"]);
@@ -62,7 +67,7 @@ describe("task 工具与子代理", () => {
   it("runner 未注入:task.call 抛错", async () => {
     setTaskRunner(null);
     await expect(
-      taskTool.call({ prompt: "x" }, { cwd: ".", artifactDir: "." }),
+      taskTool.call({ prompt: "x" }, { cwd: ".", artifactDir: ".", sandboxMode: "full" }),
     ).rejects.toThrow("子代理运行器未配置");
     expect(buildBuiltinTools().map((t) => t.name)).not.toContain("task");
   });

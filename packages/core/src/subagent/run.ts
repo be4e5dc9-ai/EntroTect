@@ -43,8 +43,8 @@ export interface SubagentRunnerDeps {
   approve: (request: ApprovalRequest) => Promise<ApprovalOutcome>;
   cwd: string;
   artifactDir: string;
-  /** 沿父级传入的沙箱模式 */
-  sandboxMode?: SandboxMode;
+  /** 沿父级传入的沙箱模式或动态 getter */
+  sandboxMode?: SandboxMode | (() => SandboxMode);
   maxTokens?: number;
   temperature?: number;
   reasoningEffort?: "off" | "low" | "high" | "xhigh" | "max";
