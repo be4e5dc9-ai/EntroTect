@@ -111,38 +111,20 @@
   color: var(--text-secondary);
   letter-spacing: 0.01em;
 }
-.btn-collapse {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+
+/* 常驻标题栏左上角:对话列表收起/展开切换(微信桌面式) */
+.sidebar-toggle {
+  position: absolute;
+  top: 4px;
+  left: 8px;
   width: 32px;
   height: 32px;
-  border-radius: var(--radius-sm);
-  color: var(--text-tertiary);
+  padding: 0;
   -webkit-app-region: no-drag;
-  transition:
-    background-color var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
-    transform var(--dur-press) var(--ease-out);
 }
-.btn-collapse:active {
-  transform: scale(0.94);
-}
-@media (hover: hover) and (pointer: fine) {
-  .btn-collapse:hover {
-    background: var(--surface-hover);
-    color: var(--text);
-  }
-}
-
-/* 收起后在标题栏的展开按钮 */
-.sidebar-peek {
-  position: absolute;
-  top: 5px;
-  left: 8px;
-  height: 32px;
+.sidebar-toggle.with-label {
+  width: auto;
   padding: 0 10px;
-  -webkit-app-region: no-drag;
 }
 
 .detail-peek {

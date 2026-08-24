@@ -95,16 +95,16 @@ export function App(): React.JSX.Element {
           className={`titlebar-live${busy ? " is-busy" : ""}`}
           aria-hidden="true"
         />
-        {view === "chat" && sidebarCollapsed && (
+        {view === "chat" && (
           <button
             type="button"
-            className="btn btn-ghost sidebar-peek"
-            onClick={expand}
-            aria-label="Open sidebar"
-            title="Open sidebar"
+            className={`btn btn-ghost sidebar-toggle${sidebarCollapsed ? " with-label" : ""}`}
+            onClick={sidebarCollapsed ? expand : collapse}
+            aria-label={sidebarCollapsed ? "展开对话列表" : "收起对话列表"}
+            title={sidebarCollapsed ? "展开对话列表" : "收起对话列表"}
           >
-            <PanelCollapseIcon direction="right" />
-            对话列表
+            <PanelCollapseIcon direction={sidebarCollapsed ? "right" : "left"} />
+            {sidebarCollapsed && "对话列表"}
           </button>
         )}
         {view === "chat" && detailCollapsed && hasDetail && (
@@ -121,7 +121,7 @@ export function App(): React.JSX.Element {
       </div>
       <div className="app-body">
         {view === "chat" && !sidebarCollapsed && (
-          <Sidebar width={sidebarWidth} onWidthChange={persistWidth} onCollapse={collapse} />
+          <Sidebar width={sidebarWidth} onWidthChange={persistWidth} />
         )}
         {view === "settings" ? (
           <SettingsPage />

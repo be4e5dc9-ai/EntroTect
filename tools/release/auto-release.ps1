@@ -52,6 +52,17 @@ if ($Version -ne "") {
 }
 if ($LASTEXITCODE -ne 0) { throw "打包失败(exit $LASTEXITCODE)" }
 
+# ---- 2.5 版本号变更提交(打包脚本可能 bump package.json version) ---------
+Step "提交版本号变更"
+$bump = git -C $root status --porcelain
+if ($bump) {
+  git -C $root add -A
+  git -C $root commit -m "chore: bump desktop release to $(Get-AppVersion)"
+  Write-Host "已提交版本号 $(Get-AppVersion)" -ForegroundColor Green
+} else {
+  Write-Host "版本号无变化" -ForegroundColor Yellow
+}
+
 # ---- 3. 清理旧版本安装包 ----------------------------------------------
 Step "3/6 清理旧版本安装包(保留当前版本)"
 $current = Get-AppVersion

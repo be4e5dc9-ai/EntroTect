@@ -1,6 +1,6 @@
 // =====================================================================
 // 侧栏:任务(按工作目录分组) + 对话列表
-// 顶部:收起按钮;New 按钮新建任务(选择工作目录);
+// 顶部:标题(收起/展开由标题栏常驻按钮接管);New 按钮新建任务(选择工作目录);
 // 每个任务行右侧 "+" 在此任务下新建对话;对话行 hover 出 ⋮ 删除。
 // 右缘手柄可拖动调整宽度(持久化)。
 // =====================================================================
@@ -29,7 +29,6 @@ const COL_RESIZE_MIN = 200;
 interface SidebarProps {
   width: number;
   onWidthChange: (width: number) => void;
-  onCollapse: () => void;
 }
 
 export function PanelCollapseIcon({
@@ -52,7 +51,7 @@ export function PanelCollapseIcon({
   );
 }
 
-export function Sidebar({ width, onWidthChange, onCollapse }: SidebarProps): React.JSX.Element {
+export function Sidebar({ width, onWidthChange }: SidebarProps): React.JSX.Element {
   const sessions = useStore((s) => s.sessions);
   const currentSession = useStore((s) => s.currentSession);
   const busy = useStore((s) => s.busy);
@@ -106,15 +105,6 @@ export function Sidebar({ width, onWidthChange, onCollapse }: SidebarProps): Rea
     <aside className="sidebar" style={{ width }}>
       <div className="sidebar-head">
         <span className="sidebar-head-title">对话列表</span>
-        <button
-          type="button"
-          className="btn-collapse"
-          onClick={onCollapse}
-          aria-label="Collapse sidebar"
-          title="Collapse sidebar"
-        >
-          <PanelCollapseIcon direction="left" />
-        </button>
       </div>
 
       <button className="btn btn-primary sidebar-new" onClick={newProject} disabled={busy}>
