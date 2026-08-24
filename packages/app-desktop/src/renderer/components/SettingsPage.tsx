@@ -3,6 +3,7 @@
 // 分区:供应商(多供应商管理)+ 通用(工作目录 / tokens / 开关)。
 // 文本字段走局部 form + 保存按钮(进入瞬间快照,防 config 事件覆盖);
 // showReasoning / sandboxMode 为即时生效开关(点击即保存)。
+// 双栏导航:nav-primary 160px + nav-secondary 220px + detail,active 持久化
 // =====================================================================
 
 import { useEffect, useRef, useState } from "react";
@@ -11,6 +12,7 @@ import { mergeCachedProviderDataIntoConfig, useStore } from "../store";
 import { bridge } from "../bridge";
 
 type FetchState = "fetching" | "ok" | "failed";
+type Primary = "general" | "providers";
 
 /** 快照配置:深拷贝供应商数组,避免表单编辑污染 store */
 function snapshotConfig(config: AppConfig): AppConfig {
@@ -43,6 +45,23 @@ export function SettingsPage(): React.JSX.Element | null {
   });
   const [fetchState, setFetchState] = useState<Record<string, FetchState>>({});
   const previousCache = useRef({ modelsByProvider, contextWindowsByProvider });
+
+  // 双栏导航状态:primary + secondary active provider
+  const [primary, setPrimary] = useState<Primary>(() => {
+    try {
+      const saved = localStorage.getItem("entrotect-settings-primary");
+      return saved === "providers" ? "providers" : "general";
+    } catch {
+      return "general";
+    }
+  });
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("entrotect-settings-provider");
+    } catch {
+      return null;
+    }
+  });
 
   // 兜底:进入时 config 尚未到达,到达后补一次初始化
   useEffect(() => {
@@ -103,7 +122,38 @@ export function SettingsPage(): React.JSX.Element | null {
     return unsubscribe;
   }, []);
 
+  // 持久化 primary / provider
+  useEffect(() => {
+    try {
+      localStorage.setItem("entrotect-settings-primary", primary);
+    } catch {}
+  }, [primary]);
+
+  useEffect(() => {
+    if (!selectedProviderId) return;
+    try {
+      localStorage.setItem("entrotect-settings-provider", selectedProviderId);
+    } catch {}
+  }, [selectedProviderId]);
+
   if (!form) return null;
+
+  const providers = form.providers ?? [];
+  // 有效的选中供应商:优先 selected,其次 activeProvider,最后首个
+  const effectiveProviderId =
+    selectedProviderId && providers.some((p) => p.id === selectedProviderId)
+      ? selectedProviderId
+      : (providers.find((p) => p.id === form.activeProviderId)?.id ?? providers[0]?.id ?? null);
+  const selectedProvider = providers.find((p) => p.id === effectiveProviderId) ?? null;
+
+  // 当 primary 为 providers 且无有效选中时,自动选中 fallback 并持久化
+  useEffect(() => {
+    if (primary !== "providers") return;
+    if (!effectiveProviderId) return;
+    if (effectiveProviderId !== selectedProviderId) {
+      setSelectedProviderId(effectiveProviderId);
+    }
+  }, [primary, effectiveProviderId, selectedProviderId]);
 
   const save = () => {
     bridge().send({ kind: "SetConfig", config: form });
@@ -162,8 +212,8 @@ export function SettingsPage(): React.JSX.Element | null {
   };
 
   const addProvider = () => {
-    const providers = form.providers ?? [];
-    const customCount = providers.filter((p) => !p.builtin).length;
+    const providersList = form.providers ?? [];
+    const customCount = providersList.filter((p) => !p.builtin).length;
     const provider: ProviderConfig = {
       id: `custom-${crypto.randomUUID().slice(0, 8)}`,
       name: `自定义供应商 ${customCount + 1}`,
@@ -171,25 +221,32 @@ export function SettingsPage(): React.JSX.Element | null {
       apiKey: "",
       models: [],
     };
-    const next = { ...form, providers: [...providers, provider] };
+    const next = { ...form, providers: [...providersList, provider] };
     setForm(next);
     bridge().send({ kind: "SetConfig", config: next });
+    setSelectedProviderId(provider.id);
+    setPrimary("providers");
   };
 
   const removeProvider = (id: string) => {
-    const providers = (form.providers ?? []).filter((p) => p.id !== id);
-    const activeId = providers.some((p) => p.id === form.activeProviderId)
+    const providersList = (form.providers ?? []).filter((p) => p.id !== id);
+    const activeId = providersList.some((p) => p.id === form.activeProviderId)
       ? form.activeProviderId
-      : (providers[0]?.id ?? "deepseek");
-    const active = providers.find((p) => p.id === activeId);
+      : (providersList[0]?.id ?? "deepseek");
+    const active = providersList.find((p) => p.id === activeId);
     const next: AppConfig = {
       ...form,
-      providers,
+      providers: providersList,
       activeProviderId: activeId,
       model: active?.models[0] ?? form.model,
     };
     setForm(next);
     bridge().send({ kind: "SetConfig", config: next });
+    // 选中态顺延
+    if (selectedProviderId === id) {
+      const fallback = providersList.find((p) => p.id === activeId)?.id ?? providersList[0]?.id ?? null;
+      setSelectedProviderId(fallback);
+    }
   };
 
   const addModel = (providerId: string, model: string) => {
@@ -242,8 +299,6 @@ export function SettingsPage(): React.JSX.Element | null {
     });
   };
 
-  const providers = form.providers ?? [];
-
   return (
     <main className="main settings-page">
       <header className="chat-header">
@@ -268,117 +323,157 @@ export function SettingsPage(): React.JSX.Element | null {
         </div>
       </header>
 
-      <div className="settings-scroll">
-        <div className="settings-inner">
-          <section className="settings-section">
-            <div className="settings-section-head">
-              <h3 className="settings-section-title">供应商</h3>
+      <div className="settings-layout">
+        <nav className="settings-nav-primary" aria-label="主导航">
+          <button
+            className={`settings-nav-item${primary === "general" ? " active" : ""}`}
+            onClick={() => setPrimary("general")}
+            type="button"
+          >
+            通用
+          </button>
+          <button
+            className={`settings-nav-item${primary === "providers" ? " active" : ""}`}
+            onClick={() => setPrimary("providers")}
+            type="button"
+          >
+            供应商
+          </button>
+        </nav>
+
+        {primary === "providers" && (
+          <nav className="settings-nav-secondary" aria-label="供应商列表">
+            <div className="settings-secondary-list">
+              {providers.map((provider) => (
+                <button
+                  key={provider.id}
+                  className={`settings-provider-row${provider.id === effectiveProviderId ? " active" : ""}`}
+                  onClick={() => setSelectedProviderId(provider.id)}
+                  type="button"
+                >
+                  <span className="settings-provider-name">{provider.name}</span>
+                  {provider.id === form.activeProviderId && (
+                    <span className="provider-badge provider-badge-active">当前</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="settings-secondary-foot">
               <button className="btn btn-ghost" onClick={addProvider} type="button">
                 添加供应商
               </button>
             </div>
-            <p className="settings-hint">
-              各供应商的 API Key 与 Base URL 请前往对应供应商官方文档获取
-            </p>
+          </nav>
+        )}
 
-            {providers.map((provider) => (
+        <div className="settings-detail">
+          <div className="settings-detail-scroll">
+            {primary === "general" ? (
+              <section className="settings-section">
+                <h3 className="settings-section-title">通用</h3>
+
+                <label className="field">
+                  <span>工作目录(默认工作目录,新建任务时可另行选择)</span>
+                  <div className="field-row">
+                    <input
+                      value={form.workspaceDir ?? ""}
+                      onChange={(e) =>
+                        setForm((f) => (f ? { ...f, workspaceDir: e.target.value } : f))
+                      }
+                      placeholder="留空 = 用户主目录"
+                      spellCheck={false}
+                    />
+                    <button className="btn btn-ghost" onClick={chooseFolder} type="button">
+                      选择
+                    </button>
+                  </div>
+                </label>
+
+                <label className="field">
+                  <span>最大输出 tokens(留空用默认 8192)</span>
+                  <input
+                    type="number"
+                    min={256}
+                    value={form.maxTokens ?? ""}
+                    onChange={(e) =>
+                      setForm((f) =>
+                        f
+                          ? {
+                              ...f,
+                              maxTokens: e.target.value === "" ? undefined : Number(e.target.value),
+                            }
+                          : f,
+                      )
+                    }
+                  />
+                </label>
+
+                <div className="field field-inline">
+                  <div className="field-inline-text">
+                    <span className="field-inline-title">显示模型思考过程</span>
+                    <span className="field-inline-desc">
+                      即时生效并保存;开启后消息中的"思考过程"区块展示模型的推理内容
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={form.showReasoning ?? false}
+                    className={`switch${form.showReasoning ? " on" : ""}`}
+                    onClick={toggleShowReasoning}
+                  >
+                    <span className="switch-knob" />
+                  </button>
+                </div>
+
+                <div className="field field-inline">
+                  <div className="field-inline-text">
+                    <span className="field-inline-title">拦截危险命令(沙箱)</span>
+                    <span className="field-inline-desc">
+                      即时生效;开启后删除/格式化/关停等危险命令将被拒绝执行
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={(form.sandboxMode ?? "full") === "restricted"}
+                    className={`switch${(form.sandboxMode ?? "full") === "restricted" ? " on" : ""}`}
+                    onClick={toggleSandbox}
+                  >
+                    <span className="switch-knob" />
+                  </button>
+                </div>
+
+                <div className="settings-actions">
+                  <button className="btn btn-primary" onClick={save} type="button">
+                    保存
+                  </button>
+                </div>
+              </section>
+            ) : selectedProvider ? (
               <ProviderCard
-                key={provider.id}
-                provider={provider}
-                isActive={provider.id === form.activeProviderId}
-                fetchState={fetchState[provider.id]}
-                onPatch={(patch) => updateProvider(provider.id, patch)}
-                onFetch={() => requestModels(provider.id)}
-                onActivate={() => activate(provider)}
-                onRemove={() => removeProvider(provider.id)}
-                onAddModel={(model) => addModel(provider.id, model)}
-                onRemoveModel={(model) => removeModel(provider.id, model)}
-                onContextChange={(model, raw) => setModelContext(provider.id, model, raw)}
+                provider={selectedProvider}
+                isActive={selectedProvider.id === form.activeProviderId}
+                fetchState={fetchState[selectedProvider.id]}
+                onPatch={(patch) => updateProvider(selectedProvider.id, patch)}
+                onFetch={() => requestModels(selectedProvider.id)}
+                onActivate={() => activate(selectedProvider)}
+                onRemove={() => removeProvider(selectedProvider.id)}
+                onAddModel={(model) => addModel(selectedProvider.id, model)}
+                onRemoveModel={(model) => removeModel(selectedProvider.id, model)}
+                onContextChange={(model, raw) => setModelContext(selectedProvider.id, model, raw)}
               />
-            ))}
-          </section>
-
-          <section className="settings-section">
-            <h3 className="settings-section-title">通用</h3>
-
-            <label className="field">
-              <span>工作目录(默认工作目录,新建任务时可另行选择)</span>
-              <div className="field-row">
-                <input
-                  value={form.workspaceDir ?? ""}
-                  onChange={(e) =>
-                    setForm((f) => (f ? { ...f, workspaceDir: e.target.value } : f))
-                  }
-                  placeholder="留空 = 用户主目录"
-                  spellCheck={false}
-                />
-                <button className="btn btn-ghost" onClick={chooseFolder} type="button">
-                  选择
+            ) : (
+              <div className="settings-empty">暂无供应商</div>
+            )}
+            {primary === "providers" && selectedProvider && (
+              <div className="settings-actions">
+                <button className="btn btn-primary" onClick={save} type="button">
+                  保存
                 </button>
               </div>
-            </label>
-
-            <label className="field">
-              <span>最大输出 tokens(留空用默认 8192)</span>
-              <input
-                type="number"
-                min={256}
-                value={form.maxTokens ?? ""}
-                onChange={(e) =>
-                  setForm((f) =>
-                    f
-                      ? {
-                          ...f,
-                          maxTokens: e.target.value === "" ? undefined : Number(e.target.value),
-                        }
-                      : f,
-                  )
-                }
-              />
-            </label>
-
-            <div className="field field-inline">
-              <div className="field-inline-text">
-                <span className="field-inline-title">显示模型思考过程</span>
-                <span className="field-inline-desc">
-                  即时生效并保存;开启后消息中的"思考过程"区块展示模型的推理内容
-                </span>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={form.showReasoning ?? false}
-                className={`switch${form.showReasoning ? " on" : ""}`}
-                onClick={toggleShowReasoning}
-              >
-                <span className="switch-knob" />
-              </button>
-            </div>
-
-            <div className="field field-inline">
-              <div className="field-inline-text">
-                <span className="field-inline-title">拦截危险命令(沙箱)</span>
-                <span className="field-inline-desc">
-                  即时生效;开启后删除/格式化/关停等危险命令将被拒绝执行
-                </span>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={(form.sandboxMode ?? "full") === "restricted"}
-                className={`switch${(form.sandboxMode ?? "full") === "restricted" ? " on" : ""}`}
-                onClick={toggleSandbox}
-              >
-                <span className="switch-knob" />
-              </button>
-            </div>
-
-            <div className="settings-actions">
-              <button className="btn btn-primary" onClick={save} type="button">
-                保存
-              </button>
-            </div>
-          </section>
+            )}
+          </div>
         </div>
       </div>
     </main>

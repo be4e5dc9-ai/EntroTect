@@ -1905,6 +1905,131 @@
   border-color: var(--accent);
 }
 
+/* ---------- 设置页双栏导航(nav-primary 160px + nav-secondary 220px + detail) ---------- */
+.settings-layout {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.settings-nav-primary {
+  width: 160px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 6px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  overflow-y: auto;
+}
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: left;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+.settings-nav-item.active {
+  background: var(--accent-dim);
+  color: var(--accent-strong);
+  border: 1px solid var(--accent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .settings-nav-item:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+}
+.settings-nav-secondary {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  overflow: hidden;
+}
+.settings-secondary-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 6px;
+}
+.settings-provider-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: left;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+.settings-provider-row.active {
+  background: var(--accent-dim);
+  color: var(--text);
+  border: 1px solid var(--accent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .settings-provider-row:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+}
+.settings-provider-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-secondary-foot {
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.settings-secondary-foot .btn {
+  width: 100%;
+}
+.settings-detail {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+.settings-detail-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 20px 24px 32px;
+}
+.settings-empty {
+  padding: 24px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
 /* ---------- Toast ---------- */
 .toasts {
   position: fixed;
