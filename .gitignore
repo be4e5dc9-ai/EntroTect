@@ -4,7 +4,7 @@ node_modules/
 # 构建产物
 dist/
 out/
-release/
+/release/
 *.tsbuildinfo
 
 # Python
