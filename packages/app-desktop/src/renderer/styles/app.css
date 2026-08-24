@@ -135,25 +135,24 @@
   }
 }
 
-/* 收起后在标题栏的展开按钮(左上角并排,同截图式工具栏) */
-.titlebar-peek-group {
-  position: absolute;
-  top: 4px;
-  left: 8px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  -webkit-app-region: no-drag;
-}
+/* 收起后在标题栏的展开按钮 */
 .sidebar-peek {
+  position: absolute;
+  top: 5px;
+  left: 8px;
   height: 32px;
   padding: 0 10px;
+  -webkit-app-region: no-drag;
 }
 
 .detail-peek {
+  position: absolute;
+  top: 4px;
+  right: 8px;
   width: 32px;
   height: 32px;
   padding: 0;
+  -webkit-app-region: no-drag;
 }
 
 .sidebar-brand {

@@ -95,31 +95,29 @@ export function App(): React.JSX.Element {
           className={`titlebar-live${busy ? " is-busy" : ""}`}
           aria-hidden="true"
         />
-        <div className="titlebar-peek-group">
-          {view === "chat" && sidebarCollapsed && (
-            <button
-              type="button"
-              className="btn btn-ghost sidebar-peek"
-              onClick={expand}
-              aria-label="Open sidebar"
-              title="Open sidebar"
-            >
-              <PanelCollapseIcon direction="right" />
-              对话列表
-            </button>
-          )}
-          {view === "chat" && detailCollapsed && hasDetail && (
-            <button
-              type="button"
-              className="btn btn-ghost detail-peek"
-              onClick={expandDetail}
-              aria-label="Open details"
-              title="Open details"
-            >
-              <PanelCollapseIcon direction="left" />
-            </button>
-          )}
-        </div>
+        {view === "chat" && sidebarCollapsed && (
+          <button
+            type="button"
+            className="btn btn-ghost sidebar-peek"
+            onClick={expand}
+            aria-label="Open sidebar"
+            title="Open sidebar"
+          >
+            <PanelCollapseIcon direction="right" />
+            对话列表
+          </button>
+        )}
+        {view === "chat" && detailCollapsed && hasDetail && (
+          <button
+            type="button"
+            className="btn btn-ghost detail-peek"
+            onClick={expandDetail}
+            aria-label="Open details"
+            title="Open details"
+          >
+            <PanelCollapseIcon direction="left" />
+          </button>
+        )}
       </div>
       <div className="app-body">
         {view === "chat" && !sidebarCollapsed && (
