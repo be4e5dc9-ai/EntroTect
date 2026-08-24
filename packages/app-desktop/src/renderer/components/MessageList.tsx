@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useStore, openSubagentTab, type UiMessage } from "../store";
 import { renderMarkdown } from "../markdown";
 import { bridge } from "../bridge";
+import { BrandMark } from "./BrandMark";
 import { ToolCard } from "./ToolCard";
 import { FileCard } from "./FileCard";
 
@@ -76,7 +77,7 @@ export function Message({ message }: { message: UiMessage }): React.JSX.Element 
   return (
     <div className="msg msg-assistant">
       <div className="msg-assistant-mark" aria-hidden="true">
-        <img src="./icon.png" alt="" draggable={false} />
+        <BrandMark className="brand-mark" />
       </div>
       <div className="msg-assistant-content">
         {showReasoning && <ReasoningSection text={message.reasoning} streaming={message.streaming} />}
@@ -126,7 +127,7 @@ export function MessageList(): React.JSX.Element {
   if (messages.length === 0) {
     return (
       <div className="empty-state">
-        <img src="./icon.png" alt="" className="empty-mark" draggable={false} />
+        <BrandMark className="brand-mark empty-mark" />
         <h2>让 EntroTect 帮你写代码</h2>
         <p className="empty-hint">点击侧栏 New 新建任务(选择工作目录),然后在下方输入任务,例如:</p>
         <div className="empty-suggestions">

@@ -123,6 +123,14 @@ describe("settings-nav Task1: Nav Shell + State", () => {
     expect(screen.getByText("对话列表")).toBeDefined();
   });
 
+  it("uses an accent-aware inline brand mark instead of the static renderer PNG", async () => {
+    const { App } = await import("../../app-desktop/src/renderer/App.js");
+    useStore.setState({ view: "chat", messages: [] });
+    render(<App />);
+    expect(document.querySelector(".brand-mark")).not.toBeNull();
+    expect(document.querySelector('.empty-state img[src="./icon.png"]')).toBeNull();
+  });
+
   it("renders 供应商 first and defaults to provider detail", async () => {
     const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
     render(<SettingsPage />);

@@ -15,10 +15,11 @@
   --text: #ececf2;
   --text-secondary: #a3a3b3;
   --text-tertiary: #68687a;
-  --accent: #8b5cf6;
-  --accent-strong: #a78bfa;
-  --accent-dim: rgba(139, 92, 246, 0.14);
-  --accent-glow: rgba(139, 92, 246, 0.35);
+  --accent: #b8a2ff;
+  --accent-strong: #cfbeff;
+  --accent-dim: rgba(184, 162, 255, 0.14);
+  --accent-glow: rgba(184, 162, 255, 0.35);
+  --accent-foreground: #241d34;
   --success: #34d399;
   --danger: #f87171;
   --warning: #fbbf24;
@@ -62,10 +63,11 @@
   --text: #1c1c24;
   --text-secondary: #565664;
   --text-tertiary: #8f8f9e;
-  --accent: #7c3aed;
-  --accent-strong: #6d28d9;
-  --accent-dim: rgba(124, 58, 237, 0.1);
-  --accent-glow: rgba(124, 58, 237, 0.25);
+  --accent: #b8a2ff;
+  --accent-strong: #9B82E8;
+  --accent-dim: rgba(184, 162, 255, 0.10);
+  --accent-glow: rgba(184, 162, 255, 0.25);
+  --accent-foreground: #241d34;
   --success: #059669;
   --danger: #dc2626;
   --warning: #d97706;
@@ -174,7 +176,7 @@ textarea {
 }
 .btn-primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-foreground);
 }
 .btn-primary:hover:not(:disabled) {
   background: var(--accent-strong);
