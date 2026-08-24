@@ -1,7 +1,11 @@
 // 渲染层 store 逻辑直测(临时定位用):复现 subagent-part 事件序列
 import { describe, expect, it, beforeEach } from "vitest";
-import { useStore, applyEvent } from "../../app-desktop/src/renderer/store.js";
-import type { AppEvent } from "@entrotect/shared";
+import {
+  applyEvent,
+  mergeCachedProviderDataIntoConfig,
+  useStore,
+} from "../../app-desktop/src/renderer/store.js";
+import type { AppConfig, AppEvent } from "@entrotect/shared";
 
 // node 环境补 requestAnimationFrame(store 的流式缓冲依赖它)
 (globalThis as Record<string, unknown>).requestAnimationFrame = (
@@ -18,6 +22,7 @@ beforeEach(() => {
     busy: false,
     usage: null,
     models: [],
+    contextWindowsByProvider: {},
     approval: null,
     config: null,
     settingsOpen: false,
@@ -41,6 +46,126 @@ function feed(events: AppEvent[]): void {
 function feedOne(event: AppEvent): void {
   applyEvent(event);
 }
+
+function settingsConfig(contextWindows?: Record<string, number>): AppConfig {
+  return {
+    baseUrl: "https://api.example.test/v1",
+    apiKey: "key",
+    model: "saved-model",
+    activeProviderId: "deepseek",
+    providers: [
+      {
+        id: "deepseek",
+        name: "DeepSeek",
+        baseUrl: "https://api.example.test/v1",
+        apiKey: "key",
+        models: ["saved-model"],
+        ...(contextWindows === undefined ? {} : { contextWindows }),
+        builtin: true,
+      },
+    ],
+  };
+}
+
+describe("renderer store: model context metadata", () => {
+  it("caches models and context windows for each provider before SettingsPage mounts", () => {
+    feedOne({
+      type: "models-listed",
+      providerId: "deepseek",
+      models: ["deepseek-chat"],
+      contextWindows: { "deepseek-chat": 64000 },
+    });
+    feedOne({
+      type: "models-listed",
+      providerId: "openai",
+      models: ["gpt-4.1"],
+      contextWindows: { "gpt-4.1": 128000 },
+    });
+
+    expect(useStore.getState().modelsByProvider).toEqual({
+      deepseek: ["deepseek-chat"],
+      openai: ["gpt-4.1"],
+    });
+    expect(useStore.getState().contextWindowsByProvider).toEqual({
+      deepseek: { "deepseek-chat": 64000 },
+      openai: { "gpt-4.1": 128000 },
+    });
+  });
+
+  it("keeps persisted context metadata when an old event omits contextWindows", () => {
+    const config = settingsConfig({ "saved-model": 32768 });
+    feedOne({ type: "config", config });
+    feedOne({
+      type: "models-listed",
+      providerId: "deepseek",
+      models: ["new-model"],
+    });
+
+    const state = useStore.getState();
+    expect(state.modelsByProvider.deepseek).toEqual(["new-model"]);
+    expect(state.contextWindowsByProvider.deepseek).toEqual({ "saved-model": 32768 });
+
+    const form = mergeCachedProviderDataIntoConfig(
+      state.config!,
+      state.modelsByProvider,
+      state.contextWindowsByProvider,
+    );
+    expect(form.providers?.[0]).toMatchObject({
+      models: ["new-model"],
+      contextWindows: { "saved-model": 32768 },
+    });
+  });
+
+  it("does not replace cached models or context windows with an empty result", () => {
+    const config = settingsConfig();
+    feedOne({ type: "config", config });
+    feedOne({
+      type: "models-listed",
+      providerId: "deepseek",
+      models: ["fetched-model"],
+      contextWindows: { "fetched-model": 131072 },
+    });
+    feedOne({ type: "models-listed", providerId: "deepseek", models: [] });
+
+    const state = useStore.getState();
+    expect(state.modelsByProvider.deepseek).toEqual(["fetched-model"]);
+    expect(state.contextWindowsByProvider.deepseek).toEqual({ "fetched-model": 131072 });
+
+    const form = mergeCachedProviderDataIntoConfig(
+      state.config!,
+      state.modelsByProvider,
+      state.contextWindowsByProvider,
+    );
+    expect(form.providers?.[0]).toMatchObject({
+      models: ["fetched-model"],
+      contextWindows: { "fetched-model": 131072 },
+    });
+  });
+
+  it("backfills an unpersisted fetch into the SettingsPage form without changing config", () => {
+    const config = settingsConfig();
+    feedOne({
+      type: "models-listed",
+      providerId: "deepseek",
+      models: ["auto-fetched-model"],
+      contextWindows: { "auto-fetched-model": 200000 },
+    });
+    feedOne({ type: "config", config });
+
+    const state = useStore.getState();
+    expect(state.config).toEqual(config);
+
+    const form = mergeCachedProviderDataIntoConfig(
+      state.config!,
+      state.modelsByProvider,
+      state.contextWindowsByProvider,
+    );
+    expect(form.providers?.[0]).toMatchObject({
+      models: ["auto-fetched-model"],
+      contextWindows: { "auto-fetched-model": 200000 },
+    });
+  });
+});
 
 describe("renderer store: subagent-part 流", () => {
   it("主循环 task 工具块到达后,subagent-part 序列构建完整子代理对话", () => {

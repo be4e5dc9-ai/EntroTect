@@ -5,9 +5,9 @@
 // showReasoning / sandboxMode 为即时生效开关(点击即保存)。
 // =====================================================================
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AppConfig, ProviderConfig } from "@entrotect/shared";
-import { useStore } from "../store";
+import { mergeCachedProviderDataIntoConfig, useStore } from "../store";
 import { bridge } from "../bridge";
 
 type FetchState = "fetching" | "ok" | "failed";
@@ -26,19 +26,71 @@ function snapshotConfig(config: AppConfig): AppConfig {
 
 export function SettingsPage(): React.JSX.Element | null {
   const config = useStore((s) => s.config);
+  const modelsByProvider = useStore((s) => s.modelsByProvider);
+  const contextWindowsByProvider = useStore((s) => s.contextWindowsByProvider);
   // 进入设置页瞬间用最新 config 初始化;编辑期间 config 事件不覆盖表单
   const [form, setForm] = useState<AppConfig | null>(() => {
-    const current = useStore.getState().config;
-    return current ? snapshotConfig(current) : null;
+    const state = useStore.getState();
+    return state.config
+      ? snapshotConfig(
+          mergeCachedProviderDataIntoConfig(
+            state.config,
+            state.modelsByProvider,
+            state.contextWindowsByProvider,
+          ),
+        )
+      : null;
   });
   const [fetchState, setFetchState] = useState<Record<string, FetchState>>({});
+  const previousCache = useRef({ modelsByProvider, contextWindowsByProvider });
 
   // 兜底:进入时 config 尚未到达,到达后补一次初始化
   useEffect(() => {
-    if (!form && config) setForm(snapshotConfig(config));
-  }, [form, config]);
+    if (!form && config) {
+      setForm(
+        snapshotConfig(
+          mergeCachedProviderDataIntoConfig(
+            config,
+            modelsByProvider,
+            contextWindowsByProvider,
+          ),
+        ),
+      );
+    }
+  }, [form, config, modelsByProvider, contextWindowsByProvider]);
 
-  // 拉取结果回填:非空 → 写入表单对应供应商的模型列表;空 → 显示"拉取失败"
+  // App 的常驻事件订阅先写入 store;设置页挂载后再把发生变化的未落盘缓存补入当前表单。
+  useEffect(() => {
+    const previous = previousCache.current;
+    const providerIds = new Set([
+      ...Object.keys(previous.modelsByProvider),
+      ...Object.keys(modelsByProvider),
+      ...Object.keys(previous.contextWindowsByProvider),
+      ...Object.keys(contextWindowsByProvider),
+    ]);
+    const changedProviderIds = new Set(
+      [...providerIds].filter(
+        (providerId) =>
+          previous.modelsByProvider[providerId] !== modelsByProvider[providerId] ||
+          previous.contextWindowsByProvider[providerId] !==
+            contextWindowsByProvider[providerId],
+      ),
+    );
+    previousCache.current = { modelsByProvider, contextWindowsByProvider };
+    if (!form || changedProviderIds.size === 0) return;
+    setForm((current) =>
+      current
+        ? mergeCachedProviderDataIntoConfig(
+            current,
+            modelsByProvider,
+            contextWindowsByProvider,
+            changedProviderIds,
+          )
+        : current,
+    );
+  }, [modelsByProvider, contextWindowsByProvider]);
+
+  // 拉取状态仍由页面监听;模型与元数据统一从常驻 store 缓存回填。
   useEffect(() => {
     const unsubscribe = bridge().onEvent((event) => {
       if (event.type !== "models-listed") return;
@@ -47,24 +99,6 @@ export function SettingsPage(): React.JSX.Element | null {
           ? state
           : { ...state, [event.providerId]: event.models.length > 0 ? "ok" : "failed" },
       );
-      if (event.models.length > 0) {
-        setForm((f) =>
-          f
-            ? {
-                ...f,
-                providers: f.providers?.map((p) =>
-                  p.id === event.providerId
-                    ? {
-                        ...p,
-                        models: event.models,
-                        contextWindows: event.contextWindows ?? {},
-                      }
-                    : p,
-                ),
-              }
-            : f,
-        );
-      }
     });
     return unsubscribe;
   }, []);

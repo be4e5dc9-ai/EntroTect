@@ -71,6 +71,9 @@ export type Theme = "dark" | "light";
 /** 主区视图:chat = 聊天,settings = 设置页(替代旧设置弹窗) */
 export type View = "chat" | "settings";
 
+export type ModelsByProvider = Record<string, string[]>;
+export type ContextWindowsByProvider = Record<string, Record<string, number>>;
+
 interface UiState {
   sessions: SessionMeta[];
   currentSession: SessionMeta | null;
@@ -78,7 +81,9 @@ interface UiState {
   busy: boolean;
   usage: TokenUsage | null;
   /** 各供应商的模型缓存(models-listed 事件写入,key = 供应商 id) */
-  modelsByProvider: Record<string, string[]>;
+  modelsByProvider: ModelsByProvider;
+  /** 各供应商的上下文窗口缓存;仅显式保存时写入配置,供设置页/后续上下文 UI 使用 */
+  contextWindowsByProvider: ContextWindowsByProvider;
   approval: {
     toolCallId: string;
     toolName: string;
@@ -107,6 +112,7 @@ export const useStore = create<UiState>()(() => ({
   busy: false,
   usage: null,
   modelsByProvider: {},
+  contextWindowsByProvider: {},
   approval: null,
   config: null,
   view: "chat",
@@ -118,6 +124,30 @@ export const useStore = create<UiState>()(() => ({
   fileContents: {},
   subagentChats: {},
 }));
+
+/** 把 renderer 内存中的拉取结果补回设置表单,不修改 store 中的配置快照。 */
+export function mergeCachedProviderDataIntoConfig(
+  config: AppConfig,
+  modelsByProvider: ModelsByProvider,
+  contextWindowsByProvider: ContextWindowsByProvider,
+  providerIds?: ReadonlySet<string>,
+): AppConfig {
+  return {
+    ...config,
+    providers: config.providers?.map((provider) => {
+      if (providerIds && !providerIds.has(provider.id)) return provider;
+      const models = modelsByProvider[provider.id];
+      const contextWindows = contextWindowsByProvider[provider.id];
+      return {
+        ...provider,
+        ...(models && models.length > 0 ? { models: [...models] } : {}),
+        ...(contextWindows === undefined
+          ? {}
+          : { contextWindows: { ...contextWindows } }),
+      };
+    }),
+  };
+}
 
 // ---------- rAF 合帧的流式文本缓冲 ----------
 let deltaBuffer = "";
@@ -563,11 +593,21 @@ export function applyEvent(event: AppEvent): void {
       });
       break;
     case "models-listed":
+      // 空结果代表失败/无数据,不能抹掉已有缓存;状态页仍由原始事件更新失败提示。
+      if (event.models.length === 0) break;
       useStore.setState((state) => ({
         modelsByProvider: {
           ...state.modelsByProvider,
-          [event.providerId]: event.models,
+          [event.providerId]: [...event.models],
         },
+        ...(event.contextWindows === undefined
+          ? {}
+          : {
+              contextWindowsByProvider: {
+                ...state.contextWindowsByProvider,
+                [event.providerId]: { ...event.contextWindows },
+              },
+            }),
       }));
       break;
     case "message-appended": {
@@ -784,7 +824,19 @@ export function applyEvent(event: AppEvent): void {
       pushToast("error", event.message);
       break;
     case "config":
-      useStore.setState({ config: event.config });
+      useStore.setState((state) => {
+        const contextWindowsByProvider = { ...state.contextWindowsByProvider };
+        for (const provider of event.config.providers ?? []) {
+          // 已有内存结果优先,避免 config 回包覆盖尚未显式保存的自动拉取结果。
+          if (
+            contextWindowsByProvider[provider.id] === undefined &&
+            provider.contextWindows !== undefined
+          ) {
+            contextWindowsByProvider[provider.id] = { ...provider.contextWindows };
+          }
+        }
+        return { config: event.config, contextWindowsByProvider };
+      });
       break;
   }
 }
