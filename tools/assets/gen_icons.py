@@ -15,8 +15,8 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = ROOT / "packages" / "app-desktop" / "build"
 
-BRAND_TOP = (139, 92, 246, 255)      # violet-500
-BRAND_BOTTOM = (99, 102, 241, 255)   # indigo-500
+BRAND_TOP = (184, 162, 255, 255)     # lavender purple #B8A2FF
+BRAND_BOTTOM = (142, 120, 216, 255)  # lavender shadow
 DARK_BG = (14, 14, 17, 255)
 WHITE = (255, 255, 255, 255)
 
