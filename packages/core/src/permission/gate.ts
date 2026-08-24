@@ -43,13 +43,18 @@ export class SessionPermissionGate {
   private readonly readOnlyTools = new Set<string>();
   private readonly pending = new Map<string, PendingApproval>();
   private readonly timeoutMs: number;
-  private readonly mode: PermissionMode;
+  private mode: PermissionMode;
 
   constructor(tools: Tool[], timeoutMs: number = APPROVAL_TIMEOUT_MS, mode: PermissionMode = "write") {
     for (const tool of tools) {
       if (tool.isReadOnly) this.readOnlyTools.add(tool.name);
     }
     this.timeoutMs = timeoutMs;
+    this.mode = mode;
+  }
+
+  /** 更新后续检查使用的模式;已挂起的审批仍由原有 respond/超时路径收口。 */
+  setMode(mode: PermissionMode): void {
     this.mode = mode;
   }
 

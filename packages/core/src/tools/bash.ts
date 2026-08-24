@@ -11,7 +11,7 @@
 import { spawn } from "node:child_process";
 import { z } from "zod";
 import type { Tool, ToolContext } from "./types.js";
-import { analyzeCommand, getSandboxMode } from "../sandbox/index.js";
+import { analyzeCommand } from "../sandbox/index.js";
 
 const DEFAULT_TIMEOUT_SECONDS = 120;
 
@@ -56,7 +56,7 @@ export const bashTool: Tool = {
     const args = inputSchema.parse(rawArgs);
 
     // 沙箱:受限模式下先拦危险命令,再决定是否真正 spawn
-    if (getSandboxMode() === "restricted") {
+    if (ctx.sandboxMode === "restricted") {
       const verdict = analyzeCommand(args.command);
       if (verdict.blocked) {
         throw new Error(

@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { AppEvent, ApprovalRequest, Message, SubagentPart } from "@entrotect/shared";
+import type {
+  AppEvent,
+  ApprovalRequest,
+  Message,
+  PermissionMode,
+  SubagentPart,
+} from "@entrotect/shared";
 import { runAgent } from "../src/loop/agent.js";
+import { SessionPermissionGate } from "../src/permission/gate.js";
 import { buildBuiltinTools } from "../src/tools/registry.js";
 import { taskTool, setTaskRunner } from "../src/tools/task.js";
 import { createSubagentRunner, type SubagentRunner } from "../src/subagent/run.js";
@@ -14,6 +21,10 @@ async function makeEnv(): Promise<{ cwd: string; artifactDir: string }> {
   const cwd = await mkdtemp(path.join(tmpdir(), "entrotect-subagent-"));
   const artifactDir = path.join(cwd, ".artifacts");
   return { cwd, artifactDir };
+}
+
+function makeRequest(toolName: string, toolCallId: string): ApprovalRequest {
+  return { toolName, toolCallId, preview: toolName, description: toolName };
 }
 
 describe("task 工具与子代理", () => {
@@ -331,5 +342,116 @@ describe("task 工具与子代理", () => {
       (e) => e.type === "subagent-activity" && e.toolCallId === "t2",
     );
     expect(t2Activities.some((e) => e.text.includes("inner.txt"))).toBe(true);
+  });
+
+  it.each(["full", "write", "ask"] as const)(
+    "子代理与父代理在 %s 模式下共享读写审批语义",
+    async (mode: PermissionMode) => {
+      const { cwd, artifactDir } = await makeEnv();
+      await writeFile(path.join(cwd, "note.txt"), "parent and child", "utf8");
+
+      const tools = buildBuiltinTools();
+      const gate = new SessionPermissionGate(tools, 200, mode);
+      const pendingTools: string[] = [];
+      const approve = (request: ApprovalRequest) => {
+        const outcome = gate.request(request);
+        let settled = false;
+        void outcome.then(() => {
+          settled = true;
+        });
+        queueMicrotask(() => {
+          if (!settled) {
+            pendingTools.push(request.toolName);
+            gate.respond(request.toolCallId, "allow-once");
+          }
+        });
+        return outcome;
+      };
+      const expectedPending =
+        mode === "full" ? [] : mode === "write" ? ["write"] : ["read", "write"];
+
+      await approve(makeRequest("read", `parent-read-${mode}`));
+      await approve(makeRequest("write", `parent-write-${mode}`));
+      expect(pendingTools).toEqual(expectedPending);
+      pendingTools.length = 0;
+
+      const childProvider = new MockProvider([
+        {
+          events: [
+            toolCall(
+              `child-read-${mode}`,
+              "read",
+              JSON.stringify({ file_path: "note.txt" }),
+            ),
+            turnComplete(),
+          ],
+        },
+        {
+          events: [
+            toolCall(
+              `child-write-${mode}`,
+              "write",
+              JSON.stringify({ file_path: `child-${mode}.txt`, content: mode }),
+            ),
+            turnComplete(),
+          ],
+        },
+        { events: [textBlock("子代理完成"), turnComplete()] },
+      ]);
+      const runner = createSubagentRunner({
+        provider: childProvider,
+        tools,
+        systemPrompt: "父提示词",
+        approve,
+        cwd,
+        artifactDir,
+        sandboxMode: "full",
+      });
+
+      expect(await runner("读取并写入文件")).toBe("子代理完成");
+      expect(pendingTools).toEqual(expectedPending);
+      expect(await readFile(path.join(cwd, `child-${mode}.txt`), "utf8")).toBe(mode);
+    },
+  );
+
+  it("allow-always 记忆在父级工具检查与子代理工具检查之间共享", async () => {
+    const { cwd, artifactDir } = await makeEnv();
+    const tools = buildBuiltinTools();
+    const gate = new SessionPermissionGate(tools, 50, "write");
+
+    const parentApproval = gate.request(makeRequest("write", "parent-always"));
+    gate.respond("parent-always", "allow-always");
+    expect((await parentApproval).decision).toBe("allow-always");
+
+    const childProvider = new MockProvider([
+      {
+        events: [
+          toolCall(
+            "child-always",
+            "write",
+            JSON.stringify({ file_path: "remembered.txt", content: "shared" }),
+          ),
+          turnComplete(),
+        ],
+      },
+      { events: [textBlock("子代理写入完成"), turnComplete()] },
+    ]);
+    const childApprovals: ApprovalRequest[] = [];
+    const runner = createSubagentRunner({
+      provider: childProvider,
+      tools,
+      systemPrompt: "父提示词",
+      approve: (request) => {
+        childApprovals.push(request);
+        return gate.request(request);
+      },
+      cwd,
+      artifactDir,
+      sandboxMode: "full",
+    });
+
+    expect(await runner("写入 remembered.txt")).toBe("子代理写入完成");
+    expect(childApprovals.map((request) => request.toolName)).toEqual(["write"]);
+    expect(await readFile(path.join(cwd, "remembered.txt"), "utf8")).toBe("shared");
   });
 });

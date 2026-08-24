@@ -25,6 +25,44 @@ describe("SessionPermissionGate", () => {
     expect((await gate.request(makeRequest("edit", "f3"))).decision).toBe("allow-once");
   });
 
+  it("setMode 更新写工具的真实闸门判断", async () => {
+    const gate = new SessionPermissionGate(buildBuiltinTools(), TIMEOUT, "write");
+
+    expect((await gate.request(makeRequest("read", "mode-read"))).decision).toBe("allow-once");
+
+    let writeSettled = false;
+    const pendingWrite = gate.request(makeRequest("write", "mode-write"));
+    void pendingWrite.then(() => {
+      writeSettled = true;
+    });
+    await Promise.resolve();
+    expect(writeSettled).toBe(false);
+    gate.setMode("full");
+    await Promise.resolve();
+    expect(writeSettled).toBe(false);
+    gate.respond("mode-write", "allow-once");
+    expect((await pendingWrite).decision).toBe("allow-once");
+
+    expect((await gate.request(makeRequest("write", "mode-full-write"))).decision).toBe("allow-once");
+  });
+
+  it("setMode ask 让只读工具重新进入真实审批", async () => {
+    const gate = new SessionPermissionGate(buildBuiltinTools(), TIMEOUT, "full");
+
+    expect((await gate.request(makeRequest("read", "ask-read-full"))).decision).toBe("allow-once");
+
+    gate.setMode("ask");
+    let readSettled = false;
+    const pendingRead = gate.request(makeRequest("read", "ask-read"));
+    void pendingRead.then(() => {
+      readSettled = true;
+    });
+    await Promise.resolve();
+    expect(readSettled).toBe(false);
+    gate.respond("ask-read", "allow-once");
+    expect((await pendingRead).decision).toBe("allow-once");
+  });
+
   it("ask 模式:只读工具也要批准", async () => {
     const gate = new SessionPermissionGate(buildBuiltinTools(), TIMEOUT, "ask");
     const pending = gate.request(makeRequest("read", "a1"));

@@ -6,6 +6,7 @@
 
 import type { z } from "zod";
 import type { SubagentPart } from "@entrotect/shared";
+import type { SandboxMode } from "../sandbox/policy.js";
 
 /** 工具执行上下文:由主循环注入 */
 export interface ToolContext {
@@ -13,6 +14,8 @@ export interface ToolContext {
   cwd: string;
   /** 输出截断落盘目录 */
   artifactDir: string;
+  /** 当前调用的沙箱模式 */
+  sandboxMode: SandboxMode;
   abortSignal?: AbortSignal;
   /** 子代理活动日志通道:task 工具内部活动以行进日志(挂在对应工具卡片) */
   subagentLog?: (line: string) => void;

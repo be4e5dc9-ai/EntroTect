@@ -23,6 +23,7 @@ import { zodToJsonSchema } from "../tools/zod-json.js";
 import type { ApprovalOutcome } from "../permission/gate.js";
 import type { PluginHooks } from "../plugins/types.js";
 import { applyToolBefore, notifyToolAfter } from "../plugins/manager.js";
+import type { SandboxMode } from "../sandbox/policy.js";
 
 export interface AgentDeps {
   provider: Provider;
@@ -38,6 +39,8 @@ export interface AgentDeps {
   approve: (request: ApprovalRequest) => Promise<ApprovalOutcome>;
   cwd: string;
   artifactDir: string;
+  /** 工具运行时的沙箱模式;旧调用方缺省时按完全访问处理 */
+  sandboxMode?: SandboxMode;
   /** 轮次上限,防无限循环烧钱(照抄 ClaudeCode maxTurns) */
   maxTurns?: number;
   abortSignal?: AbortSignal;
@@ -80,6 +83,7 @@ export async function runAgent(
   const toolsByName = new Map(deps.tools.map((tool) => [tool.name, tool]));
   const pluginHooks = deps.plugins ?? [];
   const maxTurns = deps.maxTurns ?? DEFAULT_MAX_TURNS;
+  const sandboxMode = deps.sandboxMode ?? "full";
   let lastUsage: TokenUsage | null = null;
   let lastText: string | null = null;
 
@@ -199,6 +203,7 @@ export async function runAgent(
     const toolContextBase = {
       cwd: deps.cwd,
       artifactDir: deps.artifactDir,
+      sandboxMode,
       abortSignal: deps.abortSignal,
     };
 

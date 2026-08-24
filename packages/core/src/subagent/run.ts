@@ -19,6 +19,7 @@ import type { Provider } from "../provider/types.js";
 import type { Tool } from "../tools/types.js";
 import type { ApprovalOutcome } from "../permission/gate.js";
 import { runAgent } from "../loop/agent.js";
+import type { SandboxMode } from "../sandbox/policy.js";
 
 type LogLine = (line: string) => void;
 
@@ -42,6 +43,8 @@ export interface SubagentRunnerDeps {
   approve: (request: ApprovalRequest) => Promise<ApprovalOutcome>;
   cwd: string;
   artifactDir: string;
+  /** 沿父级传入的沙箱模式 */
+  sandboxMode?: SandboxMode;
   maxTokens?: number;
   temperature?: number;
   reasoningEffort?: "off" | "low" | "high" | "xhigh" | "max";
@@ -136,6 +139,7 @@ export function createSubagentRunner(deps: SubagentRunnerDeps): SubagentRunner {
       approve: deps.approve,
       cwd: deps.cwd,
       artifactDir: deps.artifactDir,
+      sandboxMode: deps.sandboxMode,
     });
     log?.("子代理完成");
 

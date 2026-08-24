@@ -2,19 +2,24 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { SubagentPart } from "@entrotect/shared";
 import type { ToolContext } from "../src/tools/types.js";
 import { bashTool } from "../src/tools/bash.js";
+import { createSubagentRunner } from "../src/subagent/run.js";
 import {
   analyzeCommand,
   getSandboxMode,
   setSandboxMode,
 } from "../src/sandbox/index.js";
+import { MockProvider, textBlock, toolCall, turnComplete } from "./helpers/mock-provider.js";
 
-async function makeCtx(): Promise<{ ctx: ToolContext; root: string }> {
+async function makeCtx(
+  sandboxMode: ToolContext["sandboxMode"] = "full",
+): Promise<{ ctx: ToolContext; root: string }> {
   const root = await mkdtemp(path.join(tmpdir(), "entrotect-sandbox-"));
   return {
     root,
-    ctx: { cwd: root, artifactDir: path.join(root, ".artifacts") },
+    ctx: { cwd: root, artifactDir: path.join(root, ".artifacts"), sandboxMode },
   };
 }
 
@@ -85,7 +90,7 @@ describe("analyzeCommand 危险命令模式表", () => {
 
 describe("bash 工具与沙箱联动", () => {
   it("restricted 模式拦截危险命令,full 模式放行", async () => {
-    const { ctx } = await makeCtx();
+    const { ctx } = await makeCtx("restricted");
 
     setSandboxMode("restricted");
     expect(getSandboxMode()).toBe("restricted");
@@ -95,16 +100,57 @@ describe("bash 工具与沙箱联动", () => {
 
     // 切回 full:危险命令可执行(安全命令必然放行,只验证后者避免真删文件)
     setSandboxMode("full");
-    const out = await bashTool.call({ command: "Write-Output 'ok'" }, ctx);
+    const out = await bashTool.call(
+      { command: "Write-Output 'ok'" },
+      { ...ctx, sandboxMode: "full" },
+    );
     expect(out).toContain("Exit code: 0");
     expect(out).toContain("ok");
   });
 
   it("restricted 模式下安全命令不受影响", async () => {
-    const { ctx } = await makeCtx();
+    const { ctx } = await makeCtx("restricted");
     setSandboxMode("restricted");
     const out = await bashTool.call({ command: "Write-Output 'safe-通过'" }, ctx);
     expect(out).toContain("Exit code: 0");
     expect(out).toContain("safe-通过");
+  });
+
+  it("子代理显式 restricted 时,即使审批回调允许也拦截危险 bash", async () => {
+    const { ctx } = await makeCtx("restricted");
+    const parts: SubagentPart[] = [];
+    let approvalCalls = 0;
+    const provider = new MockProvider([
+      {
+        events: [
+          toolCall("child-bash", "bash", JSON.stringify({ command: "del /f x.txt" })),
+          turnComplete(),
+        ],
+      },
+      { events: [textBlock("子代理完成"), turnComplete()] },
+    ]);
+    const runner = createSubagentRunner({
+      provider,
+      tools: [bashTool],
+      systemPrompt: "父提示词",
+      approve: async () => {
+        approvalCalls += 1;
+        return { decision: "allow-once" as const };
+      },
+      cwd: ctx.cwd,
+      artifactDir: ctx.artifactDir,
+      sandboxMode: ctx.sandboxMode,
+    });
+
+    expect(await runner("执行危险命令", undefined, (part) => parts.push(part))).toBe("子代理完成");
+    expect(approvalCalls).toBe(1);
+    expect(
+      parts.some(
+        (part) =>
+          part.kind === "tool-state" &&
+          part.state === "failed" &&
+          part.summary?.includes("沙箱"),
+      ),
+    ).toBe(true);
   });
 });

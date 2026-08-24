@@ -182,6 +182,7 @@ export class SessionHost {
       }
       case "SetConfig": {
         this.config = op.config;
+        this.active?.gate.setMode(this.config.permissionMode ?? "write");
         await saveConfig(this.deps.appDataDir, this.config);
         // 沙箱模式即时同步到模块级策略状态
         setSandboxMode(this.config.sandboxMode ?? "full");
@@ -346,6 +347,7 @@ export class SessionHost {
             approve,
             cwd: run.meta.cwd,
             artifactDir: this.store.artifactDir(run.meta.id),
+            sandboxMode: this.config.sandboxMode ?? "full",
             maxTokens: this.config.maxTokens ?? MAX_TOKENS_DEFAULT,
             temperature: this.config.temperature,
             reasoningEffort: this.config.reasoningEffort,
@@ -360,6 +362,7 @@ export class SessionHost {
         approve,
         cwd: run.meta.cwd,
         artifactDir: this.store.artifactDir(run.meta.id),
+        sandboxMode: this.config.sandboxMode ?? "full",
         abortSignal: run.abort.signal,
         onMessage: (message) => this.store.appendMessage(run.meta.id, message),
         plugins: this.plugins,
