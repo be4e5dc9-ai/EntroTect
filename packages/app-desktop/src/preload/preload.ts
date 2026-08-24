@@ -10,6 +10,7 @@ export interface EntroTectBridge {
   onEvent: (callback: (event: AppEvent) => void) => () => void;
   chooseFolder: () => Promise<string | null>;
   setTheme: (theme: "dark" | "light") => void;
+  setAccentColor: (color: string) => void;
 }
 
 const bridge: EntroTectBridge = {
@@ -26,6 +27,9 @@ const bridge: EntroTectBridge = {
   chooseFolder: () => ipcRenderer.invoke("entrotect:choose-folder"),
   setTheme: (theme) => {
     void ipcRenderer.invoke("entrotect:set-theme", theme);
+  },
+  setAccentColor: (color) => {
+    void ipcRenderer.invoke("entrotect:set-accent-color", color);
   },
 };
 

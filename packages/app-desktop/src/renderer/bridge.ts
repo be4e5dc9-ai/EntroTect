@@ -9,6 +9,7 @@ export interface EntroTectBridge {
   onEvent: (callback: (event: AppEvent) => void) => () => void;
   chooseFolder: () => Promise<string | null>;
   setTheme: (theme: "dark" | "light") => void;
+  setAccentColor: (color: string) => void;
 }
 
 declare global {

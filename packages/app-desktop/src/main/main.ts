@@ -6,6 +6,7 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import path from "node:path";
 import { opSchema, type Op } from "@entrotect/shared";
 import { SessionHost } from "./host.js";
+import { createAccentWindowIcon } from "./window-icon.js";
 
 // 主进程产物为 CJS,直接用 __dirname 定位资源
 const here = __dirname;
@@ -70,6 +71,15 @@ ipcMain.handle("entrotect:set-theme", (_event, theme: unknown) => {
     symbolColor: light ? "#5b5b66" : "#8f8f9d",
     height: 40,
   });
+});
+
+ipcMain.handle("entrotect:set-accent-color", (_event, raw: unknown) => {
+  if (typeof raw !== "string" || !mainWindow) return;
+  try {
+    mainWindow.setIcon(createAccentWindowIcon(raw));
+  } catch {
+    // A native icon failure must not affect renderer appearance state.
+  }
 });
 
 // 单实例:重复启动聚焦已有窗口
