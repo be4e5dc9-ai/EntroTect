@@ -567,41 +567,54 @@ function ProviderCard({
 
       <div className="provider-models">
         <span className="provider-models-title">模型</span>
-        <div className="model-chips">
-          {provider.models.map((model) => (
-            <span className="model-chip" key={model}>
-              <span className="model-chip-name" title={model}>{model}</span>
-              <input
-                className="model-chip-context"
-                value={String(provider.contextWindows?.[model] ?? "")}
-                onChange={(e) => onContextChange(model, e.target.value)}
-                placeholder="自动"
-                inputMode="numeric"
-                aria-label={`${model} 的上下文窗口(tokens),留空为自动识别`}
-                title="上下文窗口 tokens;留空 = 自动识别"
-                spellCheck={false}
-              />
-              <button
-                className="model-chip-x"
-                onClick={() => onRemoveModel(model)}
-                aria-label={`移除模型 ${model}`}
-                type="button"
-              >
-                ×
-              </button>
-            </span>
-          ))}
-          {provider.models.length === 0 && !fetchState && (
-            <span className="model-chip model-chip-empty">未获取,可拉取或手动添加</span>
-          )}
-          {fetchState === "fetching" && (
-            <span className="model-chip model-chip-info">拉取中…</span>
-          )}
-          {fetchState === "ok" && <span className="model-chip model-chip-ok">拉取成功</span>}
-          {fetchState === "failed" && (
-            <span className="model-chip model-chip-failed">拉取失败</span>
-          )}
-        </div>
+        {provider.models.length > 0 ? (
+          <table className="model-table">
+            <thead>
+              <tr>
+                <th>模型 ID</th>
+                <th>上下文窗口</th>
+                <th aria-label="操作" />
+              </tr>
+            </thead>
+            <tbody>
+              {provider.models.map((model) => (
+                <tr key={model} className="model-row">
+                  <td className="model-cell-name" title={model}>
+                    {model}
+                  </td>
+                  <td className="model-cell-context">
+                    <input
+                      className="model-context-input"
+                      value={String(provider.contextWindows?.[model] ?? "")}
+                      onChange={(e) => onContextChange(model, e.target.value)}
+                      placeholder="自动"
+                      inputMode="numeric"
+                      aria-label={`${model} 的上下文窗口(tokens),留空为自动识别`}
+                      title="上下文窗口 tokens;留空 = 自动识别"
+                      spellCheck={false}
+                    />
+                  </td>
+                  <td className="model-cell-action">
+                    <button
+                      className="model-remove-btn"
+                      onClick={() => onRemoveModel(model)}
+                      aria-label={`移除模型 ${model}`}
+                      type="button"
+                    >
+                      ×
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : null}
+        {provider.models.length === 0 && !fetchState && (
+          <div className="model-empty">未获取,可拉取或手动添加</div>
+        )}
+        {fetchState === "fetching" && <div className="model-status">拉取中…</div>}
+        {fetchState === "ok" && <div className="model-status model-status-ok">拉取成功</div>}
+        {fetchState === "failed" && <div className="model-status model-status-failed">拉取失败</div>}
         <div className="model-add-row">
           <input
             className="model-add-input"

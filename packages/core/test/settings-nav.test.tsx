@@ -159,3 +159,57 @@ describe("settings-nav Task1: Nav Shell + State", () => {
     expect(css).toMatch(/\.settings-nav-secondary[\s\S]*?220px/);
   });
 });
+
+describe("settings-nav Task2: Provider Detail Table", () => {
+  it("replaces chip list with table rows (model | context input | ×)", async () => {
+    const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
+    render(<SettingsPage />);
+    fireEvent.click(screen.getByText("供应商"));
+    await waitFor(() => expect(document.querySelector(".settings-nav-secondary")).not.toBeNull());
+    // table should exist in detail
+    const table = document.querySelector(".model-table");
+    expect(table).not.toBeNull();
+    // should have row for deepseek-chat with context input and remove button
+    expect(screen.getByText("deepseek-chat")).toBeDefined();
+    const ctxInput = screen.getByLabelText("deepseek-chat 的上下文窗口(tokens),留空为自动识别") as HTMLInputElement;
+    expect(ctxInput.value).toBe("64000");
+    expect(screen.getByLabelText("移除模型 deepseek-chat")).toBeDefined();
+    // chip style should be gone (no .model-chip)
+    expect(document.querySelector(".model-chip")).toBeNull();
+  });
+
+  it("wires add model via table input", async () => {
+    const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
+    render(<SettingsPage />);
+    fireEvent.click(screen.getByText("供应商"));
+    await waitFor(() => expect(document.querySelector(".model-table")).not.toBeNull());
+    const input = document.querySelector(".model-add-input") as HTMLInputElement;
+    expect(input).not.toBeNull();
+    fireEvent.change(input, { target: { value: "new-model-xyz" } });
+    const addBtn = screen.getByText("添加");
+    fireEvent.click(addBtn);
+    expect(screen.getByText("new-model-xyz")).toBeDefined();
+    // new row should have empty context input
+    const newCtx = screen.getByLabelText("new-model-xyz 的上下文窗口(tokens),留空为自动识别") as HTMLInputElement;
+    expect(newCtx.value).toBe("");
+  });
+
+  it("wires context edit and remove via table", async () => {
+    const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
+    render(<SettingsPage />);
+    fireEvent.click(screen.getByText("供应商"));
+    await waitFor(() => expect(document.querySelector(".model-table")).not.toBeNull());
+    // edit context
+    const ctxInput = screen.getByLabelText("deepseek-chat 的上下文窗口(tokens),留空为自动识别") as HTMLInputElement;
+    fireEvent.change(ctxInput, { target: { value: "128000" } });
+    expect(ctxInput.value).toBe("128000");
+    // clear to auto -> should become empty
+    fireEvent.change(ctxInput, { target: { value: "" } });
+    expect(ctxInput.value).toBe("");
+    // restore then remove
+    fireEvent.change(ctxInput, { target: { value: "64000" } });
+    const removeBtn = screen.getByLabelText("移除模型 deepseek-chat");
+    fireEvent.click(removeBtn);
+    expect(screen.queryByText("deepseek-chat")).toBeNull();
+  });
+});

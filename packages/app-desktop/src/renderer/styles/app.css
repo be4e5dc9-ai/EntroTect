@@ -2030,6 +2030,94 @@
   font-size: 13px;
 }
 
+/* ---------- 模型表格(替代 chip) ---------- */
+.model-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  font-size: 13px;
+}
+.model-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.model-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.model-cell-name {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-context-input {
+  width: 96px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--input-bg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: right;
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.model-context-input::placeholder {
+  color: var(--text-tertiary);
+}
+.model-context-input:focus {
+  border-color: var(--accent);
+}
+.model-cell-action {
+  text-align: right;
+  width: 40px;
+}
+.model-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--text-tertiary);
+  font-size: 14px;
+  line-height: 1;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+.model-remove-btn:active {
+  transform: scale(0.92);
+}
+@media (hover: hover) and (pointer: fine) {
+  .model-remove-btn:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+}
+.model-empty,
+.model-status {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+.model-status-ok {
+  color: var(--success);
+}
+.model-status-failed {
+  color: var(--danger);
+}
+
 /* ---------- Toast ---------- */
 .toasts {
   position: fixed;
