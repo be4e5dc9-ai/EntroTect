@@ -12,19 +12,24 @@ import { globTool } from "./glob.js";
 import { grepTool } from "./grep.js";
 import { bashTool } from "./bash.js";
 import { taskTool, setTaskRunner } from "./task.js";
+import { imageTool, setImageProvider } from "./image.js";
 import type { SubagentRunner } from "../subagent/run.js";
 
 export interface BuildBuiltinToolsOptions {
   /** 注入子代理运行器后,追加 task 工具到列表末尾 */
   taskRunner?: SubagentRunner;
+  /** 图片生成供应商(随 activeProvider 注入,供 image 工具使用) */
+  imageProvider?: { baseUrl: string; apiKey: string; model?: string; apiFormat?: string };
 }
 
 export function buildBuiltinTools(options?: BuildBuiltinToolsOptions): Tool[] {
-  if (options?.taskRunner) {
-    setTaskRunner(options.taskRunner);
-    return [readTool, writeTool, editTool, globTool, grepTool, bashTool, taskTool];
-  }
-  // 无参调用:清掉陈旧 runner,防止上一会话的运行器泄漏
-  setTaskRunner(null);
-  return [readTool, writeTool, editTool, globTool, grepTool, bashTool];
+  const base: Tool[] = [readTool, writeTool, editTool, globTool, grepTool, bashTool, imageTool];
+  if (options?.taskRunner) setTaskRunner(options.taskRunner);
+  else setTaskRunner(null);
+
+  if (options?.imageProvider) setImageProvider(options.imageProvider);
+  else setImageProvider(null);
+
+  if (options?.taskRunner) return [...base, taskTool];
+  return base;
 }

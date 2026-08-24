@@ -412,13 +412,22 @@ export class SessionHost {
         this.emit({ type: "approval-requested", request });
         return gate.request(request);
       };
+      const activeProv = this.activeProvider(config);
+      const imageProvider = activeProv
+        ? {
+            baseUrl: activeProv.baseUrl,
+            apiKey: activeProv.apiKey,
+            model: config.model,
+            apiFormat: activeProv.apiFormat,
+          }
+        : undefined;
       const result = await runAgent(messages, {
         provider,
         // 注入子代理运行器 → task 工具可用;子代理工具池无 task,防递归
         tools: buildBuiltinTools({
           taskRunner: createSubagentRunner({
             provider,
-            tools: buildBuiltinTools(),
+            tools: buildBuiltinTools({ imageProvider }),
             systemPrompt,
             approve,
             cwd: run.meta.cwd,
@@ -429,7 +438,9 @@ export class SessionHost {
             reasoningEffort: config.reasoningEffort,
             abortSignal: abort.signal,
           }),
+          imageProvider,
         }),
+        imageProvider,
         systemPrompt,
         maxTokens: config.maxTokens ?? MAX_TOKENS_DEFAULT,
         temperature: config.temperature,

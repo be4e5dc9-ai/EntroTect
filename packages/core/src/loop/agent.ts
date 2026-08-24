@@ -41,6 +41,8 @@ export interface AgentDeps {
   artifactDir: string;
   /** 工具运行时的沙箱模式或动态 getter;旧调用方缺省时按完全访问处理 */
   sandboxMode?: SandboxMode | (() => SandboxMode);
+  /** 图片生成供应商(随 activeProvider 注入) */
+  imageProvider?: { baseUrl: string; apiKey: string; model?: string; apiFormat?: string };
   /** 轮次上限,防无限循环烧钱(照抄 ClaudeCode maxTurns) */
   maxTurns?: number;
   abortSignal?: AbortSignal;
@@ -302,6 +304,7 @@ export async function runAgent(
         const toolContext: ToolContext = {
           ...toolContextBase,
           sandboxMode: getSandboxMode(),
+          imageProvider: deps.imageProvider,
           subagentLog: (line: string) => {
             deps.emit({ type: "subagent-activity", toolCallId: call.id, text: line });
           },
@@ -313,8 +316,8 @@ export async function runAgent(
         const truncated = await truncateOutput(output, deps.artifactDir);
         // 插件 after 钩子:只观察不修改结果
         notifyToolAfter(pluginHooks, call.name, truncated.content, false);
-        // 文件产出事件:write/edit 成功后通知 UI 渲染文件卡片
-        if (tool.name === "write" || tool.name === "edit") {
+        // 文件产出事件:write/edit/image 成功后通知 UI 渲染文件卡片
+        if (tool.name === "write" || tool.name === "edit" || tool.name === "generate_image") {
           const filePath = (args as { file_path?: unknown } | null)?.file_path;
           if (typeof filePath === "string" && filePath.length > 0) {
             const absolute = path.resolve(deps.cwd, filePath);

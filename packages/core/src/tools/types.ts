@@ -21,6 +21,8 @@ export interface ToolContext {
   subagentLog?: (line: string) => void;
   /** 子代理对话页通道:内部事件翻译成 part 实时上报(task 工具专用) */
   subagentEmit?: (part: SubagentPart) => void;
+  /** 图片生成供应商(由 host 按 activeProvider 注入) */
+  imageProvider?: { baseUrl: string; apiKey: string; model?: string; apiFormat?: string };
 }
 
 export interface Tool {
