@@ -29,6 +29,13 @@ export interface TokenUsage {
   outputTokens: number;
 }
 
+/** 一次 SendMessage 固定的会话与模型上下文,随回合事件传递。 */
+export interface TurnContext {
+  sessionId: string;
+  providerId: string;
+  model: string;
+}
+
 export interface SessionMeta {
   id: string;
   createdAt: string;
@@ -206,8 +213,21 @@ export type AppEvent =
   | { type: "subagent-activity"; toolCallId: string; text: string }
   /** 子代理对话页片段(toolCallId = 主循环里 task 工具的调用 id) */
   | { type: "subagent-part"; toolCallId: string; part: SubagentPart }
-  | { type: "turn-started"; runId?: string }
-  | { type: "turn-completed"; usage: TokenUsage | null; runId?: string }
+  | {
+      type: "turn-started";
+      runId?: string;
+      sessionId?: string;
+      providerId?: string;
+      model?: string;
+    }
+  | {
+      type: "turn-completed";
+      usage: TokenUsage | null;
+      runId?: string;
+      sessionId?: string;
+      providerId?: string;
+      model?: string;
+    }
   | {
       type: "tool-state";
       toolCallId: string;
@@ -353,11 +373,20 @@ export const appEventSchema = z.discriminatedUnion("type", [
     part: subagentPartSchema,
   }),
   z.object({ type: z.literal("assistant-block"), block: contentBlockSchema }),
-  z.object({ type: z.literal("turn-started"), runId: z.string().optional() }),
+  z.object({
+    type: z.literal("turn-started"),
+    runId: z.string().optional(),
+    sessionId: z.string().optional(),
+    providerId: z.string().optional(),
+    model: z.string().optional(),
+  }),
   z.object({
     type: z.literal("turn-completed"),
     usage: tokenUsageSchema.nullable(),
     runId: z.string().optional(),
+    sessionId: z.string().optional(),
+    providerId: z.string().optional(),
+    model: z.string().optional(),
   }),
   z.object({
     type: z.literal("tool-state"),

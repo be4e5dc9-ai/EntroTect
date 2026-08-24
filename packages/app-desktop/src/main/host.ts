@@ -16,6 +16,7 @@ import type {
   Op,
   ProviderConfig,
   SessionMeta,
+  TurnContext,
 } from "@entrotect/shared";
 import {
   buildBuiltinTools,
@@ -93,6 +94,11 @@ export class SessionHost {
     return (
       providers.find((p) => p.id === this.config.activeProviderId) ?? providers[0]
     );
+  }
+
+  /** 与 renderer 相同的有效供应商选择,用于绑定回合上下文。 */
+  private activeProviderId(): string {
+    return this.activeProvider()?.id ?? this.config.activeProviderId ?? "deepseek";
   }
 
   private makeProvider(): Provider {
@@ -295,6 +301,13 @@ export class SessionHost {
     }
     if (text.trim().length === 0) return;
 
+    // 在所有异步持久化之前固定本次 SendMessage 的上下文,避免迟到事件借用新配置。
+    const turnContext: TurnContext = {
+      sessionId: run.meta.id,
+      providerId: this.activeProviderId(),
+      model: this.config.model,
+    };
+
     const userMessage: Message = {
       role: "user",
       content: [{ type: "text", text }],
@@ -322,7 +335,7 @@ export class SessionHost {
     const runId = String(++this.nextRunId);
     const emitRunEvent = (event: AppEvent): void => {
       if (event.type === "turn-started" || event.type === "turn-completed") {
-        this.emit({ ...event, runId });
+        this.emit({ ...event, runId, ...turnContext });
         return;
       }
       this.emit(event);
@@ -380,7 +393,7 @@ export class SessionHost {
     } finally {
       run.running = false;
       // 收口:中断/异常路径也要让 UI 退出忙碌态
-      this.emit({ type: "turn-completed", usage: null, runId });
+      this.emit({ type: "turn-completed", usage: null, runId, ...turnContext });
     }
   }
 }

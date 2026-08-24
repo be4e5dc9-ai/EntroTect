@@ -6,7 +6,8 @@ import {
   mergeCachedProviderDataIntoConfig,
   useStore,
 } from "../../app-desktop/src/renderer/store.js";
-import type { AppConfig, AppEvent, TokenUsage } from "@entrotect/shared";
+import { appEventSchema } from "../../shared/src/protocol.js";
+import type { AppConfig, AppEvent, TokenUsage, TurnContext } from "@entrotect/shared";
 
 // node 环境补 requestAnimationFrame(store 的流式缓冲依赖它)
 (globalThis as Record<string, unknown>).requestAnimationFrame = (
@@ -47,6 +48,18 @@ beforeEach(() => {
 const TASK_CALL_ID = "call_main_task_1";
 const INNER_CALL_ID = "call_inner_read_1";
 
+const OLD_CONTEXT: TurnContext = {
+  sessionId: "s1",
+  providerId: "deepseek",
+  model: "saved-model",
+};
+
+const NEW_CONTEXT: TurnContext = {
+  sessionId: "s1",
+  providerId: "deepseek",
+  model: "other-model",
+};
+
 function feed(events: AppEvent[]): void {
   for (const event of events) feedOne(event);
 }
@@ -54,12 +67,16 @@ function feedOne(event: AppEvent): void {
   applyEvent(event);
 }
 
-function feedRunStarted(runId: string): void {
-  feedOne({ type: "turn-started", runId });
+function feedRunStarted(runId: string, context?: TurnContext): void {
+  feedOne({ type: "turn-started", runId, ...context });
 }
 
-function feedRunCompleted(runId: string, usage: TokenUsage | null): void {
-  feedOne({ type: "turn-completed", runId, usage });
+function feedRunCompleted(
+  runId: string,
+  usage: TokenUsage | null,
+  context?: TurnContext,
+): void {
+  feedOne({ type: "turn-completed", runId, usage, ...context });
 }
 
 function settingsConfig(contextWindows?: Record<string, number>): AppConfig {
@@ -183,6 +200,38 @@ describe("renderer store: model context metadata", () => {
 });
 
 describe("renderer store: context usage", () => {
+  it("keeps turn context fields at the shared IPC schema boundary", () => {
+    expect(
+      appEventSchema.parse({
+        type: "turn-started",
+        runId: "run-1",
+        sessionId: "s1",
+        providerId: "deepseek",
+        model: "saved-model",
+      }),
+    ).toMatchObject({
+      runId: "run-1",
+      sessionId: "s1",
+      providerId: "deepseek",
+      model: "saved-model",
+    });
+    expect(
+      appEventSchema.parse({
+        type: "turn-completed",
+        runId: "run-1",
+        usage: null,
+        sessionId: "s1",
+        providerId: "deepseek",
+        model: "saved-model",
+      }),
+    ).toMatchObject({
+      runId: "run-1",
+      sessionId: "s1",
+      providerId: "deepseek",
+      model: "saved-model",
+    });
+  });
+
   it("keeps the latest non-null usage when completion later reports null", () => {
     feedOne({
       type: "session-meta",
@@ -319,6 +368,73 @@ describe("renderer store: context usage", () => {
 
     feedRunCompleted("run-new", { inputTokens: 400, outputTokens: 50 });
     expect(useStore.getState().usage).toEqual({ inputTokens: 400, outputTokens: 50 });
+  });
+
+  it("closes busy for an invalidated active run without accepting its usage", () => {
+    const config = settingsConfig({ "saved-model": 64000 });
+    feedOne({ type: "config", config });
+    feedOne({
+      type: "session-meta",
+      meta: { id: "s1", createdAt: "x", title: "t", model: "saved-model", cwd: "cwd" },
+    });
+    feedRunStarted("run-old", OLD_CONTEXT);
+    expect(useStore.getState().busy).toBe(true);
+
+    feedOne({ type: "config", config: { ...config, model: "other-model" } });
+    expect(useStore.getState().busy).toBe(true);
+
+    feedRunCompleted("run-old", { inputTokens: 900, outputTokens: 90 }, OLD_CONTEXT);
+
+    expect(useStore.getState().busy).toBe(false);
+    expect(useStore.getState().usage).toBeNull();
+    expect(useStore.getState().activeRunId).toBe("run-old");
+    expect(useStore.getState().messages.at(-1)?.streaming).toBe(false);
+  });
+
+  it("rejects an old context before its first start and accepts the new context", () => {
+    const config = settingsConfig({ "saved-model": 64000 });
+    feedOne({ type: "config", config });
+    feedOne({
+      type: "session-meta",
+      meta: { id: "s1", createdAt: "x", title: "t", model: "saved-model", cwd: "cwd" },
+    });
+    feedOne({ type: "config", config: { ...config, model: "other-model" } });
+
+    feedRunStarted("run-old", OLD_CONTEXT);
+    feedRunCompleted("run-old", { inputTokens: 900, outputTokens: 90 }, OLD_CONTEXT);
+    expect(useStore.getState().activeRunId).toBeNull();
+    expect(useStore.getState().usage).toBeNull();
+    expect(useStore.getState().busy).toBe(false);
+
+    feedRunStarted("run-new", NEW_CONTEXT);
+    feedRunCompleted("run-new", { inputTokens: 400, outputTokens: 50 }, NEW_CONTEXT);
+
+    expect(useStore.getState().activeRunId).toBe("run-new");
+    expect(useStore.getState().usage).toEqual({ inputTokens: 400, outputTokens: 50 });
+    expect(useStore.getState().busy).toBe(false);
+  });
+
+  it("keeps the new run busy when an invalidated run completes after it starts", () => {
+    const config = settingsConfig({ "saved-model": 64000 });
+    feedOne({ type: "config", config });
+    feedOne({
+      type: "session-meta",
+      meta: { id: "s1", createdAt: "x", title: "t", model: "saved-model", cwd: "cwd" },
+    });
+    feedRunStarted("run-old", OLD_CONTEXT);
+    feedOne({ type: "config", config: { ...config, model: "other-model" } });
+    feedRunStarted("run-new", NEW_CONTEXT);
+
+    feedRunStarted("run-old", OLD_CONTEXT);
+    feedRunCompleted("run-old", { inputTokens: 900, outputTokens: 90 }, OLD_CONTEXT);
+    expect(useStore.getState().activeRunId).toBe("run-new");
+    expect(useStore.getState().usage).toBeNull();
+    expect(useStore.getState().busy).toBe(true);
+
+    feedRunCompleted("run-new", { inputTokens: 400, outputTokens: 50 }, NEW_CONTEXT);
+    expect(useStore.getState().activeRunId).toBe("run-new");
+    expect(useStore.getState().usage).toEqual({ inputTokens: 400, outputTokens: 50 });
+    expect(useStore.getState().busy).toBe(false);
   });
 
   it("returns null when input tokens or context window is missing or non-positive", () => {

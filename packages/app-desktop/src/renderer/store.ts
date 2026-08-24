@@ -74,6 +74,8 @@ export type View = "chat" | "settings";
 export type ModelsByProvider = Record<string, string[]>;
 export type ContextWindowsByProvider = Record<string, Record<string, number>>;
 
+type TurnEvent = Extract<AppEvent, { type: "turn-started" | "turn-completed" }>;
+
 export type ContextSnapshot = {
   inputTokens: number;
   contextWindow: number;
@@ -613,6 +615,42 @@ function invalidateUsage(state: UiState): Pick<
   };
 }
 
+function effectiveProviderId(config: AppConfig | null): string | null {
+  if (!config) return null;
+  const providers = config.providers ?? [];
+  return (
+    providers.find((provider) => provider.id === config.activeProviderId)?.id ??
+    providers[0]?.id ??
+    config.activeProviderId ??
+    "deepseek"
+  );
+}
+
+function hasAnyTurnContext(event: TurnEvent): boolean {
+  return (
+    event.sessionId !== undefined ||
+    event.providerId !== undefined ||
+    event.model !== undefined
+  );
+}
+
+function hasCurrentTurnContext(state: UiState, event: TurnEvent): boolean {
+  // Events from older producers have no context and retain the runId fallback.
+  if (!hasAnyTurnContext(event)) return true;
+  if (
+    event.sessionId === undefined ||
+    event.providerId === undefined ||
+    event.model === undefined
+  ) {
+    return false;
+  }
+  return (
+    state.currentSession?.id === event.sessionId &&
+    effectiveProviderId(state.config) === event.providerId &&
+    state.config?.model === event.model
+  );
+}
+
 export function applyEvent(event: AppEvent): void {
   switch (event.type) {
     case "session-meta": {
@@ -847,6 +885,9 @@ export function applyEvent(event: AppEvent): void {
     }
     case "turn-started":
       useStore.setState((state) => {
+        if (!hasCurrentTurnContext(state, event)) {
+          return {};
+        }
         if (event.runId !== undefined && state.invalidatedRunIds.includes(event.runId)) {
           return {};
         }
@@ -871,17 +912,23 @@ export function applyEvent(event: AppEvent): void {
       break;
     case "turn-completed":
       useStore.setState((state) => {
-        if (event.runId !== undefined && state.invalidatedRunIds.includes(event.runId)) {
+        const isCurrentRun =
+          event.runId === undefined
+            ? true
+            : state.activeRunId !== null && event.runId === state.activeRunId;
+        if (!isCurrentRun) {
           return {};
         }
-        const isCurrentRun =
-          event.runId === undefined ||
-          state.activeRunId === null ||
-          event.runId === state.activeRunId;
+        const contextMatches = hasCurrentTurnContext(state, event);
+        const runWasInvalidated =
+          event.runId !== undefined && state.invalidatedRunIds.includes(event.runId);
         return {
           busy: false,
           usage:
-            event.usage !== null && !state.usageUpdatesBlocked && isCurrentRun
+            event.usage !== null &&
+            !state.usageUpdatesBlocked &&
+            contextMatches &&
+            !runWasInvalidated
               ? event.usage
               : state.usage,
           messages: state.messages.map((message, index) =>
@@ -926,8 +973,7 @@ export function applyEvent(event: AppEvent): void {
           }
         }
         const activeProviderChanged =
-          (state.config?.activeProviderId ?? "deepseek") !==
-          (event.config.activeProviderId ?? "deepseek");
+          effectiveProviderId(state.config) !== effectiveProviderId(event.config);
         const activeModelChanged = state.config?.model !== event.config.model;
         const configChanged =
           state.config && (activeProviderChanged || activeModelChanged);
