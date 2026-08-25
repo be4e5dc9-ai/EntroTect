@@ -76,9 +76,10 @@ type ExtendedConfig = AppConfig & {
 };
 
 function buildHeaders(apiKey: string, apiFormat: string | undefined): Record<string, string> {
-  if (apiFormat === "anthropic") return { "x-api-key": apiKey };
+  if (apiFormat === "anthropic") return { "x-api-key": apiKey, "api-key": apiKey, Authorization: `Bearer ${apiKey}` };
   if (apiFormat === "google") return { "x-goog-api-key": apiKey };
-  return { Authorization: `Bearer ${apiKey}` };
+  // OpenAI 兼容（含 Mimo api-key 头）：全部附带，兼容 Bearer / api-key 双鉴权
+  return { Authorization: `Bearer ${apiKey}`, "api-key": apiKey, "x-api-key": apiKey };
 }
 
 export async function listModels(

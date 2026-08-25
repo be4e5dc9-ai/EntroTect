@@ -35,7 +35,11 @@ describe("listModels", () => {
     });
 
     expect(requestUrl).toBe("https://api.example.test/v1/models");
-    expect(requestInit?.headers).toEqual({ Authorization: "Bearer secret-key" });
+    expect(requestInit?.headers).toEqual({
+      Authorization: "Bearer secret-key",
+      "api-key": "secret-key",
+      "x-api-key": "secret-key",
+    });
     expect((requestInit as RequestInit & { signal?: AbortSignal })?.signal).toBeDefined();
     expect(result).toEqual({
       models: ["deepseek/deepseek-chat"],
@@ -168,7 +172,11 @@ describe("listModels candidate fetch", () => {
       captured = init;
       return response({ data: [{ id: "m1" }] }) as unknown as Response;
     });
-    expect(captured?.headers).toEqual({ "x-api-key": "anth-key" });
+    expect(captured?.headers).toEqual({
+      "x-api-key": "anth-key",
+      "api-key": "anth-key",
+      Authorization: "Bearer anth-key",
+    });
     expect(captured?.signal).toBeDefined();
   });
 

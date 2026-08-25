@@ -334,6 +334,8 @@ export class OpenAiCompatibleProvider implements Provider {
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${this.apiKey}`,
+              "api-key": this.apiKey,
+              "x-api-key": this.apiKey,
             },
             body: JSON.stringify({
               model: this.model,
