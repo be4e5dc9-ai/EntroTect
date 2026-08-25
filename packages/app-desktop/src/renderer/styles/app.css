@@ -121,6 +121,7 @@
   width: 32px;
   height: 32px;
   padding: 0;
+  justify-content: center;
   border-color: transparent;
   border-radius: var(--radius-sm);
   -webkit-app-region: no-drag;
@@ -141,6 +142,7 @@
   width: 32px;
   height: 32px;
   padding: 0;
+  justify-content: center;
   border-color: transparent;
   border-radius: var(--radius-sm);
   -webkit-app-region: no-drag;
