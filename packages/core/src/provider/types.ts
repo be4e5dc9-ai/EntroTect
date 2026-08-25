@@ -4,7 +4,7 @@
 // 终结事件;codex/12 第2步——SSE 事件映射为自己的事件类型。
 // =====================================================================
 
-import type { ContentBlock, Message, TokenUsage } from "@entrotect/shared";
+import type { ContentBlock, Message, ReasoningEffort, TokenUsage } from "@entrotect/shared";
 
 /** provider 层统一事件(与模型协议无关) */
 export type BlockEvent =
@@ -25,7 +25,7 @@ export interface GenerateOptions {
   maxTokens: number;
   temperature?: number;
   /** OpenAI 兼容 reasoning_effort(DeepSeek: low / high / xhigh / max;"off" = 不发送) */
-  reasoningEffort?: "off" | "low" | "high" | "xhigh" | "max";
+  reasoningEffort?: ReasoningEffort;
 }
 
 /**

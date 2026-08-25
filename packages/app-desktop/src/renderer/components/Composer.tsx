@@ -5,7 +5,13 @@
 // =====================================================================
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AppConfig } from "@entrotect/shared";
+import type { AppConfig, ReasoningEffort } from "@entrotect/shared";
+import {
+  EFFORT_LABELS,
+  clampEffort,
+  getSupportedEffortsForModel,
+  isReasoningEffort,
+} from "@entrotect/shared";
 import { fetchSkills, useStore, contextWindowForModel } from "../store";
 import { bridge } from "../bridge";
 import { PopoverMenu, type MenuOption } from "./PopoverMenu";
@@ -17,20 +23,10 @@ const PERMISSION_OPTIONS: Array<MenuOption<NonNullable<AppConfig["permissionMode
   { value: "ask", label: "全部请求均需批准" },
 ];
 
-const EFFORT_OPTIONS: Array<MenuOption<NonNullable<AppConfig["reasoningEffort"]>>> = [
-  { value: "low", label: "低 · low" },
-  { value: "high", label: "高 · high" },
-  { value: "xhigh", label: "极高 · xhigh" },
-  { value: "max", label: "最大 · max" },
-];
-
-/** 兼容旧配置的 effort 值:off/medium 归一为 high */
-function normalizeEffort(
-  value: AppConfig["reasoningEffort"],
-): NonNullable<AppConfig["reasoningEffort"]> {
-  return value
-    ? (value as NonNullable<AppConfig["reasoningEffort"]>)
-    : "high";
+/** 兼容旧配置的 effort 值：保留合法值，否则回退 high */
+function normalizeEffort(value: AppConfig["reasoningEffort"]): ReasoningEffort {
+  if (value && isReasoningEffort(value)) return value;
+  return "high";
 }
 
 const boltIcon = (
@@ -57,6 +53,7 @@ export function Composer(): React.JSX.Element {
   const composerRef = useRef<HTMLDivElement>(null);
   const [slashCursor, setSlashCursor] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState(false);
+  const [clampedHint, setClampedHint] = useState<string | null>(null);
 
   // 自动拉取 skills(首次挂载)
   useEffect(() => {
@@ -151,6 +148,47 @@ export function Composer(): React.JSX.Element {
     label: id,
     meta: String(index + 1),
   }));
+
+  // 按模型真实思考档位过滤（声明集 > preset > 通用回退）
+  const supportedEfforts = useMemo(
+    () => getSupportedEffortsForModel(config ?? null, activeProviderId, config?.model),
+    [config, activeProviderId],
+  );
+  const isBooleanThinking = supportedEfforts.length === 0;
+  const effortOptions: Array<MenuOption<ReasoningEffort>> = useMemo(
+    () =>
+      supportedEfforts.map((eff) => ({
+        value: eff,
+        label: EFFORT_LABELS[eff] ?? eff,
+      })),
+    [supportedEfforts],
+  );
+  const currentEffort = normalizeEffort(config?.reasoningEffort);
+  const clampedEffort = useMemo(() => {
+    if (isBooleanThinking) return currentEffort;
+    if (supportedEfforts.includes(currentEffort)) return currentEffort;
+    return clampEffort(currentEffort, supportedEfforts);
+  }, [currentEffort, supportedEfforts, isBooleanThinking]);
+
+  // 当前值不在子集则自动钳制并写回（避免发送非法值），并在 UI 提示被 clamp
+  useEffect(() => {
+    if (!config || isBooleanThinking) return;
+    if (!config.reasoningEffort) return;
+    if (supportedEfforts.includes(config.reasoningEffort as ReasoningEffort)) return;
+    const next = clampEffort(config.reasoningEffort as ReasoningEffort, supportedEfforts);
+    if (next !== config.reasoningEffort) {
+      setClampedHint(`已钳制 ${config.reasoningEffort} → ${next}`);
+      const timer = setTimeout(() => setClampedHint(null), 2800);
+      bridge().send({ kind: "SetConfig", config: { ...config, reasoningEffort: next } });
+      return () => clearTimeout(timer);
+    }
+  }, [config, supportedEfforts, isBooleanThinking]);
+
+  useEffect(() => {
+    if (!clampedHint) return;
+    const t = setTimeout(() => setClampedHint(null), 2800);
+    return () => clearTimeout(t);
+  }, [clampedHint]);
 
   return (
     <div className="composer" ref={composerRef}>
@@ -286,21 +324,32 @@ export function Composer(): React.JSX.Element {
             ariaLabel="模型"
             align="right"
           />
-          <PopoverMenu
-            value={normalizeEffort(config?.reasoningEffort)}
-            options={EFFORT_OPTIONS}
-            onSelect={(value) => updateConfig({ reasoningEffort: value })}
-            heading="思考强度"
-            icon={boltIcon}
-            ariaLabel="思考强度"
-            align="right"
-          />
+          {!isBooleanThinking && effortOptions.length > 0 && (
+            <PopoverMenu
+              value={clampedEffort}
+              options={effortOptions}
+              onSelect={(value) => {
+                setClampedHint(null);
+                updateConfig({ reasoningEffort: value });
+              }}
+              heading="思考强度"
+              icon={boltIcon}
+              ariaLabel="思考强度"
+              align="right"
+            />
+          )}
+          {isBooleanThinking && (
+            <span className="composer-hint" title="该模型为布尔 thinking，无分档">
+              思考常开
+            </span>
+          )}
           <ContextUsagePopover
             inputTokens={usage?.inputTokens}
             contextWindow={contextWindow}
           />
         </div>
       </div>
+      {clampedHint && <div className="composer-clamp-hint">{clampedHint}</div>}
     </div>
   );
 }

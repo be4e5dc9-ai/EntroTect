@@ -16,6 +16,7 @@ import type {
 import { DEFAULT_ACCENT_COLOR } from "../appearance";
 import type { Theme as AppearanceTheme } from "../appearance";
 import { bridge } from "./bridge";
+import { EFFORT_RANK, getPresetDefault, getPresetEfforts } from "@entrotect/shared";
 
 export type { SkillInfo };
 
@@ -213,13 +214,49 @@ export function mergeCachedProviderDataIntoConfig(
       if (providerIds && !providerIds.has(provider.id)) return provider;
       const models = modelsByProvider[provider.id];
       const contextWindows = contextWindowsByProvider[provider.id];
-      return {
+      const base: typeof provider = {
         ...provider,
         ...(models && models.length > 0 ? { models: [...models] } : {}),
         ...(contextWindows === undefined
           ? {}
           : { contextWindows: { ...contextWindows } }),
       };
+      // 为新增模型按 preset 预填真实档位（未声明时）
+      if (models && models.length > 0) {
+        const levels = { ...(base.modelReasoningLevels ?? {}) };
+        const defaults = { ...(base.modelReasoningDefaults ?? {}) };
+        let changed = false;
+        for (const m of models) {
+          if (levels[m] === undefined) {
+            const preset = getPresetEfforts(m);
+            if (preset !== undefined) {
+              levels[m] = [...preset].sort((a, b) => EFFORT_RANK[a] - EFFORT_RANK[b]);
+              changed = true;
+            }
+          }
+          if (levels[m] !== undefined && levels[m].length > 0 && defaults[m] === undefined) {
+            const presetDef = getPresetDefault(m);
+            if (presetDef && levels[m].includes(presetDef)) {
+              defaults[m] = presetDef;
+              changed = true;
+            } else {
+              const withoutOff = levels[m].filter((e) => e !== "off");
+              const pool = withoutOff.length > 0 ? withoutOff : levels[m];
+              const sorted = [...pool].sort((a, b) => EFFORT_RANK[a] - EFFORT_RANK[b]);
+              defaults[m] = sorted[sorted.length - 1] as typeof defaults[string];
+              changed = true;
+            }
+          }
+        }
+        if (changed) {
+          return {
+            ...base,
+            modelReasoningLevels: Object.keys(levels).length > 0 ? levels : undefined,
+            modelReasoningDefaults: Object.keys(defaults).length > 0 ? defaults : undefined,
+          };
+        }
+      }
+      return base;
     }),
   };
 }

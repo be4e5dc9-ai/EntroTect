@@ -13,6 +13,7 @@ import type {
   AppEvent,
   ApprovalRequest,
   Message,
+  ReasoningEffort,
   SubagentPart,
 } from "@entrotect/shared";
 import type { Provider } from "../provider/types.js";
@@ -47,7 +48,7 @@ export interface SubagentRunnerDeps {
   sandboxMode?: SandboxMode | (() => SandboxMode);
   maxTokens?: number;
   temperature?: number;
-  reasoningEffort?: "off" | "low" | "high" | "xhigh" | "max";
+  reasoningEffort?: ReasoningEffort;
   abortSignal?: AbortSignal;
 }
 

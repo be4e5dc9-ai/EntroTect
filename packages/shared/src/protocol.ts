@@ -49,6 +49,8 @@ export interface SessionMeta {
 // =====================================================================
 
 /** 单条供应商配置:baseUrl/apiKey 决定模型来源,models 为缓存列表 */
+export type ReasoningEffort = "off" | "low" | "medium" | "high" | "xhigh" | "max";
+
 export interface ProviderConfig {
   /** 稳定 id:预设用固定名,自定义用 "custom-<randomUUID 前 8 位>" */
   id: string;
@@ -60,6 +62,10 @@ export interface ProviderConfig {
   models: string[];
   /** 已知模型的上下文窗口(未知模型不写入) */
   contextWindows?: Record<string, number>;
+  /** 每模型的真实思考档位声明(未声明时按 preset/通用回退) */
+  modelReasoningLevels?: Record<string, ReasoningEffort[]>;
+  /** 每模型的默认思考档位(需在 levels 子集内) */
+  modelReasoningDefaults?: Record<string, ReasoningEffort>;
   /** 预设供应商不可删除(可编辑) */
   builtin?: boolean;
   /** 模型列表端点覆盖(非空时直连该 URL) */
@@ -83,7 +89,7 @@ export interface AppConfig {
   /** 会话工作目录(空 = 用户主目录) */
   workspaceDir?: string;
   /** 思考强度(OpenAI 兼容 reasoning_effort;off = 不发) */
-  reasoningEffort?: "off" | "low" | "high" | "xhigh" | "max";
+  reasoningEffort?: ReasoningEffort;
   /** 权限模式:full = 全部自动放行;write = 写操作需批准;ask = 每个工具调用都需批准 */
   permissionMode?: PermissionMode;
   /** 沙箱模式;restricted 拦截危险命令 */
@@ -409,6 +415,8 @@ export const sessionMetaSchema = z.object({
   cwd: z.string(),
 });
 
+export const reasoningEffortSchema = z.enum(["off", "low", "medium", "high", "xhigh", "max"]);
+
 export const providerConfigSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
@@ -416,6 +424,9 @@ export const providerConfigSchema = z.object({
   apiKey: z.string(),
   models: z.array(z.string()),
   contextWindows: z.record(z.string(), z.number().positive().finite()).optional(),
+  // 允许未知字符串，随后在 config.ts 中过滤丢弃（兼容旧文件/手写错误）
+  modelReasoningLevels: z.record(z.string(), z.array(z.string())).optional(),
+  modelReasoningDefaults: z.record(z.string(), z.string()).optional(),
   builtin: z.boolean().optional(),
   modelsUrl: z.string().optional(),
   apiFormat: z.enum(["openai", "anthropic", "google"]).optional(),
@@ -430,7 +441,8 @@ export const appConfigSchema = z.object({
   providers: z.array(providerConfigSchema).optional(),
   activeProviderId: z.string().optional(),
   workspaceDir: z.string().optional(),
-  reasoningEffort: z.enum(["off", "low", "high", "xhigh", "max"]).optional(),
+  // 允许未知字符串，加载时由 sanitizeReasoningEffort 过滤
+  reasoningEffort: z.string().optional(),
   permissionMode: z.enum(["full", "write", "ask"]).optional(),
   sandboxMode: z.enum(["full", "restricted"]).optional(),
   showReasoning: z.boolean().optional(),

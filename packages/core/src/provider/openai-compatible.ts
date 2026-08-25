@@ -4,7 +4,8 @@
 //          tool 参数字符串累积,结束后一次性 parse。
 // =====================================================================
 
-import type { Message } from "@entrotect/shared";
+import type { Message, ReasoningEffort } from "@entrotect/shared";
+import { clampEffort, getPresetEfforts, isReasoningEffort } from "@entrotect/shared";
 import type { BlockEvent, GenerateOptions, Provider } from "./types.js";
 import { readSseLines } from "./sse.js";
 
@@ -115,6 +116,8 @@ export interface OpenAiCompatibleOptions {
   apiKey: string;
   model: string;
   fetchImpl?: FetchLike;
+  /** 声明的真实档位（来自 ProviderConfig.modelReasoningLevels）；未声明时用 preset 回退 */
+  supportedEfforts?: ReasoningEffort[];
 }
 
 /** OpenAI 兼容 SSE 流 → 统一 BlockEvent(内含块装配) */
@@ -123,12 +126,32 @@ export class OpenAiCompatibleProvider implements Provider {
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly fetchImpl: FetchLike;
+  private readonly supportedEfforts?: ReasoningEffort[];
 
   constructor(options: OpenAiCompatibleOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.apiKey = options.apiKey;
     this.model = options.model;
     this.fetchImpl = options.fetchImpl ?? ((url, init) => fetch(url, init));
+    this.supportedEfforts = options.supportedEfforts;
+  }
+
+  private resolveEffectiveEffort(requested: ReasoningEffort | undefined): ReasoningEffort | undefined {
+    if (!requested || requested === "off") return undefined;
+    if (!isReasoningEffort(requested)) return undefined;
+    // 优先使用声明集
+    if (this.supportedEfforts !== undefined) {
+      if (this.supportedEfforts.length === 0) return undefined; // 布尔 thinking 模型，不发
+      return clampEffort(requested, this.supportedEfforts);
+    }
+    // 无声明时按 preset 回退（DeepSeek 三档等）
+    const preset = getPresetEfforts(this.model);
+    if (preset !== undefined) {
+      if (preset.length === 0) return undefined;
+      return clampEffort(requested, preset);
+    }
+    // 未知模型保持原行为（不 clamp）
+    return requested;
   }
 
   async *streamBlocks(
@@ -300,6 +323,7 @@ export class OpenAiCompatibleProvider implements Provider {
     options: GenerateOptions,
     signal?: AbortSignal,
   ): Promise<Response> {
+    const effectiveEffort = this.resolveEffectiveEffort(options.reasoningEffort);
     let attempt = 0;
     for (;;) {
       try {
@@ -328,9 +352,7 @@ export class OpenAiCompatibleProvider implements Provider {
               ...(options.temperature !== undefined
                 ? { temperature: options.temperature }
                 : {}),
-              ...(options.reasoningEffort && options.reasoningEffort !== "off"
-                ? { reasoning_effort: options.reasoningEffort }
-                : {}),
+              ...(effectiveEffort ? { reasoning_effort: effectiveEffort } : {}),
             }),
             signal,
           },

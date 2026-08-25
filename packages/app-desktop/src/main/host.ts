@@ -35,6 +35,7 @@ import {
   type PluginHooks,
   type Provider,
 } from "@entrotect/core";
+import { clampEffort, getSupportedEffortsForModel } from "@entrotect/shared";
 
 export interface HostDeps {
   appDataDir: string;
@@ -71,6 +72,16 @@ function cloneConfig(config: AppConfig): AppConfig {
       ...(provider.contextWindows === undefined
         ? {}
         : { contextWindows: { ...provider.contextWindows } }),
+      ...(provider.modelReasoningLevels === undefined
+        ? {}
+        : {
+            modelReasoningLevels: Object.fromEntries(
+              Object.entries(provider.modelReasoningLevels).map(([k, v]) => [k, [...v]]),
+            ),
+          }),
+      ...(provider.modelReasoningDefaults === undefined
+        ? {}
+        : { modelReasoningDefaults: { ...provider.modelReasoningDefaults } }),
       ...(provider.modelsUrl === undefined ? {} : { modelsUrl: provider.modelsUrl }),
       ...(provider.apiFormat === undefined ? {} : { apiFormat: provider.apiFormat }),
       ...(provider.category === undefined ? {} : { category: provider.category }),
@@ -421,6 +432,12 @@ export class SessionHost {
             apiFormat: activeProv.apiFormat,
           }
         : undefined;
+      // 推理强度按模型真实档位钳制（声明集或 preset）
+      const supported = getSupportedEffortsForModel(config, context.providerId, config.model);
+      const effectiveEffort =
+        config.reasoningEffort && supported.length > 0
+          ? clampEffort(config.reasoningEffort, supported)
+          : config.reasoningEffort;
       const result = await runAgent(messages, {
         provider,
         // 注入子代理运行器 → task 工具可用;子代理工具池无 task,防递归
@@ -435,7 +452,7 @@ export class SessionHost {
             sandboxMode: getSandboxMode,
             maxTokens: config.maxTokens ?? MAX_TOKENS_DEFAULT,
             temperature: config.temperature,
-            reasoningEffort: config.reasoningEffort,
+            reasoningEffort: effectiveEffort,
             abortSignal: abort.signal,
           }),
           imageProvider,
@@ -444,7 +461,7 @@ export class SessionHost {
         systemPrompt,
         maxTokens: config.maxTokens ?? MAX_TOKENS_DEFAULT,
         temperature: config.temperature,
-        reasoningEffort: config.reasoningEffort,
+        reasoningEffort: effectiveEffort,
         emit: emitRunEvent,
         approve,
         cwd: run.meta.cwd,

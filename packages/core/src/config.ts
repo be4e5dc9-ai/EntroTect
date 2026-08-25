@@ -14,6 +14,14 @@ import {
   DEFAULT_CONFIG,
   type AppConfig,
   type ProviderConfig,
+  type ReasoningEffort,
+} from "@entrotect/shared";
+import {
+  DEFAULT_REASONING_EFFORT,
+  EFFORT_RANK,
+  getPresetDefault,
+  getPresetEfforts,
+  isReasoningEffort,
 } from "@entrotect/shared";
 
 export function configFilePath(appDataDir: string): string {
@@ -26,11 +34,82 @@ function presetProviders(): ProviderConfig[] {
     ...p,
     models: [...p.models],
     ...(p.contextWindows === undefined ? {} : { contextWindows: { ...p.contextWindows } }),
+    ...(p.modelReasoningLevels === undefined
+      ? {}
+      : { modelReasoningLevels: { ...p.modelReasoningLevels } }),
+    ...(p.modelReasoningDefaults === undefined
+      ? {}
+      : { modelReasoningDefaults: { ...p.modelReasoningDefaults } }),
     ...(p.modelsUrl === undefined ? {} : { modelsUrl: p.modelsUrl }),
     ...(p.apiFormat === undefined ? {} : { apiFormat: p.apiFormat }),
     ...(p.category === undefined ? {} : { category: p.category }),
     ...(p.icon === undefined ? {} : { icon: p.icon }),
   }));
+}
+
+function sanitizeAndFillReasoningLevels(providers: ProviderConfig[]): void {
+  for (const provider of providers) {
+    // 初始化容器
+    if (provider.modelReasoningLevels === undefined) provider.modelReasoningLevels = {};
+    if (provider.modelReasoningDefaults === undefined) provider.modelReasoningDefaults = {};
+    const levels = provider.modelReasoningLevels;
+    const defaults = provider.modelReasoningDefaults;
+    // 已声明的 levels：过滤未知值并按 canonical 排序
+    for (const model of Object.keys(levels)) {
+      const raw = levels[model] ?? [];
+      const filtered = raw.filter(isReasoningEffort);
+      // 过滤后可能为空（布尔 thinking 模型）
+      const sorted = filtered.slice().sort((a, b) => EFFORT_RANK[a] - EFFORT_RANK[b]);
+      levels[model] = sorted;
+    }
+    // 为 provider.models 中未声明但有 preset 的模型自动填充
+    for (const model of provider.models) {
+      if (levels[model] !== undefined) continue;
+      const preset = getPresetEfforts(model);
+      if (preset !== undefined) {
+        levels[model] = [...preset].sort((a, b) => EFFORT_RANK[a] - EFFORT_RANK[b]);
+      }
+    }
+    // 清理无效 default：不在 levels 子集则回退到 preset default 或最高档
+    for (const model of Object.keys({ ...defaults })) {
+      const def = defaults[model];
+      const supported = levels[model];
+      if (!def || !isReasoningEffort(def)) {
+        delete defaults[model];
+        continue;
+      }
+      if (supported && supported.length > 0 && !supported.includes(def)) {
+        // 未知 effort 丢弃，回退
+        delete defaults[model];
+      } else if (supported && supported.length === 0) {
+        // 布尔 thinking 无分档，删除 default
+        delete defaults[model];
+      }
+    }
+    // 为仍缺 default 但已有 levels 的模型补默认
+    for (const model of Object.keys(levels)) {
+      const supported = levels[model];
+      if (!supported || supported.length === 0) continue;
+      if (defaults[model] !== undefined) continue;
+      const presetDef = getPresetDefault(model);
+      if (presetDef && supported.includes(presetDef)) {
+        defaults[model] = presetDef;
+      } else {
+        const withoutOff = supported.filter((e) => e !== "off");
+        const pool = withoutOff.length > 0 ? withoutOff : supported;
+        const sorted = pool.slice().sort((a, b) => EFFORT_RANK[a] - EFFORT_RANK[b]);
+        defaults[model] = sorted[sorted.length - 1] as ReasoningEffort;
+      }
+    }
+    // 清理空对象保持旧配置兼容（缺省时不写入空对象，避免大 JSON）
+    if (Object.keys(levels).length === 0) delete provider.modelReasoningLevels;
+    if (Object.keys(defaults).length === 0) delete provider.modelReasoningDefaults;
+  }
+}
+
+function sanitizeReasoningEffort(value: unknown): ReasoningEffort | undefined {
+  if (typeof value === "string" && isReasoningEffort(value)) return value;
+  return undefined;
 }
 
 /** 把合并后的供应商列表确定 activeProviderId:缺省 deepseek,失效回退第一个 */
@@ -55,7 +134,7 @@ export async function loadConfig(appDataDir: string): Promise<AppConfig> {
     if (normalized.workspaceDir === undefined && typeof normalized.workspace === "string") {
       normalized.workspaceDir = normalized.workspace;
     }
-    fromFile = appConfigSchema.partial().parse(normalized);
+    fromFile = appConfigSchema.partial().parse(normalized) as unknown as Partial<AppConfig>;
   } catch {
     // 文件缺失或损坏 → 回退默认
   }
@@ -65,7 +144,10 @@ export async function loadConfig(appDataDir: string): Promise<AppConfig> {
     apiKey: process.env.ENTROTECT_API_KEY ?? fromFile.apiKey ?? DEFAULT_CONFIG.apiKey,
     model: process.env.ENTROTECT_MODEL ?? fromFile.model ?? DEFAULT_CONFIG.model,
     workspaceDir: fromFile.workspaceDir ?? DEFAULT_CONFIG.workspaceDir,
-    reasoningEffort: fromFile.reasoningEffort ?? DEFAULT_CONFIG.reasoningEffort,
+    reasoningEffort:
+      sanitizeReasoningEffort(fromFile.reasoningEffort) ??
+      sanitizeReasoningEffort(DEFAULT_CONFIG.reasoningEffort) ??
+      DEFAULT_REASONING_EFFORT,
     permissionMode: fromFile.permissionMode ?? DEFAULT_CONFIG.permissionMode,
     sandboxMode: fromFile.sandboxMode ?? DEFAULT_CONFIG.sandboxMode,
     showReasoning: fromFile.showReasoning ?? DEFAULT_CONFIG.showReasoning,
@@ -97,7 +179,10 @@ export async function loadConfig(appDataDir: string): Promise<AppConfig> {
   merged.providers = providers;
   merged.activeProviderId = resolveActiveId(fromFile.activeProviderId, providers);
 
-  return appConfigSchema.parse(merged);
+  // 按真实档位预填与清洗：未声明的已知模型补 preset，未知 effort 丢弃
+  sanitizeAndFillReasoningLevels(merged.providers);
+
+  return appConfigSchema.parse(merged as unknown as Record<string, unknown>) as AppConfig;
 }
 
 export async function saveConfig(appDataDir: string, config: AppConfig): Promise<void> {

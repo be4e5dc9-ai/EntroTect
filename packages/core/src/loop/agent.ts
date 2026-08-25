@@ -12,6 +12,7 @@ import type {
   ApprovalRequest,
   ContentBlock,
   Message,
+  ReasoningEffort,
   SubagentPart,
   TokenUsage,
 } from "@entrotect/shared";
@@ -32,7 +33,7 @@ export interface AgentDeps {
   maxTokens: number;
   temperature?: number;
   /** 思考强度(off = 不发送该参数) */
-  reasoningEffort?: "off" | "low" | "high" | "xhigh" | "max";
+  reasoningEffort?: ReasoningEffort;
   /** 事件汇:主循环对 UI/持久层的唯一输出通道 */
   emit: (event: AppEvent) => void;
   /** 审批回调:await 到用户决定(M3 实现真实闸门) */

@@ -7,7 +7,15 @@
 // =====================================================================
 
 import { useEffect, useRef, useState } from "react";
-import type { AppConfig, ProviderConfig } from "@entrotect/shared";
+import type { AppConfig, ProviderConfig, ReasoningEffort } from "@entrotect/shared";
+import {
+  CANONICAL_EFFORTS,
+  EFFORT_LABELS,
+  EFFORT_RANK,
+  GENERIC_FALLBACK_EFFORTS,
+  getPresetDefault,
+  getPresetEfforts,
+} from "@entrotect/shared";
 import { ACCENT_PRESETS } from "../../appearance";
 import { applyAccentColor, applyTheme } from "../appearance";
 import {
@@ -29,6 +37,16 @@ function snapshotConfig(config: AppConfig): AppConfig {
       ...p,
       models: [...p.models],
       ...(p.contextWindows === undefined ? {} : { contextWindows: { ...p.contextWindows } }),
+      ...(p.modelReasoningLevels === undefined
+        ? {}
+        : {
+            modelReasoningLevels: Object.fromEntries(
+              Object.entries(p.modelReasoningLevels).map(([k, v]) => [k, [...v]]),
+            ),
+          }),
+      ...(p.modelReasoningDefaults === undefined
+        ? {}
+        : { modelReasoningDefaults: { ...p.modelReasoningDefaults } }),
     })),
   };
 }
@@ -298,11 +316,23 @@ export function SettingsPage(): React.JSX.Element | null {
       f
         ? {
             ...f,
-            providers: f.providers?.map((p) =>
-              p.id === providerId
-                ? { ...p, models: p.models.filter((m) => m !== model) }
-                : p,
-            ),
+            providers: f.providers?.map((p) => {
+              if (p.id !== providerId) return p;
+              const levels = { ...(p.modelReasoningLevels ?? {}) };
+              delete levels[model];
+              const defaults = { ...(p.modelReasoningDefaults ?? {}) };
+              delete defaults[model];
+              const ctx = { ...(p.contextWindows ?? {}) };
+              delete ctx[model];
+              const next: ProviderConfig = { ...p, models: p.models.filter((m) => m !== model) };
+              if (Object.keys(levels).length > 0) next.modelReasoningLevels = levels;
+              else delete next.modelReasoningLevels;
+              if (Object.keys(defaults).length > 0) next.modelReasoningDefaults = defaults;
+              else delete next.modelReasoningDefaults;
+              if (Object.keys(ctx).length > 0) next.contextWindows = ctx;
+              else delete next.contextWindows;
+              return next;
+            }),
           }
         : f,
     );
@@ -321,6 +351,68 @@ export function SettingsPage(): React.JSX.Element | null {
           if (Number.isFinite(next) && next > 0) map[model] = Math.floor(next);
           else delete map[model];
           return { ...p, contextWindows: map };
+        }),
+      };
+    });
+  };
+
+  const toggleModelReasoningLevel = (
+    providerId: string,
+    model: string,
+    effort: ReasoningEffort,
+  ) => {
+    setForm((f) => {
+      if (!f) return f;
+      return {
+        ...f,
+        providers: f.providers?.map((p) => {
+          if (p.id !== providerId) return p;
+          const currentDeclared = p.modelReasoningLevels?.[model];
+          const preset = getPresetEfforts(model);
+          const fallback = preset !== undefined ? [...preset] : [...GENERIC_FALLBACK_EFFORTS];
+          const base: ReasoningEffort[] =
+            currentDeclared !== undefined ? [...currentDeclared] : fallback;
+          let next: ReasoningEffort[];
+          if (base.includes(effort)) next = base.filter((e) => e !== effort);
+          else next = [...base, effort].sort((a, b) => EFFORT_RANK[a] - EFFORT_RANK[b]);
+          const levels = { ...(p.modelReasoningLevels ?? {}) };
+          levels[model] = next;
+          const defaults = { ...(p.modelReasoningDefaults ?? {}) };
+          const curDef = defaults[model];
+          if (curDef && !next.includes(curDef)) {
+            if (next.length > 0) {
+              const pool = next.filter((e) => e !== "off");
+              const sorted = [...(pool.length > 0 ? pool : next)].sort(
+                (a, b) => EFFORT_RANK[a] - EFFORT_RANK[b],
+              );
+              defaults[model] = sorted[sorted.length - 1] as ReasoningEffort;
+            } else {
+              delete defaults[model];
+            }
+          }
+          return { ...p, modelReasoningLevels: levels, modelReasoningDefaults: defaults };
+        }),
+      };
+    });
+  };
+
+  const setModelReasoningDefault = (
+    providerId: string,
+    model: string,
+    effort: ReasoningEffort,
+  ) => {
+    setForm((f) => {
+      if (!f) return f;
+      return {
+        ...f,
+        providers: f.providers?.map((p) => {
+          if (p.id !== providerId) return p;
+          const levels = p.modelReasoningLevels?.[model];
+          // 若无声明，认为通用集已包含
+          const pool = levels ?? CANONICAL_EFFORTS;
+          if (!pool.includes(effort)) return p;
+          const defaults = { ...(p.modelReasoningDefaults ?? {}), [model]: effort };
+          return { ...p, modelReasoningDefaults: defaults };
         }),
       };
     });
@@ -581,6 +673,12 @@ export function SettingsPage(): React.JSX.Element | null {
                 onAddModel={(model) => addModel(selectedProvider.id, model)}
                 onRemoveModel={(model) => removeModel(selectedProvider.id, model)}
                 onContextChange={(model, raw) => setModelContext(selectedProvider.id, model, raw)}
+                onToggleReasoning={(model, effort) =>
+                  toggleModelReasoningLevel(selectedProvider.id, model, effort)
+                }
+                onSetReasoningDefault={(model, effort) =>
+                  setModelReasoningDefault(selectedProvider.id, model, effort)
+                }
               />
             ) : (
               <div className="settings-empty">暂无供应商</div>
@@ -679,6 +777,8 @@ interface ProviderCardProps {
   onAddModel: (model: string) => void;
   onRemoveModel: (model: string) => void;
   onContextChange: (model: string, raw: string) => void;
+  onToggleReasoning: (model: string, effort: ReasoningEffort) => void;
+  onSetReasoningDefault: (model: string, effort: ReasoningEffort) => void;
 }
 
 function ProviderCard({
@@ -692,12 +792,35 @@ function ProviderCard({
   onAddModel,
   onRemoveModel,
   onContextChange,
+  onToggleReasoning,
+  onSetReasoningDefault,
 }: ProviderCardProps): React.JSX.Element {
   const [newModel, setNewModel] = useState("");
 
   const add = () => {
     onAddModel(newModel);
     setNewModel("");
+  };
+
+  const getEffectiveLevels = (model: string): ReasoningEffort[] => {
+    const declared = provider.modelReasoningLevels?.[model];
+    if (declared !== undefined) return declared;
+    const preset = getPresetEfforts(model);
+    if (preset !== undefined) return preset;
+    return [...GENERIC_FALLBACK_EFFORTS];
+  };
+  const getEffectiveDefault = (model: string): ReasoningEffort | undefined => {
+    const declared = provider.modelReasoningDefaults?.[model];
+    const levels = getEffectiveLevels(model);
+    if (declared && levels.includes(declared)) return declared;
+    if (!provider.modelReasoningLevels?.[model] && !declared) {
+      const presetDef = getPresetDefault(model);
+      if (presetDef && levels.includes(presetDef)) return presetDef;
+    }
+    if (levels.length === 0) return undefined;
+    const withoutOff = levels.filter((e) => e !== "off");
+    const pool = withoutOff.length > 0 ? withoutOff : levels;
+    return [...pool].sort((a, b) => EFFORT_RANK[a] - EFFORT_RANK[b]).slice(-1)[0];
   };
 
   return (
@@ -778,39 +901,99 @@ function ProviderCard({
               <tr>
                 <th>模型 ID</th>
                 <th>上下文窗口</th>
+                <th>思考档位</th>
+                <th>默认档位</th>
                 <th aria-label="操作" />
               </tr>
             </thead>
             <tbody>
-              {provider.models.map((model) => (
-                <tr key={model} className="model-row">
-                  <td className="model-cell-name" title={model}>
-                    {model}
-                  </td>
-                  <td className="model-cell-context">
-                    <input
-                      className="model-context-input"
-                      value={String(provider.contextWindows?.[model] ?? "")}
-                      onChange={(e) => onContextChange(model, e.target.value)}
-                      placeholder="自动"
-                      inputMode="numeric"
-                      aria-label={`${model} 的上下文窗口(tokens),留空为自动识别`}
-                      title="上下文窗口 tokens;留空 = 自动识别"
-                      spellCheck={false}
-                    />
-                  </td>
-                  <td className="model-cell-action">
-                    <button
-                      className="model-remove-btn"
-                      onClick={() => onRemoveModel(model)}
-                      aria-label={`移除模型 ${model}`}
-                      type="button"
-                    >
-                      ×
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {provider.models.map((model) => {
+                const effectiveLevels = getEffectiveLevels(model);
+                const effectiveDefault = getEffectiveDefault(model);
+                const isDeclared = provider.modelReasoningLevels?.[model] !== undefined;
+                const isPreset = !isDeclared && getPresetEfforts(model) !== undefined;
+                const isBoolean = effectiveLevels.length === 0;
+                return (
+                  <tr key={model} className="model-row">
+                    <td className="model-cell-name" title={model}>
+                      {model}
+                      {isPreset && <span className="model-badge-preset" title="来自 preset 预填">预设</span>}
+                      {!isDeclared && !isPreset && (
+                        <span className="model-badge-fallback" title="通用回退，可编辑后持久化">回退</span>
+                      )}
+                    </td>
+                    <td className="model-cell-context">
+                      <input
+                        className="model-context-input"
+                        value={String(provider.contextWindows?.[model] ?? "")}
+                        onChange={(e) => onContextChange(model, e.target.value)}
+                        placeholder="自动"
+                        inputMode="numeric"
+                        aria-label={`${model} 的上下文窗口(tokens),留空为自动识别`}
+                        title="上下文窗口 tokens;留空 = 自动识别"
+                        spellCheck={false}
+                      />
+                    </td>
+                    <td className="model-cell-reasoning">
+                      {isBoolean ? (
+                        <span className="reasoning-boolean-hint" title="布尔 thinking，无分档">
+                          布尔
+                        </span>
+                      ) : (
+                        <div className="reasoning-checkbox-group" role="group" aria-label={`${model} 思考档位`}>
+                          {CANONICAL_EFFORTS.map((eff) => {
+                            const checked = effectiveLevels.includes(eff);
+                            return (
+                              <label key={eff} className={`reasoning-check${checked ? " checked" : ""}`}>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => onToggleReasoning(model, eff)}
+                                  aria-label={`${model} ${eff}`}
+                                />
+                                <span>{eff}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </td>
+                    <td className="model-cell-default">
+                      {isBoolean ? (
+                        <span className="reasoning-default-hint">—</span>
+                      ) : (
+                        <select
+                          className="model-default-select"
+                          value={effectiveDefault ?? ""}
+                          onChange={(e) => {
+                            const val = e.target.value as ReasoningEffort;
+                            if (val) onSetReasoningDefault(model, val);
+                          }}
+                          aria-label={`${model} 默认档位`}
+                        >
+                          {effectiveLevels
+                            .filter((e) => e !== "off")
+                            .map((eff) => (
+                              <option key={eff} value={eff}>
+                                {EFFORT_LABELS[eff] ?? eff}
+                              </option>
+                            ))}
+                        </select>
+                      )}
+                    </td>
+                    <td className="model-cell-action">
+                      <button
+                        className="model-remove-btn"
+                        onClick={() => onRemoveModel(model)}
+                        aria-label={`移除模型 ${model}`}
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         ) : null}

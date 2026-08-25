@@ -189,6 +189,76 @@ describe("OpenAiCompatibleProvider.streamBlocks", () => {
     const events = await runProvider(chunks, [userMessage]);
     expect(events.some((e) => e.type === "error")).toBe(true);
   });
+
+  it("reasoning_effort 按声明集钳制", async () => {
+    const bodies: unknown[] = [];
+    const provider = new OpenAiCompatibleProvider({
+      baseUrl: "https://example.test/v1",
+      apiKey: "k",
+      model: "deepseek-chat",
+      supportedEfforts: ["low", "high", "max"],
+      fetchImpl: async (_url, init) => {
+        bodies.push(JSON.parse(String(init.body)));
+        return new Response(streamOf(['data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n']), { status: 200 });
+      },
+    });
+    const collect = async (effort: "off" | "low" | "medium" | "high" | "xhigh" | "max") => {
+      for await (const _event of provider.streamBlocks(
+        [userMessage],
+        { systemPrompt: "s", tools: [], maxTokens: 100, reasoningEffort: effort },
+      )) {
+        void _event;
+      }
+    };
+    await collect("medium"); // deepseek 三档 medium->high
+    await collect("xhigh"); // xhigh->high
+    await collect("max");
+    expect((bodies[0] as { reasoning_effort?: string }).reasoning_effort).toBe("high");
+    expect((bodies[1] as { reasoning_effort?: string }).reasoning_effort).toBe("high");
+    expect((bodies[2] as { reasoning_effort?: string }).reasoning_effort).toBe("max");
+  });
+
+  it("无声明的 DeepSeek 仍按三档映射（preset 回退）", async () => {
+    const bodies: unknown[] = [];
+    const provider = new OpenAiCompatibleProvider({
+      baseUrl: "https://example.test/v1",
+      apiKey: "k",
+      model: "deepseek-v4-pro",
+      // 不传 supportedEfforts，走 preset 回退
+      fetchImpl: async (_url, init) => {
+        bodies.push(JSON.parse(String(init.body)));
+        return new Response(streamOf(['data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n']), { status: 200 });
+      },
+    });
+    for await (const _event of provider.streamBlocks(
+      [userMessage],
+      { systemPrompt: "s", tools: [], maxTokens: 100, reasoningEffort: "medium" },
+    )) {
+      void _event;
+    }
+    expect((bodies[0] as { reasoning_effort?: string }).reasoning_effort).toBe("high");
+  });
+
+  it("布尔 thinking 模型不发送 reasoning_effort", async () => {
+    const bodies: unknown[] = [];
+    const provider = new OpenAiCompatibleProvider({
+      baseUrl: "https://example.test/v1",
+      apiKey: "k",
+      model: "kimi-k2.6",
+      supportedEfforts: [],
+      fetchImpl: async (_url, init) => {
+        bodies.push(JSON.parse(String(init.body)));
+        return new Response(streamOf(['data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n']), { status: 200 });
+      },
+    });
+    for await (const _event of provider.streamBlocks(
+      [userMessage],
+      { systemPrompt: "s", tools: [], maxTokens: 100, reasoningEffort: "high" },
+    )) {
+      void _event;
+    }
+    expect(bodies[0]).not.toHaveProperty("reasoning_effort");
+  });
 });
 
 describe("toOpenAiMessages", () => {
