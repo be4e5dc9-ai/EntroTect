@@ -14,7 +14,7 @@ import { ContextUsagePopover } from "./ContextUsagePopover";
 const PERMISSION_OPTIONS: Array<MenuOption<NonNullable<AppConfig["permissionMode"]>>> = [
   { value: "full", label: "完全访问权限" },
   { value: "write", label: "修改需批准" },
-  { value: "ask", label: "全部请求均要人批准" },
+  { value: "ask", label: "全部请求均需批准" },
 ];
 
 const EFFORT_OPTIONS: Array<MenuOption<NonNullable<AppConfig["reasoningEffort"]>>> = [

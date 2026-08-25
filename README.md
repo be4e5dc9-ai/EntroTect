@@ -23,7 +23,7 @@ Windows 桌面 Coding Agent。设计依据见 `agent-study/`（ClaudeCode / deep
 - 结构化需求澄清：当输入缺少关键参数、存在歧义或多条合理路径时，自动以带说明的选择题请用户确认；用户回复“你决定/随便/直接做”等放权短语则跳过澄清直接执行
 - 6 个内置工具：`read` / `write` / `edit` / `glob` / `grep` / `bash`(PowerShell)，另有 `generate_image` 图片生成
 - Skills 与斜杠命令：输入框以 `/` 触发本地 skills 自动补全；设置 → Skills 自动扫描 `~/.agents/skills`、`~/.claude/skills`、`~/.config/opencode/skills` 与项目 `tools/`，展示名称/来源/描述并支持刷新
-- 权限闸门:输入框底栏三模式——完全访问权限(自动放行)/ 修改需批准(只读免审,写操作审批)/ 全部请求均要人批准;审批超时默认拒绝
+- 权限闸门:输入框底栏三模式——完全访问权限(自动放行)/ 修改需批准(只读免审,写操作审批)/ 全部请求均需批准;审批超时默认拒绝
 - 思考强度:输入框底栏选择 低·low / 高·high / 极高·xhigh / 最大·max；设置里可开关“显示模型思考过程”
 - 上下文窗口：底栏右侧圆环显示已用占比，未知时为空环（无问号），按钮已缩小；全软件按钮圆角统一为 8px
 - 会话持久化：JSONL append-only 存于 `%APPDATA%\EntroTect\sessions\`，重启可续
