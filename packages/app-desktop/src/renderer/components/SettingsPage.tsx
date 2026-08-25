@@ -10,11 +10,16 @@ import { useEffect, useRef, useState } from "react";
 import type { AppConfig, ProviderConfig } from "@entrotect/shared";
 import { ACCENT_PRESETS } from "../../appearance";
 import { applyAccentColor, applyTheme } from "../appearance";
-import { mergeCachedProviderDataIntoConfig, useStore, type Theme } from "../store";
+import {
+  fetchSkills,
+  mergeCachedProviderDataIntoConfig,
+  useStore,
+  type Theme,
+} from "../store";
 import { bridge } from "../bridge";
 
 type FetchState = "fetching" | "ok" | "failed";
-type Primary = "providers" | "appearance" | "general";
+type Primary = "providers" | "appearance" | "general" | "skills";
 
 /** 快照配置:深拷贝供应商数组,避免表单编辑污染 store */
 function snapshotConfig(config: AppConfig): AppConfig {
@@ -54,8 +59,11 @@ export function SettingsPage(): React.JSX.Element | null {
   const [primary, setPrimary] = useState<Primary>(() => {
     try {
       const saved = localStorage.getItem("entrotect-settings-primary");
-      return saved === "providers" || saved === "appearance" || saved === "general"
-        ? saved
+      return saved === "providers" ||
+        saved === "appearance" ||
+        saved === "general" ||
+        saved === "skills"
+        ? (saved as Primary)
         : "providers";
     } catch {
       return "providers";
@@ -352,6 +360,13 @@ export function SettingsPage(): React.JSX.Element | null {
             供应商
           </button>
           <button
+            className={`settings-nav-item${primary === "skills" ? " active" : ""}`}
+            onClick={() => setPrimary("skills")}
+            type="button"
+          >
+            Skills
+          </button>
+          <button
             className={`settings-nav-item${primary === "appearance" ? " active" : ""}`}
             onClick={() => setPrimary("appearance")}
             type="button"
@@ -394,7 +409,9 @@ export function SettingsPage(): React.JSX.Element | null {
 
         <div className="settings-detail">
           <div className="settings-detail-scroll">
-            {primary === "general" ? (
+            {primary === "skills" ? (
+              <SkillsSection />
+            ) : primary === "general" ? (
               <section className="settings-section">
                 <h3 className="settings-section-title">通用</h3>
 
@@ -579,6 +596,71 @@ export function SettingsPage(): React.JSX.Element | null {
         </div>
       </div>
     </main>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Skills 管理面板:展示本地发现结果、来源路径、支持刷新
+// ---------------------------------------------------------------------
+
+function SkillsSection(): React.JSX.Element {
+  const skills = useStore((s) => s.skills);
+  const loading = useStore((s) => s.skillsLoading);
+
+  // 进入时自动刷新一次(若为空)
+  useEffect(() => {
+    if (skills.length === 0 && !loading) void fetchSkills();
+  }, [skills.length, loading]);
+
+  const onRefresh = () => {
+    void fetchSkills();
+  };
+
+  return (
+    <section className="settings-section">
+      <div className="settings-section-head">
+        <h3 className="settings-section-title">Skills</h3>
+        <button
+          className="btn btn-ghost"
+          onClick={onRefresh}
+          disabled={loading}
+          type="button"
+          aria-label="刷新 Skills"
+        >
+          {loading ? "刷新中…" : "刷新"}
+        </button>
+      </div>
+      <p className="settings-hint">
+        自动发现本机已安装的 Skills：扫描 <code>~/.agents/skills</code>、<code>~/.claude/skills</code>、项目本地 <code>tools/</code> 等（存在 SKILL.md 或目录即视为一个 skill）
+      </p>
+      {loading && skills.length === 0 ? (
+        <div className="model-status">加载中…</div>
+      ) : skills.length === 0 ? (
+        <div className="settings-empty">暂未发现 skills，请检查上述目录或点击刷新</div>
+      ) : (
+        <>
+          <div className="settings-hint" style={{ marginBottom: 12 }}>
+            已发现 {skills.length} 个 skill · 输入区以 <code>/</code> 触发自动补全
+          </div>
+          <div className="skills-list">
+            {skills.map((skill) => (
+              <div key={skill.path} className="skill-row">
+                <div className="skill-head">
+                  <span className="skill-name">/{skill.name}</span>
+                  <span className="skill-source-badge" title={skill.source}>
+                    {skill.source}
+                  </span>
+                </div>
+                {skill.description && <div className="skill-desc">{skill.description}</div>}
+                <div className="skill-path" title={skill.path}>
+                  {skill.path}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 

@@ -27,8 +27,9 @@ function mockBridge() {
   const chooseFolder = vi.fn(async () => null);
   const setTheme = vi.fn();
   const setAccentColor = vi.fn();
-  window.entrotect = { send, onEvent, chooseFolder, setTheme, setAccentColor };
-  return { send, onEvent, chooseFolder, setTheme, setAccentColor };
+  const listSkills = vi.fn(async () => []);
+  window.entrotect = { send, onEvent, chooseFolder, setTheme, setAccentColor, listSkills };
+  return { send, onEvent, chooseFolder, setTheme, setAccentColor, listSkills };
 }
 
 function makeConfig(): AppConfig {
@@ -93,6 +94,8 @@ beforeEach(() => {
     activeDetailId: null,
     fileContents: {},
     subagentChats: {},
+    skills: [],
+    skillsLoading: false,
   });
 });
 
@@ -136,7 +139,7 @@ describe("settings-nav Task1: Nav Shell + State", () => {
     const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
     render(<SettingsPage />);
     const items = [...document.querySelectorAll(".settings-nav-item")].map((item) => item.textContent);
-    expect(items).toEqual(["供应商", "外观", "通用"]);
+    expect(items).toEqual(["供应商", "Skills", "外观", "通用"]);
     expect(document.querySelector(".settings-nav-item.active")?.textContent).toContain("供应商");
     expect(screen.getByText("Base URL")).toBeDefined();
     expect(document.querySelector(".settings-nav-secondary")).not.toBeNull();

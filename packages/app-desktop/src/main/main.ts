@@ -7,6 +7,7 @@ import path from "node:path";
 import { opSchema, type Op } from "@entrotect/shared";
 import { SessionHost } from "./host.js";
 import { createAccentWindowIcon } from "./window-icon.js";
+import { discoverSkills } from "./skills.js";
 
 // 主进程产物为 CJS,直接用 __dirname 定位资源
 const here = __dirname;
@@ -79,6 +80,14 @@ ipcMain.handle("entrotect:set-accent-color", (_event, raw: unknown) => {
     mainWindow.setIcon(createAccentWindowIcon(raw));
   } catch {
     // A native icon failure must not affect renderer appearance state.
+  }
+});
+
+ipcMain.handle("entrotect:list-skills", async () => {
+  try {
+    return await discoverSkills();
+  } catch {
+    return [];
   }
 });
 

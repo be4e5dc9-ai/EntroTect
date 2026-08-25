@@ -6,7 +6,7 @@
 :root {
   /* 色彩:暗色极简,低对比分隔 */
   --bg: #0d0d10;
-  --bg-sidebar: #101015;
+  --bg-sidebar: #0d0d10;
   --surface: #17171d;
   --surface-hover: #1d1d25;
   --surface-active: #23232c;
@@ -49,7 +49,7 @@
   --hl-literal: #79c0ff;
 
   /* 几何 */
-  --radius-sm: 6px;
+  --radius-sm: 8px;
   --radius-md: 10px;
   --radius-lg: 14px;
 
@@ -62,7 +62,7 @@
 /* ---------- 日间模式:同一套 token 换值,组件零改动 ---------- */
 [data-theme="light"] {
   --bg: #fafafc;
-  --bg-sidebar: #f3f3f8;
+  --bg-sidebar: #fafafc;
   --surface: #ffffff;
   --surface-hover: #f1f1f6;
   --surface-active: #e9e9f0;

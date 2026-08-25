@@ -71,7 +71,7 @@ function ContextRing({
       }
       aria-hidden="true"
     >
-      <span className="context-usage-ring-center">{known ? null : "?"}</span>
+      <span className="context-usage-ring-center" />
     </span>
   );
 }

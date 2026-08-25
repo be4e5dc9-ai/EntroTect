@@ -2,7 +2,7 @@
 // preload 桥接的类型安全包装
 // =====================================================================
 
-import type { AppEvent, Op } from "@entrotect/shared";
+import type { AppEvent, Op, SkillInfo } from "@entrotect/shared";
 
 export interface EntroTectBridge {
   send: (op: Op) => void;
@@ -10,6 +10,7 @@ export interface EntroTectBridge {
   chooseFolder: () => Promise<string | null>;
   setTheme: (theme: "dark" | "light") => void;
   setAccentColor: (color: string) => void;
+  listSkills: () => Promise<SkillInfo[]>;
 }
 
 declare global {

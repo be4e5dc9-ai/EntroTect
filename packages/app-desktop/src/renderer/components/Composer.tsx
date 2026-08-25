@@ -4,9 +4,9 @@
 // 三个选择器均为 PopoverMenu(cmdk 式悬浮面板,见 PopoverMenu.tsx)。
 // =====================================================================
 
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AppConfig } from "@entrotect/shared";
-import { useStore, contextWindowForModel } from "../store";
+import { fetchSkills, useStore, contextWindowForModel } from "../store";
 import { bridge } from "../bridge";
 import { PopoverMenu, type MenuOption } from "./PopoverMenu";
 import { ContextUsagePopover } from "./ContextUsagePopover";
@@ -51,14 +51,73 @@ export function Composer(): React.JSX.Element {
   const usage = useStore((s) => s.usage);
   const modelsByProvider = useStore((s) => s.modelsByProvider);
   const contextWindowsByProvider = useStore((s) => s.contextWindowsByProvider);
+  const skills = useStore((s) => s.skills);
   const [text, setText] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  const [slashCursor, setSlashCursor] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState(false);
+
+  // 自动拉取 skills(首次挂载)
+  useEffect(() => {
+    if (skills.length === 0) void fetchSkills();
+  }, [skills.length]);
+
+  // 文本不再以 "/" 开头时重置 dismiss
+  useEffect(() => {
+    if (!text.startsWith("/")) setSlashDismissed(false);
+  }, [text]);
+
+  // 点击外部关闭 slash 面板(与 PopoverMenu 一致)
+  useEffect(() => {
+    if (!text.startsWith("/")) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!composerRef.current?.contains(e.target as Node)) setSlashDismissed(true);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [text]);
+
+  const slashQuery = text.startsWith("/") ? text.slice(1).split(/\s/)[0]?.toLowerCase() ?? "" : "";
+  const hasSlashSpace = text.startsWith("/") && text.slice(1).includes(" ");
+  const filteredSkills = useMemo(() => {
+    if (!text.startsWith("/") || hasSlashSpace) return [];
+    if (!slashQuery) return skills;
+    return skills.filter(
+      (s) =>
+        s.name.toLowerCase().includes(slashQuery) ||
+        s.description.toLowerCase().includes(slashQuery),
+    );
+  }, [text, hasSlashSpace, slashQuery, skills]);
+
+  const showSlash =
+    text.startsWith("/") && !hasSlashSpace && !slashDismissed && !busy && hasSession && filteredSkills.length > 0;
+
+  useEffect(() => {
+    setSlashCursor(0);
+  }, [slashQuery, filteredSkills.length]);
+
+  const selectSlash = (name: string) => {
+    const next = `/${name} `;
+    setText(next);
+    setSlashDismissed(true);
+    // 聚焦并移动光标到末尾
+    requestAnimationFrame(() => {
+      if (ref.current) {
+        ref.current.focus();
+        ref.current.setSelectionRange(next.length, next.length);
+        ref.current.style.height = "auto";
+        ref.current.style.height = `${Math.min(ref.current.scrollHeight, 200)}px`;
+      }
+    });
+  };
 
   const send = () => {
     const value = text.trim();
     if (!value || busy) return;
     bridge().send({ kind: "SendMessage", text: value });
     setText("");
+    setSlashDismissed(false);
     if (ref.current) ref.current.style.height = "auto";
   };
 
@@ -94,20 +153,80 @@ export function Composer(): React.JSX.Element {
   }));
 
   return (
-    <div className="composer">
-      <div className="composer-box">
+    <div className="composer" ref={composerRef}>
+      <div className="composer-box" style={{ position: "relative" }}>
+        {showSlash && (
+          <div className="slash-panel" role="listbox" aria-label="技能指令">
+            <div className="menu-heading">Skills · 以 / 触发</div>
+            {filteredSkills.map((skill, index) => (
+              <button
+                key={skill.path}
+                type="button"
+                role="option"
+                aria-selected={index === slashCursor}
+                className={`slash-item${index === slashCursor ? " cursor" : ""}`}
+                onMouseEnter={() => setSlashCursor(index)}
+                onMouseDown={(e) => {
+                  // 防止 textarea 失焦
+                  e.preventDefault();
+                }}
+                onClick={() => selectSlash(skill.name)}
+              >
+                <span className="slash-item-name">/{skill.name}</span>
+                <span className="slash-item-desc" title={skill.description}>
+                  {skill.description || skill.source}
+                </span>
+                <span className="slash-item-source" title={skill.path}>
+                  {skill.source}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
         <textarea
           ref={ref}
           className="composer-input"
-          placeholder={hasSession ? "输入任务,Enter 发送" : "先新建一个会话…"}
+          placeholder={hasSession ? "输入任务,Enter 发送 · / 触发 Skills" : "先新建一个会话…"}
           value={text}
           disabled={!hasSession}
           rows={1}
           onChange={(e) => {
             setText(e.target.value);
+            setSlashDismissed(false);
             autosize();
           }}
           onKeyDown={(e) => {
+            if (showSlash) {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setSlashCursor((i) => (i + 1) % filteredSkills.length);
+                return;
+              }
+              if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setSlashCursor((i) => (i - 1 + filteredSkills.length) % filteredSkills.length);
+                return;
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setSlashDismissed(true);
+                return;
+              }
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                const current = filteredSkills[slashCursor];
+                if (current) selectSlash(current.name);
+                return;
+              }
+              if (e.key === "Tab" && !e.nativeEvent.isComposing) {
+                const current = filteredSkills[slashCursor];
+                if (current) {
+                  e.preventDefault();
+                  selectSlash(current.name);
+                  return;
+                }
+              }
+            }
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               send();

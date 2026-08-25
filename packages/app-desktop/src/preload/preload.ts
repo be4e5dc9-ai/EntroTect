@@ -3,7 +3,7 @@
 // =====================================================================
 
 import { contextBridge, ipcRenderer } from "electron";
-import type { AppEvent, Op } from "@entrotect/shared";
+import type { AppEvent, Op, SkillInfo } from "@entrotect/shared";
 
 export interface EntroTectBridge {
   send: (op: Op) => void;
@@ -11,6 +11,7 @@ export interface EntroTectBridge {
   chooseFolder: () => Promise<string | null>;
   setTheme: (theme: "dark" | "light") => void;
   setAccentColor: (color: string) => void;
+  listSkills: () => Promise<SkillInfo[]>;
 }
 
 const bridge: EntroTectBridge = {
@@ -31,6 +32,7 @@ const bridge: EntroTectBridge = {
   setAccentColor: (color) => {
     void ipcRenderer.invoke("entrotect:set-accent-color", color);
   },
+  listSkills: () => ipcRenderer.invoke("entrotect:list-skills") as Promise<SkillInfo[]>,
 };
 
 contextBridge.exposeInMainWorld("entrotect", bridge);

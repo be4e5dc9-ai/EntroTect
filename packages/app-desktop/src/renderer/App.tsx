@@ -5,7 +5,7 @@
 // =====================================================================
 
 import { useEffect, useState } from "react";
-import { useStore, applyEvent } from "./store";
+import { fetchSkills, useStore, applyEvent } from "./store";
 import { bridge } from "./bridge";
 import { PanelCollapseIcon, Sidebar } from "./components/Sidebar";
 import { MessageList } from "./components/MessageList";
@@ -46,6 +46,7 @@ export function App(): React.JSX.Element {
     const unsubscribe = bridge().onEvent(applyEvent);
     bridge().send({ kind: "ListSessions" });
     bridge().send({ kind: "GetConfig" });
+    void fetchSkills();
     return unsubscribe;
   }, []);
 

@@ -9,6 +9,7 @@ import { bridge } from "../bridge";
 import { BrandMark } from "./BrandMark";
 import { ToolCard } from "./ToolCard";
 import { FileCard } from "./FileCard";
+import { ClarificationCard } from "./ClarificationCard";
 
 /** 思考过程区:流式时自动展开,结束后可手动折叠 */
 function ReasoningSection({ text, streaming }: { text: string; streaming: boolean }): React.JSX.Element {
@@ -83,11 +84,13 @@ export function Message({ message }: { message: UiMessage }): React.JSX.Element 
         {showReasoning && <ReasoningSection text={message.reasoning} streaming={message.streaming} />}
         {message.blocks.map((block, index) =>
           block.kind === "text" ? (
-            <div
-              key={`t${index}`}
-              className="markdown"
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(block.text) }}
-            />
+            <div key={`t${index}`}>
+              <div
+                className="markdown"
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(block.text) }}
+              />
+              <ClarificationCard text={block.text} />
+            </div>
           ) : block.kind === "file" ? (
             <FileCard key={`f${index}`} block={block} />
           ) : (

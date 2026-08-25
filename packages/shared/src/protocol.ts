@@ -219,6 +219,24 @@ export const PROVIDER_PRESETS: ProviderConfig[] = [
   },
 ];
 
+export interface SkillInfo {
+  /** 技能名称(对应斜杠命令 /<name>) */
+  name: string;
+  /** 一行描述:来自 SKILL.md frontmatter 的 description 或首段 */
+  description: string;
+  /** 本地绝对路径 */
+  path: string;
+  /** 来源根目录展示(如 ~/.claude/skills) */
+  source: string;
+}
+
+export const skillInfoSchema = z.object({
+  name: z.string().min(1),
+  description: z.string(),
+  path: z.string().min(1),
+  source: z.string().min(1),
+});
+
 export const DEFAULT_CONFIG: AppConfig = {
   baseUrl: "https://api.deepseek.com/v1",
   apiKey: "",

@@ -7,6 +7,7 @@ import { create } from "zustand";
 import type {
   AppEvent,
   SessionMeta,
+  SkillInfo,
   SubagentPart,
   ToolCallState,
   TokenUsage,
@@ -15,6 +16,8 @@ import type {
 import { DEFAULT_ACCENT_COLOR } from "../appearance";
 import type { Theme as AppearanceTheme } from "../appearance";
 import { bridge } from "./bridge";
+
+export type { SkillInfo };
 
 export interface UiBlock {
   kind: "text";
@@ -163,6 +166,10 @@ interface UiState {
   fileContents: Record<string, string | null>;
   /** 子代理对话页(key = task 工具调用 id;每条即一个对话流) */
   subagentChats: Record<string, UiMessage[]>;
+  /** 本地已发现的 Skills */
+  skills: SkillInfo[];
+  /** Skills 正在刷新 */
+  skillsLoading: boolean;
 }
 
 export const useStore = create<UiState>()(() => ({
@@ -189,6 +196,8 @@ export const useStore = create<UiState>()(() => ({
   activeDetailId: null,
   fileContents: {},
   subagentChats: {},
+  skills: [],
+  skillsLoading: false,
 }));
 
 /** 把 renderer 内存中的拉取结果补回设置表单,不修改 store 中的配置快照。 */
@@ -1024,5 +1033,24 @@ export function applyEvent(event: AppEvent): void {
         };
       });
       break;
+  }
+}
+
+// ---------- Skills ----------
+export async function fetchSkills(): Promise<void> {
+  const api = (() => {
+    try {
+      return bridge();
+    } catch {
+      return null;
+    }
+  })();
+  if (!api?.listSkills) return;
+  useStore.setState({ skillsLoading: true });
+  try {
+    const skills = await api.listSkills();
+    useStore.setState({ skills: Array.isArray(skills) ? skills : [], skillsLoading: false });
+  } catch {
+    useStore.setState({ skillsLoading: false });
   }
 }
