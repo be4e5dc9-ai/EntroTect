@@ -186,7 +186,35 @@ export class SessionHost {
         break;
       case "ListModels": {
         const providerId = op.providerId ?? this.config.activeProviderId ?? "";
-        const provider = this.config.providers?.find((p) => p.id === providerId);
+        let provider = this.config.providers?.find((p) => p.id === providerId) as
+          | ProviderConfig
+          | undefined;
+        // 携带临时凭据时用表单最新值覆盖（允许未保存/非当前供应商拉取）
+        if (
+          provider &&
+          (op.baseUrl !== undefined ||
+            op.apiKey !== undefined ||
+            op.modelsUrl !== undefined ||
+            op.apiFormat !== undefined)
+        ) {
+          provider = {
+            ...provider,
+            baseUrl: op.baseUrl ?? provider.baseUrl,
+            apiKey: op.apiKey ?? provider.apiKey,
+            modelsUrl: op.modelsUrl ?? provider.modelsUrl,
+            apiFormat: op.apiFormat ?? provider.apiFormat,
+          };
+        } else if (!provider && op.baseUrl) {
+          provider = {
+            id: providerId || "temp",
+            name: "temp",
+            baseUrl: op.baseUrl ?? "",
+            apiKey: op.apiKey ?? "",
+            models: [],
+            modelsUrl: op.modelsUrl,
+            apiFormat: op.apiFormat as ProviderConfig["apiFormat"],
+          };
+        }
         if (!provider) {
           this.emit({ type: "models-listed", providerId, models: [] });
           break;

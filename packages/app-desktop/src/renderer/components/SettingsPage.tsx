@@ -241,7 +241,15 @@ export function SettingsPage(): React.JSX.Element | null {
 
   const requestModels = (providerId: string) => {
     setFetchState((s) => ({ ...s, [providerId]: "fetching" }));
-    bridge().send({ kind: "ListModels", providerId });
+    const current = form.providers?.find((p) => p.id === providerId);
+    bridge().send({
+      kind: "ListModels",
+      providerId,
+      baseUrl: current?.baseUrl,
+      apiKey: current?.apiKey,
+      modelsUrl: current?.modelsUrl,
+      apiFormat: current?.apiFormat,
+    });
   };
 
   // 设为当前:激活该供应商,模型同步为列表第一个(空列表保持原 model)

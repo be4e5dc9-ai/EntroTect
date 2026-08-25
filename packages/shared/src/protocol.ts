@@ -282,7 +282,14 @@ export type Op =
   | { kind: "ResumeSession"; sessionId: string }
   | { kind: "DeleteSession"; sessionId: string }
   | { kind: "ListSessions" }
-  | { kind: "ListModels"; providerId?: string }
+  | {
+      kind: "ListModels";
+      providerId?: string;
+      baseUrl?: string;
+      apiKey?: string;
+      modelsUrl?: string;
+      apiFormat?: "openai" | "anthropic" | "google";
+    }
   | {
       kind: "ApprovalDecision";
       toolCallId: string;
@@ -470,7 +477,14 @@ export const opSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("ResumeSession"), sessionId: z.string() }),
   z.object({ kind: z.literal("DeleteSession"), sessionId: z.string() }),
   z.object({ kind: z.literal("ListSessions") }),
-  z.object({ kind: z.literal("ListModels"), providerId: z.string().optional() }),
+  z.object({
+    kind: z.literal("ListModels"),
+    providerId: z.string().optional(),
+    baseUrl: z.string().optional(),
+    apiKey: z.string().optional(),
+    modelsUrl: z.string().optional(),
+    apiFormat: z.enum(["openai", "anthropic", "google"]).optional(),
+  }),
   z.object({
     kind: z.literal("ApprovalDecision"),
     toolCallId: z.string(),
