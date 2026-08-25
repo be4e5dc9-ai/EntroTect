@@ -212,6 +212,18 @@ export const PROVIDER_PRESETS: ProviderConfig[] = [
     icon: "ollama",
   },
   {
+    id: "mimo",
+    name: "Mimo",
+    baseUrl: "https://api.xiaomimimo.com/v1",
+    apiKey: "",
+    models: [],
+    builtin: true,
+    modelsUrl: "https://api.xiaomimimo.com/v1/models",
+    apiFormat: "openai",
+    category: "cn_official",
+    icon: "mimo",
+  },
+  {
     id: "openrouter",
     name: "OpenRouter",
     baseUrl: "https://openrouter.ai/api/v1",
