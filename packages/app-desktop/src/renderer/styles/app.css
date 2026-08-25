@@ -113,6 +113,7 @@
 }
 
 /* 常驻标题栏左上角:对话列表收起/展开切换(微信桌面式) */
+/* 静默态无边框,悬停/聚焦时方框浮现(与底栏选择器一致) */
 .sidebar-toggle {
   position: absolute;
   top: 4px;
@@ -120,8 +121,13 @@
   width: 32px;
   height: 32px;
   padding: 0;
+  border-color: transparent;
   border-radius: var(--radius-sm);
   -webkit-app-region: no-drag;
+}
+.sidebar-toggle:hover,
+.sidebar-toggle:focus-visible {
+  border-color: var(--border-strong);
 }
 .sidebar-toggle.with-label {
   width: auto;
@@ -135,8 +141,13 @@
   width: 32px;
   height: 32px;
   padding: 0;
+  border-color: transparent;
   border-radius: var(--radius-sm);
   -webkit-app-region: no-drag;
+}
+.detail-peek:hover,
+.detail-peek:focus-visible {
+  border-color: var(--border-strong);
 }
 
 .sidebar-brand {
@@ -663,7 +674,8 @@
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 1px solid var(--border);
+  /* 静默态无圆框:悬停/聚焦时浮现(边框常驻占位,避免布局位移) */
+  border: 1px solid transparent;
   border-radius: 50%;
   color: var(--text-tertiary);
   transition:
