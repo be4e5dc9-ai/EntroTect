@@ -28,27 +28,6 @@ interface PopoverMenuProps<V extends string> {
   align?: "left" | "right";
 }
 
-function ChevronIcon({ open }: { open: boolean }): React.JSX.Element {
-  return (
-    <svg
-      className={`tool-chevron${open ? " open" : ""}`}
-      width="11"
-      height="11"
-      viewBox="0 0 11 11"
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M2.5 4 5.5 7l3-3"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 function CheckIcon(): React.JSX.Element {
   return (
     <svg className="menu-check" width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
@@ -123,7 +102,6 @@ export function PopoverMenu<V extends string>(
       >
         {icon && <span className="bar-select-icon">{icon}</span>}
         <span className="menu-trigger-label">{trigger?.label ?? ariaLabel}</span>
-        <ChevronIcon open={open} />
       </button>
 
       {open && (

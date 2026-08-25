@@ -439,9 +439,10 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border: 1px solid var(--border);
+  /* 静默态无边框:悬停/聚焦时方框才浮现(边框常驻占位,避免布局位移) */
+  border: 1px solid transparent;
   border-radius: 999px;
-  padding: 4px 6px 4px 10px;
+  padding: 4px 10px;
   transition:
     border-color var(--dur-fast) var(--ease-out),
     background-color var(--dur-fast) var(--ease-out);
@@ -451,6 +452,10 @@
     border-color: var(--border-strong);
     background: var(--surface-hover);
   }
+}
+.menu-trigger:focus-visible {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
 }
 .menu-trigger.open {
   border-color: var(--accent);
@@ -1669,7 +1674,7 @@
   }
   .composer-bar .bar-select {
     gap: 3px;
-    padding-right: 4px;
+    padding-right: 6px;
     padding-left: 6px;
   }
 }
