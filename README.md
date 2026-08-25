@@ -4,7 +4,7 @@ Windows 桌面 Coding Agent。设计依据见 `agent-study/`（ClaudeCode / deep
 
 ## 安装
 
-双击 `release/EntroTect-Setup-x.y.z.exe` 安装（免管理员权限），安装后从桌面快捷方式或开始菜单启动。
+从 [**GitHub Releases**](https://github.com/be4e5dc9-ai/EntroTect/releases/latest) 下载最新 `EntroTect-Setup-x.y.z.exe`，双击安装（免管理员权限），安装后从桌面快捷方式或开始菜单启动。同目录 `SHA256SUMS.txt` 可校验安装包完整性。
 
 首次使用：打开侧栏底部 **设置**，填入：
 
@@ -65,9 +65,10 @@ python -m venv .venv
 
 .venv\Scripts\python release\release.py          # 正式安装包 + SHA256SUMS.txt
 .venv\Scripts\python release\release.py --version 0.2.0   # 指定版本
-# 一键：自动提交 → 打包 → 清理旧包 → 静默安装 → 校验
+# 一键：自动提交 → 打包 → 清理旧包 → 静默安装 → 校验 → 推送并发布 GitHub Releases(附安装包)
 powershell -ExecutionPolicy Bypass -File tools\release\auto-release.ps1
 powershell -ExecutionPolicy Bypass -File tools\release\auto-release.ps1 -Version 0.2.14 -Message "feat: ..."
+powershell -ExecutionPolicy Bypass -File tools\release\auto-release.ps1 -SkipGitHub   # 只本地打包安装,不上传
 ```
 
 **双版本策略**：仓库源码 = 有注释版（单一事实源）；发布管线经 esbuild/vite 剥注释产出**无注释版**并打包，二者永不失同步。

@@ -1,16 +1,18 @@
 ﻿# =====================================================================
 # EntroTect 一键发布:自动提交 -> 打包 -> 清理旧安装包 -> 重算校验和
-# -> 静默安装 -> 验证版本
+# -> 静默安装 -> 验证版本 -> 推送并发布 GitHub Releases(附安装包)
 #
 # 用法(仓库根目录):
 #   powershell -ExecutionPolicy Bypass -File tools\release\auto-release.ps1
 #   powershell -ExecutionPolicy Bypass -File tools\release\auto-release.ps1 -Version 0.2.13
 #   powershell -ExecutionPolicy Bypass -File tools\release\auto-release.ps1 -Message "fix: ..."
+#   加 -SkipGitHub 可跳过推送与 Releases 上传
 # =====================================================================
 
 param(
   [string]$Message = "chore: auto release",
-  [string]$Version = ""
+  [string]$Version = "",
+  [switch]$SkipGitHub
 )
 
 Set-StrictMode -Version Latest
@@ -110,6 +112,43 @@ Write-Host "注册表版本 : $($reg.DisplayVersion)" -ForegroundColor Green
 Write-Host "文件版本   : $fileVer" -ForegroundColor Green
 Write-Host "安装位置   : $(Split-Path $uninstall)" -ForegroundColor Gray
 if ($fileVer -ne $current) { throw "版本不匹配: 期望 $current,实际 $fileVer" }
+
+# ---- 7. 推送并发布 GitHub Releases -------------------------------------
+if ($SkipGitHub) {
+  Write-Host ""
+  Write-Host "已跳过 GitHub 推送与 Releases 上传(-SkipGitHub)" -ForegroundColor Yellow
+  exit 0
+}
+
+Step "7/7 推送 main 并发布安装包到 GitHub Releases"
+$gh = Get-Command gh -ErrorAction SilentlyContinue
+if ($gh) { $gh = $gh.Source } else { $gh = "C:\Program Files\GitHub CLI\gh.exe" }
+if (-not (Test-Path -LiteralPath $gh)) { throw "未找到 gh CLI,请先安装并登录: winget install GitHub.cli; gh auth login" }
+
+git -C $root push origin main
+if ($LASTEXITCODE -ne 0) {
+  Start-Sleep -Seconds 5
+  git -C $root push origin main
+  if ($LASTEXITCODE -ne 0) { throw "git push 失败,请检查网络后重试" }
+}
+
+$originUrl = git -C $root remote get-url origin
+$repo = ($originUrl -replace '^https?://github\.com/', '') -replace '\.git$', ''
+$tag = "v$current"
+$asset = Join-Path $releaseDir "EntroTect-Setup-$current.exe"
+$sumsFile = Join-Path $releaseDir "SHA256SUMS.txt"
+
+$null = & $gh release view $tag -R $repo 2>&1
+if ($LASTEXITCODE -eq 0) {
+  & $gh release upload $tag $asset $sumsFile --clobber -R $repo
+  if ($LASTEXITCODE -ne 0) { throw "gh release upload 失败" }
+  Write-Host "已更新 Release $tag 资产" -ForegroundColor Green
+} else {
+  $notes = "下载 EntroTect-Setup-$current.exe 双击安装(免管理员权限)。`n`n校验和见 SHA256SUMS.txt。完整变更见下方 Commits。"
+  & $gh release create $tag $asset $sumsFile -R $repo --title "EntroTect $current" --notes $notes
+  if ($LASTEXITCODE -ne 0) { throw "gh release create 失败" }
+  Write-Host "已创建 Release $tag 并上传安装包" -ForegroundColor Green
+}
 
 Write-Host ""
 Write-Host "=== 发布完成: EntroTect $current ===" -ForegroundColor Green
