@@ -325,6 +325,7 @@ export class OpenAiCompatibleProvider implements Provider {
   ): Promise<Response> {
     const effectiveEffort = this.resolveEffectiveEffort(options.reasoningEffort);
     let attempt = 0;
+    let stripOptional = false; // 400 后降级:去掉 reasoning_effort / stream_options
     for (;;) {
       try {
         const response = await this.fetchImpl(
@@ -349,12 +350,12 @@ export class OpenAiCompatibleProvider implements Provider {
                 },
               })),
               stream: true,
-              stream_options: { include_usage: true },
+              ...(stripOptional ? {} : { stream_options: { include_usage: true } }),
               ...(options.maxTokens ? { max_tokens: options.maxTokens } : {}),
               ...(options.temperature !== undefined
                 ? { temperature: options.temperature }
                 : {}),
-              ...(effectiveEffort ? { reasoning_effort: effectiveEffort } : {}),
+              ...(effectiveEffort && !stripOptional ? { reasoning_effort: effectiveEffort } : {}),
             }),
             signal,
           },
@@ -367,6 +368,11 @@ export class OpenAiCompatibleProvider implements Provider {
             detail = body.error?.message ?? "";
           } catch {
             detail = "";
+          }
+          // 400 且尚未降级:去掉可选参数重试一次(兼容不支持 reasoning_effort / stream_options 的 API)
+          if (response.status === 400 && !stripOptional) {
+            stripOptional = true;
+            continue;
           }
           throw new ProviderError(
             `模型接口返回 ${response.status}: ${detail || response.statusText}`,
