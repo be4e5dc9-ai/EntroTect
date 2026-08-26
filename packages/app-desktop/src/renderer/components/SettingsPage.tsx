@@ -7,7 +7,12 @@
 // =====================================================================
 
 import { useEffect, useRef, useState } from "react";
-import type { AppConfig, ProviderConfig, ReasoningEffort } from "@entrotect/shared";
+import type {
+  AppConfig,
+  ProviderConfig,
+  ReasoningEffort,
+  SkillOverride,
+} from "@entrotect/shared";
 import {
   CANONICAL_EFFORTS,
   EFFORT_LABELS,
@@ -15,6 +20,9 @@ import {
   GENERIC_FALLBACK_EFFORTS,
   getPresetDefault,
   getPresetEfforts,
+  isSkillEnabled,
+  isSkillInSlash,
+  skillOverrideFor,
 } from "@entrotect/shared";
 import { ACCENT_PRESETS } from "../../appearance";
 import { applyAccentColor, applyTheme } from "../appearance";
@@ -712,6 +720,7 @@ export function SettingsPage(): React.JSX.Element | null {
 function SkillsSection(): React.JSX.Element {
   const skills = useStore((s) => s.skills);
   const loading = useStore((s) => s.skillsLoading);
+  const config = useStore((s) => s.config);
 
   // 进入时自动刷新一次(若为空)
   useEffect(() => {
@@ -721,6 +730,23 @@ function SkillsSection(): React.JSX.Element {
   const onRefresh = () => {
     void fetchSkills();
   };
+
+  const toggleSkill = (path: string, field: "enabled" | "inSlash") => {
+    const current = useStore.getState().config;
+    if (!current) return;
+    const prev = skillOverrideFor(current, path);
+    const next: SkillOverride = { ...prev, [field]: !prev[field] };
+    bridge().send({
+      kind: "SetConfig",
+      config: {
+        ...current,
+        skillOverrides: { ...(current.skillOverrides ?? {}), [path]: next },
+      },
+    });
+  };
+
+  const enabledCount = skills.filter((s) => isSkillEnabled(config, s.path)).length;
+  const slashCount = skills.filter((s) => isSkillInSlash(config, s.path)).length;
 
   return (
     <section className="settings-section">
@@ -746,23 +772,64 @@ function SkillsSection(): React.JSX.Element {
       ) : (
         <>
           <div className="settings-hint" style={{ marginBottom: 12 }}>
-            已发现 {skills.length} 个 skill · 输入区以 <code>/</code> 触发自动补全
+            已发现 {skills.length} 个 skill · 启用 {enabledCount} · 斜杠显示 {slashCount} ·
+            输入区以 <code>/</code> 触发自动补全
           </div>
           <div className="skills-list">
-            {skills.map((skill) => (
-              <div key={skill.path} className="skill-row">
-                <div className="skill-head">
-                  <span className="skill-name">/{skill.name}</span>
-                  <span className="skill-source-badge" title={skill.source}>
-                    {skill.source}
-                  </span>
+            {skills.map((skill) => {
+              const override = skillOverrideFor(config, skill.path);
+              const disabled = !override.enabled;
+              return (
+                <div
+                  key={skill.path}
+                  className={`skill-row${disabled ? " disabled" : ""}`}
+                >
+                  <div className="skill-main">
+                    <div className="skill-head">
+                      <span className="skill-name">/{skill.name}</span>
+                      <span className="skill-source-badge" title={skill.source}>
+                        {skill.source}
+                      </span>
+                    </div>
+                    {skill.description && (
+                      <div className="skill-desc">{skill.description}</div>
+                    )}
+                    <div className="skill-path" title={skill.path}>
+                      {skill.path}
+                    </div>
+                  </div>
+                  <div className="skill-toggles">
+                    <label className="skill-toggle">
+                      <span className="skill-toggle-label">使用</span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={override.enabled}
+                        aria-label={`${disabled ? "启用" : "停用"} ${skill.name}`}
+                        className={`switch${override.enabled ? " on" : ""}`}
+                        onClick={() => toggleSkill(skill.path, "enabled")}
+                      >
+                        <span className="switch-knob" />
+                      </button>
+                    </label>
+                    <label className="skill-toggle">
+                      <span className="skill-toggle-label">斜杠显示</span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={override.inSlash}
+                        aria-label={`${override.inSlash ? "隐藏" : "显示"}斜杠补全 ${skill.name}`}
+                        className={`switch${override.inSlash ? " on" : ""}`}
+                        onClick={() => toggleSkill(skill.path, "inSlash")}
+                        disabled={disabled}
+                      >
+                        <span className="switch-knob" />
+                      </button>
+                    </label>
+                  </div>
                 </div>
-                {skill.description && <div className="skill-desc">{skill.description}</div>}
-                <div className="skill-path" title={skill.path}>
-                  {skill.path}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}

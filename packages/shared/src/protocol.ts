@@ -98,6 +98,8 @@ export interface AppConfig {
   showReasoning?: boolean;
   maxTokens?: number;
   temperature?: number;
+  /** 每个 skill 的使用开关(key = skill 绝对路径;缺省 = 启用且斜杠可见) */
+  skillOverrides?: Record<string, SkillOverride>;
 }
 
 export type PermissionMode = "full" | "write" | "ask";
@@ -246,6 +248,14 @@ export interface SkillInfo {
   path: string;
   /** 来源根目录展示(如 ~/.claude/skills) */
   source: string;
+}
+
+/** 单个 skill 的使用开关(设置 → Skills 面板管理) */
+export interface SkillOverride {
+  /** 是否允许在 EntroTect 中使用(关闭后完全不可用) */
+  enabled: boolean;
+  /** 是否在斜杠指令补全面板中显示 */
+  inSlash: boolean;
 }
 
 export const skillInfoSchema = z.object({
@@ -467,6 +477,9 @@ export const appConfigSchema = z.object({
   showReasoning: z.boolean().optional(),
   maxTokens: z.number().positive().optional(),
   temperature: z.number().min(0).max(2).optional(),
+  skillOverrides: z
+    .record(z.string(), z.object({ enabled: z.boolean(), inSlash: z.boolean() }))
+    .optional(),
 });
 
 export const opSchema = z.discriminatedUnion("kind", [
@@ -598,3 +611,31 @@ export const appEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("error"), message: z.string() }),
   z.object({ type: z.literal("config"), config: appConfigSchema }),
 ]);
+
+// =====================================================================
+// Skill 使用开关的纯函数(设置页与斜杠补全共用;缺省 = 启用且可见)
+// =====================================================================
+
+export function skillOverrideFor(
+  config: Pick<AppConfig, "skillOverrides"> | null | undefined,
+  path: string,
+): SkillOverride {
+  return config?.skillOverrides?.[path] ?? { enabled: true, inSlash: true };
+}
+
+/** 是否允许该 skill 在 EntroTect 中使用 */
+export function isSkillEnabled(
+  config: Pick<AppConfig, "skillOverrides"> | null | undefined,
+  path: string,
+): boolean {
+  return skillOverrideFor(config, path).enabled;
+}
+
+/** 是否在斜杠指令补全面板显示(需先启用) */
+export function isSkillInSlash(
+  config: Pick<AppConfig, "skillOverrides"> | null | undefined,
+  path: string,
+): boolean {
+  const override = skillOverrideFor(config, path);
+  return override.enabled && override.inSlash;
+}

@@ -11,6 +11,7 @@ import {
   clampEffort,
   getSupportedEffortsForModel,
   isReasoningEffort,
+  isSkillInSlash,
 } from "@entrotect/shared";
 import { fetchSkills, useStore, contextWindowForModel } from "../store";
 import { bridge } from "../bridge";
@@ -77,15 +78,20 @@ export function Composer(): React.JSX.Element {
 
   const slashQuery = text.startsWith("/") ? text.slice(1).split(/\s/)[0]?.toLowerCase() ?? "" : "";
   const hasSlashSpace = text.startsWith("/") && text.slice(1).includes(" ");
+  // 按设置页开关过滤:启用且斜杠可见才进补全面板
+  const slashSkills = useMemo(
+    () => skills.filter((s) => isSkillInSlash(config, s.path)),
+    [skills, config],
+  );
   const filteredSkills = useMemo(() => {
     if (!text.startsWith("/") || hasSlashSpace) return [];
-    if (!slashQuery) return skills;
-    return skills.filter(
+    if (!slashQuery) return slashSkills;
+    return slashSkills.filter(
       (s) =>
         s.name.toLowerCase().includes(slashQuery) ||
         s.description.toLowerCase().includes(slashQuery),
     );
-  }, [text, hasSlashSpace, slashQuery, skills]);
+  }, [text, hasSlashSpace, slashQuery, slashSkills]);
 
   const showSlash =
     text.startsWith("/") && !hasSlashSpace && !slashDismissed && !busy && hasSession && filteredSkills.length > 0;

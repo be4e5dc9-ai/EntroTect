@@ -153,6 +153,7 @@ export async function loadConfig(appDataDir: string): Promise<AppConfig> {
     showReasoning: fromFile.showReasoning ?? DEFAULT_CONFIG.showReasoning,
     maxTokens: fromFile.maxTokens,
     temperature: fromFile.temperature,
+    skillOverrides: fromFile.skillOverrides,
   };
 
   // 供应商列表:文件里缺某个预设时补默认,自定义条目原样保留

@@ -2364,13 +2364,49 @@
   gap: 8px;
 }
 .skill-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface);
   padding: 12px 14px;
   transition:
     border-color var(--dur-fast) var(--ease-out),
-    background-color var(--dur-fast) var(--ease-out);
+    background-color var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+.skill-row.disabled {
+  opacity: 0.55;
+}
+.skill-main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.skill-toggles {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+.skill-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.skill-toggle-label {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  user-select: none;
+}
+.skill-toggle .switch:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
 }
 @media (hover: hover) and (pointer: fine) {
   .skill-row:hover {
