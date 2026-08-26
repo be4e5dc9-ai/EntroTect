@@ -112,6 +112,12 @@ function sanitizeReasoningEffort(value: unknown): ReasoningEffort | undefined {
   return undefined;
 }
 
+/** 自动压缩阈值清洗:收敛到 [0.1, 1],非法值回退默认 0.7 */
+function clampRatio(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) return 0.7;
+  return Math.min(1, Math.max(0.1, value));
+}
+
 /** 把合并后的供应商列表确定 activeProviderId:缺省 deepseek,失效回退第一个 */
 function resolveActiveId(
   wanted: string | undefined,
@@ -155,6 +161,7 @@ export async function loadConfig(appDataDir: string): Promise<AppConfig> {
     temperature: fromFile.temperature,
     skillOverrides: fromFile.skillOverrides,
     autoCompact: fromFile.autoCompact ?? DEFAULT_CONFIG.autoCompact,
+    autoCompactRatio: clampRatio(fromFile.autoCompactRatio ?? DEFAULT_CONFIG.autoCompactRatio),
   };
 
   // 供应商列表:文件里缺某个预设时补默认,自定义条目原样保留

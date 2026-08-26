@@ -245,6 +245,17 @@ export function SettingsPage(): React.JSX.Element | null {
     }
   };
 
+  const setAutoCompactRatio = (value: string) => {
+    // 不可调到 10% 以下(合同 0.1 下限)
+    const pct = Math.min(100, Math.max(10, Number(value) || 0));
+    const ratio = pct / 100;
+    setForm((f) => (f ? { ...f, autoCompactRatio: ratio } : f));
+    const current = useStore.getState().config;
+    if (current) {
+      bridge().send({ kind: "SetConfig", config: { ...current, autoCompactRatio: ratio } });
+    }
+  };
+
   const updateProvider = (id: string, patch: Partial<ProviderConfig>) => {
     setForm((f) =>
       f
@@ -608,7 +619,7 @@ export function SettingsPage(): React.JSX.Element | null {
                   <div className="field-inline-text">
                     <span className="field-inline-title">自动压缩上下文</span>
                     <span className="field-inline-desc">
-                      即时生效;上下文占用超 70% 时自动把早期对话压缩成摘要(可随时用 /compact 手动压缩)
+                      即时生效;上下文占用超阈值时自动把早期对话压成摘要(可随时用 /compact 手动压缩)
                     </span>
                   </div>
                   <button
@@ -620,6 +631,26 @@ export function SettingsPage(): React.JSX.Element | null {
                   >
                     <span className="switch-knob" />
                   </button>
+                </div>
+
+                <div className="field field-inline">
+                  <div className="field-inline-text">
+                    <span className="field-inline-title">自动压缩触发比例</span>
+                    <span className="field-inline-desc">
+                      上下文占用达到多少时触发压缩(10%–100%,越小越早压缩);手动 /compact 不受此限制
+                    </span>
+                  </div>
+                  <label className="field-inline-ratio">
+                    <input
+                      type="number"
+                      min={10}
+                      max={100}
+                      step={5}
+                      value={Math.round((form.autoCompactRatio ?? 0.7) * 100)}
+                      onChange={(e) => setAutoCompactRatio(e.target.value)}
+                    />
+                    <span className="field-inline-ratio-unit">%</span>
+                  </label>
                 </div>
 
                 <div className="settings-actions">

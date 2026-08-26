@@ -102,6 +102,8 @@ export interface AppConfig {
   skillOverrides?: Record<string, SkillOverride>;
   /** 上下文占用超阈值时自动压缩(缺省开启) */
   autoCompact?: boolean;
+  /** 自动压缩触发阈值(0.1–1 比例;缺省 0.7,最小 0.1) */
+  autoCompactRatio?: number;
 }
 
 export type PermissionMode = "full" | "write" | "ask";
@@ -279,6 +281,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   sandboxMode: "full",
   showReasoning: false,
   autoCompact: true,
+  autoCompactRatio: 0.7,
 };
 
 // =====================================================================
@@ -486,6 +489,7 @@ export const appConfigSchema = z.object({
     .record(z.string(), z.object({ enabled: z.boolean(), inSlash: z.boolean() }))
     .optional(),
   autoCompact: z.boolean().optional(),
+  autoCompactRatio: z.number().min(0.1).max(1).optional(),
 });
 
 export const opSchema = z.discriminatedUnion("kind", [

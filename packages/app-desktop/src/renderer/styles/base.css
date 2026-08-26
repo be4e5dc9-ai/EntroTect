@@ -60,18 +60,18 @@
 }
 
 /* ---------- 日间模式:同一套 token 换值,组件零改动 ---------- */
-/* 暖黄白取自 Claude Code 桌面版:底色 #fdf8ef、卡片纯白、hover 带暖调 */
+/* 温暖柔和白:大幅减淡黄色,背景与卡片同一暖色家族,避免「奶油底 + 纯白卡」割裂 */
 [data-theme="light"] {
-  --bg: #fdf8ef;
-  --bg-sidebar: #fdf8ef;
-  --surface: #ffffff;
-  --surface-hover: #f5ede0;
-  --surface-active: #eee5d3;
-  --border: rgba(60, 40, 20, 0.08);
-  --border-strong: rgba(60, 40, 20, 0.14);
-  --text: #1e1a14;
-  --text-secondary: #5a5348;
-  --text-tertiary: #9a9386;
+  --bg: #f7f5f1;
+  --bg-sidebar: #f7f5f1;
+  --surface: #fcfbf8;
+  --surface-hover: #f1eee8;
+  --surface-active: #eae7e0;
+  --border: rgba(45, 38, 28, 0.07);
+  --border-strong: rgba(45, 38, 28, 0.12);
+  --text: #1c1a16;
+  --text-secondary: #555148;
+  --text-tertiary: #8d897f;
   --accent: #8d6fea;
   --accent-strong: #745bc0;
   --accent-dim: rgba(141, 111, 234, 0.10);
@@ -83,11 +83,11 @@
   --danger-dim: rgba(220, 38, 38, 0.08);
   --danger-hover: rgba(220, 38, 38, 0.14);
   --danger-border: rgba(220, 38, 38, 0.35);
-  --modal-shadow: 0 20px 48px rgba(60, 40, 20, 0.14);
+  --modal-shadow: 0 20px 48px rgba(45, 38, 28, 0.12);
   --toast-shadow: var(--modal-shadow);
-  --scrollbar: rgba(60, 40, 20, 0.16);
-  --scrollbar-hover: rgba(60, 40, 20, 0.3);
-  --code-bg: #fdf6ec;
+  --scrollbar: rgba(45, 38, 28, 0.15);
+  --scrollbar-hover: rgba(45, 38, 28, 0.28);
+  --code-bg: #f5f3ee;
   --input-bg: #ffffff;
   --swatch-border: var(--border-strong);
 
@@ -325,4 +325,33 @@ textarea {
 }
 .switch.on .switch-knob {
   transform: translate(16px, -50%);
+}
+
+/* 自动压缩触发比例输入 */
+.field-inline-ratio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.field-inline-ratio input {
+  width: 64px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--input-bg);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  color: var(--text);
+  text-align: right;
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.field-inline-ratio input:focus {
+  border-color: var(--accent);
+}
+.field-inline-ratio-unit {
+  font-size: 12px;
+  color: var(--text-tertiary);
 }

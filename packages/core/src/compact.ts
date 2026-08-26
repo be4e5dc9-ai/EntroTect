@@ -50,15 +50,17 @@ export function resolveContextWindow(
   return knownContextWindow(model) ?? suffixContextWindow(model) ?? 128_000;
 }
 
-/** 是否需要自动压缩 */
+/** 是否需要自动压缩(ratio 为触发阈值比例,0.1–1) */
 export function shouldAutoCompact(
   messages: Message[],
   model: string,
   providers?: ProviderConfig[],
+  ratio: number = COMPACT_RATIO,
 ): boolean {
   if (messages.length < COMPACT_MIN_MESSAGES) return false;
   const window = resolveContextWindow(model, providers);
-  return estimateTokens(messages) >= window * COMPACT_RATIO;
+  const clamped = Math.min(1, Math.max(0.1, ratio));
+  return estimateTokens(messages) >= window * clamped;
 }
 
 /** 压缩历史:返回替换后的消息数组(摘要 user 消息 + 最近 N 条) */

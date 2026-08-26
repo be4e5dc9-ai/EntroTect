@@ -472,7 +472,7 @@ export class SessionHost {
       // 自动压缩:开启且占用超阈值时,历史替换为 [摘要 + 最近 N 条]
       if (
         (config.autoCompact ?? true) &&
-        shouldAutoCompact(messages, config.model, config.providers)
+        shouldAutoCompact(messages, config.model, config.providers, config.autoCompactRatio)
       ) {
         try {
           const { compacted, summary } = await compactMessages(provider, messages, abort.signal);
