@@ -282,14 +282,13 @@ export function SettingsPage(): React.JSX.Element | null {
 
   // 设为当前:激活该供应商,模型同步为列表第一个(空列表保持原 model)
   const activate = (provider: ProviderConfig) => {
-    bridge().send({
-      kind: "SetConfig",
-      config: {
-        ...form,
-        activeProviderId: provider.id,
-        model: provider.models[0] ?? form.model,
-      },
-    });
+    const next = {
+      ...form,
+      activeProviderId: provider.id,
+      model: provider.models[0] ?? form.model,
+    };
+    setForm((f) => (f ? { ...f, activeProviderId: provider.id, model: provider.models[0] ?? f.model } : f));
+    bridge().send({ kind: "SetConfig", config: next });
   };
 
   const addProvider = () => {

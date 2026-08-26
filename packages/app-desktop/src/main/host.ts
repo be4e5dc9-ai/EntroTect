@@ -145,7 +145,6 @@ export class SessionHost {
   private makeProvider(config: AppConfig = this.config): Provider {
     const provider = this.activeProvider(config);
     if (!provider) return createProvider(config);
-    // 模型仍取顶层 model(compat 字段,切换供应商时由 UI 同步)
     return createProvider({
       ...config,
       baseUrl: provider.baseUrl,

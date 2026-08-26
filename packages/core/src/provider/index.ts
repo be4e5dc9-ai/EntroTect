@@ -9,23 +9,44 @@ export {
   ProviderError,
   toOpenAiMessages,
 } from "./openai-compatible.js";
+export { AnthropicProvider } from "./anthropic.js";
+export { GoogleProvider } from "./google.js";
 
 import type { AppConfig } from "@entrotect/shared";
 import { getPresetEfforts, getSupportedEffortsForModel } from "@entrotect/shared";
 import { OpenAiCompatibleProvider } from "./openai-compatible.js";
+import { AnthropicProvider } from "./anthropic.js";
+import { GoogleProvider } from "./google.js";
 import type { Provider } from "./types.js";
 import { listModels } from "./models.js";
 
-/** 按配置创建 provider。目前仅 OpenAI 兼容协议,缝已留好。 */
+/** 按配置创建 provider，根据 apiFormat 分发到不同协议实现。 */
 export function createProvider(config: AppConfig): Provider {
   const activeId = config.activeProviderId ?? config.providers?.[0]?.id;
   const supported = getSupportedEffortsForModel(config, activeId, config.model);
   const providerEntry = config.providers?.find((p) => p.id === activeId);
   const hasDeclared = providerEntry?.modelReasoningLevels?.[config.model] !== undefined;
   const hasPreset = getPresetEfforts(config.model) !== undefined;
-  // 仅在已声明或命中 preset 时传递 supported；未知通用回退不传递以保持“无声明不强制 clamp”
   const passSupported =
     hasDeclared || hasPreset ? supported : undefined;
+
+  const apiFormat = providerEntry?.apiFormat ?? "openai";
+
+  if (apiFormat === "anthropic") {
+    return new AnthropicProvider({
+      baseUrl: config.baseUrl,
+      apiKey: config.apiKey,
+      model: config.model,
+    });
+  }
+  if (apiFormat === "google") {
+    return new GoogleProvider({
+      baseUrl: config.baseUrl,
+      apiKey: config.apiKey,
+      model: config.model,
+    });
+  }
+  // 默认: OpenAI 兼容(DeepSeek / OpenAI / Moonshot / Ollama 等)
   return new OpenAiCompatibleProvider({
     baseUrl: config.baseUrl,
     apiKey: config.apiKey,
