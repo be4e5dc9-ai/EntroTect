@@ -142,12 +142,17 @@ $gh = Get-Command gh -ErrorAction SilentlyContinue
 if ($gh) { $gh = $gh.Source } else { $gh = "C:\Program Files\GitHub CLI\gh.exe" }
 if (-not (Test-Path -LiteralPath $gh)) { throw "未找到 gh CLI,请先安装并登录: winget install GitHub.cli; gh auth login" }
 
-git -C $root push origin main 2>$null
-if ($LASTEXITCODE -ne 0) {
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "SilentlyContinue"
+git -C $root push origin main 2>&1
+$pushExit = $LASTEXITCODE
+if ($pushExit -ne 0) {
   Start-Sleep -Seconds 5
-  git -C $root push origin main 2>$null
-  if ($LASTEXITCODE -ne 0) { throw "git push 失败,请检查网络后重试" }
+  git -C $root push origin main 2>&1
+  $pushExit = $LASTEXITCODE
 }
+$ErrorActionPreference = $prevEap
+if ($pushExit -ne 0) { throw "git push 失败,请检查网络后重试" }
 
 $originUrl = Invoke-Git @("remote", "get-url", "origin")
 $repo = ($originUrl -replace '^https?://github\.com/', '') -replace '\.git$', ''
