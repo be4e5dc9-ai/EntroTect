@@ -26,7 +26,7 @@ type Input = z.infer<typeof inputSchema>;
 export const taskTool: Tool = {
   name: "task",
   description:
-    "把独立子任务委派给子代理执行,适合互不依赖的独立工作,例如调研某段代码、独立文件的修改。一次只委派一个任务,在 prompt 里写清目标与必要上下文;子代理完成后会返回一段汇报文本;委派内容同样受宪法硬约束限制，不得用于有害行为。",
+    "把独立子任务委派给子代理执行,适合互不依赖的独立工作,例如调研某段代码、独立文件的修改。一次只委派一个任务,在 prompt 里写清目标与必要上下文;子代理完成后会返回一段汇报文本;委派内容同样受硬约束限制，不得用于有害行为。",
   inputSchema,
   isReadOnly: false,
   preview: (args) => {

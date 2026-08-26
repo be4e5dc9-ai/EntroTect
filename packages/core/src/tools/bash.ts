@@ -49,7 +49,7 @@ export const bashTool: Tool = {
   description:
     "在当前工作目录执行 PowerShell 命令。Set-Location 切换目录会持久到后续调用;" +
     "优先用只读命令探查环境;涉及破坏性操作(删除、强制覆盖、全局安装)前先说明并等待确认;" +
-    "绝不用于宪法硬约束所列行为（大规模杀伤、关键基础设施攻击、重大恶意代码/网络武器、非法权力攫取、CSAM等），遇到此类请求应拒绝。",
+    "绝不用于硬约束所列行为（大规模杀伤、关键基础设施攻击、重大恶意代码/网络武器、非法权力攫取、CSAM等），遇到此类请求应拒绝。",
   inputSchema,
   isReadOnly: false,
   preview: (args) => (args as Input).command,
