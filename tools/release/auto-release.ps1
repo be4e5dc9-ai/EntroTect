@@ -61,9 +61,9 @@ if ($changes) {
 # ---- 2. 打包 ----------------------------------------------------------
 Step "2/6 构建 NSIS 安装包"
 if ($Version -ne "") {
-  & $python $releasePy --version $Version
+  & $python $releasePy --version $Version 2>&1
 } else {
-  & $python $releasePy
+  & $python $releasePy 2>&1
 }
 if ($LASTEXITCODE -ne 0) { throw "打包失败(exit $LASTEXITCODE)" }
 
