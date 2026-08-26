@@ -325,7 +325,7 @@ export class OpenAiCompatibleProvider implements Provider {
   ): Promise<Response> {
     const effectiveEffort = this.resolveEffectiveEffort(options.reasoningEffort);
     let attempt = 0;
-    let stripOptional = false; // 400 后降级:去掉 reasoning_effort / stream_options
+    let stripOptional = false; // 400 后降级:去掉 reasoning_effort / stream_options, max_tokens→max_completion_tokens
     for (;;) {
       try {
         const response = await this.fetchImpl(
@@ -351,7 +351,11 @@ export class OpenAiCompatibleProvider implements Provider {
               })),
               stream: true,
               ...(stripOptional ? {} : { stream_options: { include_usage: true } }),
-              ...(options.maxTokens ? { max_tokens: options.maxTokens } : {}),
+              ...(options.maxTokens
+                ? stripOptional
+                  ? { max_completion_tokens: options.maxTokens }
+                  : { max_tokens: options.maxTokens }
+                : {}),
               ...(options.temperature !== undefined
                 ? { temperature: options.temperature }
                 : {}),
