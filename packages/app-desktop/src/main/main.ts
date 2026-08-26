@@ -68,8 +68,8 @@ ipcMain.handle("entrotect:set-theme", (_event, theme: unknown) => {
   if (!mainWindow) return;
   const light = theme === "light";
   mainWindow.setTitleBarOverlay({
-    color: light ? "#fafafc" : "#0d0d10",
-    symbolColor: light ? "#5b5b66" : "#8f8f9d",
+    color: light ? "#f7f5f1" : "#0d0d10",
+    symbolColor: light ? "#55514a" : "#8f8f9d",
     height: 40,
   });
 });
