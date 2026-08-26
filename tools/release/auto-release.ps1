@@ -138,8 +138,12 @@ $tag = "v$current"
 $asset = Join-Path $releaseDir "EntroTect-Setup-$current.exe"
 $sumsFile = Join-Path $releaseDir "SHA256SUMS.txt"
 
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "SilentlyContinue"
 $null = & $gh release view $tag -R $repo 2>&1
-if ($LASTEXITCODE -eq 0) {
+$viewExit = $LASTEXITCODE
+$ErrorActionPreference = $prevEap
+if ($viewExit -eq 0) {
   & $gh release upload $tag $asset $sumsFile --clobber -R $repo
   if ($LASTEXITCODE -ne 0) { throw "gh release upload 失败" }
   Write-Host "已更新 Release $tag 资产" -ForegroundColor Green
