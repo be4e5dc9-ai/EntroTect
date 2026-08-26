@@ -36,7 +36,8 @@ export const editTool: Tool = {
   name: "edit",
   description:
     "对文件做精确字符串替换。old_string 必须与文件内容逐字符一致(含缩进)。" +
-    "修改前请先 read;若唯一匹配失败,重新 read 后再试。",
+    "修改前请先 read;若唯一匹配失败,重新 read 后再试;" +
+    "绝不用于写入硬约束有害内容（大规模杀伤、关键基础设施攻击、重大恶意代码、非法权力攫取、CSAM等），遇此类请求应拒绝。",
   inputSchema,
   isReadOnly: false,
   preview: (args) => {

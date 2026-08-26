@@ -49,7 +49,8 @@ function resolveProvider(ctx: ToolContext): {
 export const imageTool: Tool = {
   name: "generate_image",
   description:
-    "调用图片生成模型生成图片并保存到文件。prompt 为图像描述,file_path 为保存路径(相对工作目录)。需要已配置支持图片生成的供应商(baseUrl/apiKey)。",
+    "调用图片生成模型生成图片并保存到文件。prompt 为图像描述,file_path 为保存路径(相对工作目录)。需要已配置支持图片生成的供应商(baseUrl/apiKey);" +
+    "绝不生成 CSAM、非自愿性色情、或用于大规模伤害/非法权力攫取的图像，遇此类请求应拒绝。",
   inputSchema,
   isReadOnly: false,
   preview: (args) => (args as Input).prompt.slice(0, 40),

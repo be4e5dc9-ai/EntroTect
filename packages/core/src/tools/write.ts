@@ -17,7 +17,9 @@ type Input = z.infer<typeof inputSchema>;
 
 export const writeTool: Tool = {
   name: "write",
-  description: "创建或覆盖文件。写入前请先用 read 确认现状,避免覆盖已有内容。",
+  description:
+    "创建或覆盖文件。写入前请先用 read 确认现状,避免覆盖已有内容;" +
+    "绝不写入用于硬约束有害行为的内容（大规模杀伤、关键基础设施攻击、重大恶意代码、非法权力攫取、CSAM等），遇此类请求应拒绝。",
   inputSchema,
   isReadOnly: false,
   preview: (args) => (args as Input).file_path,
