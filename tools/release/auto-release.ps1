@@ -60,12 +60,16 @@ if ($changes) {
 
 # ---- 2. 打包 ----------------------------------------------------------
 Step "2/6 构建 NSIS 安装包"
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "SilentlyContinue"
 if ($Version -ne "") {
-  & $python $releasePy --version $Version 2>&1
+  $buildOut = & $python $releasePy --version $Version 2>&1
 } else {
-  & $python $releasePy 2>&1
+  $buildOut = & $python $releasePy 2>&1
 }
-if ($LASTEXITCODE -ne 0) { throw "打包失败(exit $LASTEXITCODE)" }
+$buildExit = $LASTEXITCODE
+$ErrorActionPreference = $prevEap
+if ($buildExit -ne 0) { throw "打包失败(exit $buildExit): $buildOut" }
 
 # ---- 2.5 版本号变更提交(打包脚本可能 bump package.json version) ---------
 Step "提交版本号变更"
