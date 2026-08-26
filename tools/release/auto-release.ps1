@@ -34,12 +34,25 @@ function Get-AppVersion {
   return $data.version
 }
 
+# 运行 git 并吞掉 stderr(CRLF 警告等),仅以 $LASTEXITCODE 判定真实失败,
+# 避免 PowerShell 在 $ErrorActionPreference=Stop 下把 git 警告当 NativeCommandError 中断。
+function Invoke-Git {
+  param([string[]]$GitArgs)
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = "SilentlyContinue"
+  $result = & git -C $root @GitArgs 2>$null
+  $exit = $LASTEXITCODE
+  $ErrorActionPreference = $prev
+  if ($exit -ne 0) { throw "git $($GitArgs -join ' ') 失败(exit $exit)" }
+  return $result
+}
+
 # ---- 1. 自动提交 ------------------------------------------------------
 Step "1/6 自动提交工作区改动"
-git -C $root add -A
-$changes = git -C $root status --porcelain
+Invoke-Git @("add", "-A")
+$changes = Invoke-Git @("status", "--porcelain")
 if ($changes) {
-  git -C $root commit -m $Message
+  Invoke-Git @("commit", "-m", $Message)
   Write-Host "已提交: $Message" -ForegroundColor Green
 } else {
   Write-Host "无待提交改动,跳过" -ForegroundColor Yellow
@@ -56,10 +69,10 @@ if ($LASTEXITCODE -ne 0) { throw "打包失败(exit $LASTEXITCODE)" }
 
 # ---- 2.5 版本号变更提交(打包脚本可能 bump package.json version) ---------
 Step "提交版本号变更"
-$bump = git -C $root status --porcelain
+$bump = Invoke-Git @("status", "--porcelain")
 if ($bump) {
-  git -C $root add -A
-  git -C $root commit -m "chore: bump desktop release to $(Get-AppVersion)"
+  Invoke-Git @("add", "-A")
+  Invoke-Git @("commit", "-m", "chore: bump desktop release to $(Get-AppVersion)")
   Write-Host "已提交版本号 $(Get-AppVersion)" -ForegroundColor Green
 } else {
   Write-Host "版本号无变化" -ForegroundColor Yellow
@@ -125,14 +138,14 @@ $gh = Get-Command gh -ErrorAction SilentlyContinue
 if ($gh) { $gh = $gh.Source } else { $gh = "C:\Program Files\GitHub CLI\gh.exe" }
 if (-not (Test-Path -LiteralPath $gh)) { throw "未找到 gh CLI,请先安装并登录: winget install GitHub.cli; gh auth login" }
 
-git -C $root push origin main
+git -C $root push origin main 2>$null
 if ($LASTEXITCODE -ne 0) {
   Start-Sleep -Seconds 5
-  git -C $root push origin main
+  git -C $root push origin main 2>$null
   if ($LASTEXITCODE -ne 0) { throw "git push 失败,请检查网络后重试" }
 }
 
-$originUrl = git -C $root remote get-url origin
+$originUrl = Invoke-Git @("remote", "get-url", "origin")
 $repo = ($originUrl -replace '^https?://github\.com/', '') -replace '\.git$', ''
 $tag = "v$current"
 $asset = Join-Path $releaseDir "EntroTect-Setup-$current.exe"

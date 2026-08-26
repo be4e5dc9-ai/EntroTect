@@ -13,6 +13,47 @@ const inputSchema = z.strictObject({
 
 type Input = z.infer<typeof inputSchema>;
 
+function classifyNetworkError(error: unknown): string {
+  const msg = error instanceof Error ? error.message : String(error);
+  // 超时(含我们主动 abort)单独归类
+  if (msg.includes("abort") || msg.includes("timeout") || msg.includes("timed out")) {
+    return "抓取超时(15s):连接或响应过慢,可能是网络或目标主机问题,非请求格式错误";
+  }
+  // 沿 cause 链取底层错误码,区分 TLS/DNS/连接类
+  let cause: unknown = error;
+  let code = "";
+  let causeMsg = "";
+  while (cause && typeof cause === "object") {
+    const c = cause as { code?: string; message?: string };
+    if (c.code) code = c.code;
+    if (c.message) causeMsg = c.message;
+    cause = (cause as { cause?: unknown }).cause;
+  }
+  const tlsCodes = [
+    "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+    "SELF_SIGNED_CERT_IN_CHAIN",
+    "DEPTH_ZERO_SELF_SIGNED_CERT",
+    "ERR_TLS_CERT_ALTNAME_INVALID",
+    "ERR_TLS_HANDSHAKE_TIMEOUT",
+    "CERT_HAS_EXPIRED",
+    "ERR_SSL",
+    "SSL",
+  ];
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN" || causeMsg.includes("getaddrinfo")) {
+    return `域名无法解析(DNS):${code || causeMsg} — 目标主机不可达,非请求格式错误`;
+  }
+  if (code === "ECONNREFUSED") {
+    return `连接被拒绝(ECONNREFUSED):目标主机未监听该端口,非请求格式错误`;
+  }
+  if (code === "ECONNRESET" || code === "ENETRESET" || code === "ETIMEDOUT") {
+    return `连接中断/超时(${code}):目标主机或中间网络不稳定,非请求格式错误`;
+  }
+  if (tlsCodes.some((t) => code.includes(t) || causeMsg.toUpperCase().includes(t))) {
+    return `TLS 握手失败(${code || causeMsg}):目标站点证书/加密协商异常,非请求格式或代码问题,可换其他来源或重试`;
+  }
+  return `抓取失败:${msg || causeMsg} — 多为网络/主机问题,非请求格式错误`;
+}
+
 function stripHtml(html: string): string {
   // 移除 script/style/nav/footer
   let text = html
@@ -79,9 +120,7 @@ export const webfetchTool: Tool = {
       if (text.length > maxChars) text = `${text.slice(0, maxChars)}\n…(已截断，原文更长)`;
       return `URL: ${args.url}\n\n${text}`;
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes("abort")) throw new Error(`抓取超时(15s): ${args.url}`);
-      throw new Error(`抓取失败: ${msg}`);
+      throw new Error(`${classifyNetworkError(error)} — URL: ${args.url}`);
     } finally {
       clearTimeout(timer);
     }
