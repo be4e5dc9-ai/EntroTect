@@ -236,6 +236,15 @@ export function SettingsPage(): React.JSX.Element | null {
     }
   };
 
+  const toggleAutoCompact = () => {
+    const next = !(form.autoCompact ?? true);
+    setForm((f) => (f ? { ...f, autoCompact: next } : f));
+    const current = useStore.getState().config;
+    if (current) {
+      bridge().send({ kind: "SetConfig", config: { ...current, autoCompact: next } });
+    }
+  };
+
   const updateProvider = (id: string, patch: Partial<ProviderConfig>) => {
     setForm((f) =>
       f
@@ -590,6 +599,24 @@ export function SettingsPage(): React.JSX.Element | null {
                     aria-checked={(form.sandboxMode ?? "full") === "restricted"}
                     className={`switch${(form.sandboxMode ?? "full") === "restricted" ? " on" : ""}`}
                     onClick={toggleSandbox}
+                  >
+                    <span className="switch-knob" />
+                  </button>
+                </div>
+
+                <div className="field field-inline">
+                  <div className="field-inline-text">
+                    <span className="field-inline-title">自动压缩上下文</span>
+                    <span className="field-inline-desc">
+                      即时生效;上下文占用超 70% 时自动把早期对话压缩成摘要(可随时用 /compact 手动压缩)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={form.autoCompact ?? true}
+                    className={`switch${form.autoCompact ?? true ? " on" : ""}`}
+                    onClick={toggleAutoCompact}
                   >
                     <span className="switch-knob" />
                   </button>

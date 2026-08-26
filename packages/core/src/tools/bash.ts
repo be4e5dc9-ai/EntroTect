@@ -12,6 +12,7 @@ import { spawn } from "node:child_process";
 import { z } from "zod";
 import type { Tool, ToolContext } from "./types.js";
 import { analyzeCommand } from "../sandbox/index.js";
+import { appendOutput, createBgJob } from "./bg-manager.js";
 
 const DEFAULT_TIMEOUT_SECONDS = 120;
 
@@ -30,6 +31,7 @@ const inputSchema = z.strictObject({
     .max(600)
     .optional()
     .describe(`超时秒数(默认 ${DEFAULT_TIMEOUT_SECONDS},上限 600)`),
+  background: z.boolean().optional().describe("true 时后台运行（长任务/dev server），立即返回任务 id，用 bash_output 轮询；默认 false"),
 });
 
 type Input = z.infer<typeof inputSchema>;
@@ -49,6 +51,7 @@ export const bashTool: Tool = {
   description:
     "在当前工作目录执行 PowerShell 命令。Set-Location 切换目录会持久到后续调用;" +
     "优先用只读命令探查环境;涉及破坏性操作(删除、强制覆盖、全局安装)前先说明并等待确认;" +
+    "支持 background=true 后台运行（长任务/dev server）用 bash_output 轮询;" +
     "绝不用于硬约束所列行为（大规模杀伤、关键基础设施攻击、重大恶意代码/网络武器、非法权力攫取、CSAM等），遇到此类请求应拒绝。",
   inputSchema,
   isReadOnly: false,
@@ -76,6 +79,42 @@ export const bashTool: Tool = {
     const readBack = `; Write-Output ""; Write-Output "${CWD_MARKER}$((Get-Location).Path)"`;
     const wrapped =
       `[Console]::OutputEncoding=[Text.UTF8Encoding]::UTF8; ${restore}${args.command}${readBack}`;
+
+    // 后台模式：立即返回任务 id，输出通过 bash_output 轮询
+    if (args.background) {
+      const job = createBgJob(args.command, ctx.cwd);
+      const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", wrapped], {
+        cwd: ctx.cwd,
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      job.child = child;
+      child.stdout.on("data", (chunk: Buffer) => appendOutput(job, chunk.toString("utf8"), false));
+      child.stderr.on("data", (chunk: Buffer) => appendOutput(job, chunk.toString("utf8"), true));
+      child.on("close", (code) => {
+        job.done = true;
+        job.code = code;
+        // 回读最终目录
+        const full = job.stdout;
+        const markerIndex = full.lastIndexOf(CWD_MARKER);
+        if (markerIndex !== -1) {
+          const lineStart = full.lastIndexOf("\n", markerIndex - 1);
+          const markerLine = full.slice(lineStart + 1).trim();
+          const finalCwd = markerLine.slice(CWD_MARKER.length).trim();
+          if (finalCwd) cwdMemory.set(ctx.cwd, finalCwd);
+        }
+      });
+      child.on("error", () => {
+        job.done = true;
+      });
+      // 定时清理：超时时强杀
+      if (args.timeout) {
+        setTimeout(() => {
+          if (!job.done && child.pid) killTree(child.pid);
+        }, timeoutMs);
+      }
+      return `后台任务已启动\nid: ${job.id}\ncommand: ${args.command}\n提示：用 bash_output 轮询输出，用 kill_shell 终止。`;
+    }
 
     return await new Promise<string>((resolve, reject) => {
       const startedAt = Date.now();

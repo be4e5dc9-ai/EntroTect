@@ -100,6 +100,8 @@ export interface AppConfig {
   temperature?: number;
   /** 每个 skill 的使用开关(key = skill 绝对路径;缺省 = 启用且斜杠可见) */
   skillOverrides?: Record<string, SkillOverride>;
+  /** 上下文占用超阈值时自动压缩(缺省开启) */
+  autoCompact?: boolean;
 }
 
 export type PermissionMode = "full" | "write" | "ask";
@@ -276,6 +278,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   permissionMode: "write",
   sandboxMode: "full",
   showReasoning: false,
+  autoCompact: true,
 };
 
 // =====================================================================
@@ -292,6 +295,7 @@ export type Op =
   | { kind: "ResumeSession"; sessionId: string }
   | { kind: "DeleteSession"; sessionId: string }
   | { kind: "ListSessions" }
+  | { kind: "Compact" }
   | {
       kind: "ListModels";
       providerId?: string;
@@ -350,6 +354,7 @@ export type SubagentPart =
 export type AppEvent =
   | { type: "session-meta"; meta: SessionMeta }
   | { type: "sessions-listed"; sessions: SessionMeta[] }
+  | { type: "session-compacted"; summary: string }
   | {
       type: "models-listed";
       providerId: string;
@@ -480,6 +485,7 @@ export const appConfigSchema = z.object({
   skillOverrides: z
     .record(z.string(), z.object({ enabled: z.boolean(), inSlash: z.boolean() }))
     .optional(),
+  autoCompact: z.boolean().optional(),
 });
 
 export const opSchema = z.discriminatedUnion("kind", [
@@ -490,6 +496,7 @@ export const opSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("ResumeSession"), sessionId: z.string() }),
   z.object({ kind: z.literal("DeleteSession"), sessionId: z.string() }),
   z.object({ kind: z.literal("ListSessions") }),
+  z.object({ kind: z.literal("Compact") }),
   z.object({
     kind: z.literal("ListModels"),
     providerId: z.string().optional(),
@@ -532,6 +539,7 @@ export const subagentPartSchema = z.discriminatedUnion("kind", [
 export const appEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("session-meta"), meta: sessionMetaSchema }),
   z.object({ type: z.literal("sessions-listed"), sessions: z.array(sessionMetaSchema) }),
+  z.object({ type: z.literal("session-compacted"), summary: z.string() }),
   z.object({
     type: z.literal("models-listed"),
     providerId: z.string(),

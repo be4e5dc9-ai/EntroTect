@@ -11,3 +11,4 @@ export * from "./subagent/index.js";
 export * from "./tools/task.js";
 export * from "./config.js";
 export * from "./sandbox/index.js";
+export * from "./compact.js";

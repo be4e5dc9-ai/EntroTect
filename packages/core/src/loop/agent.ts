@@ -204,44 +204,48 @@ export async function runAgent(
       };
     }
 
-    // 4. 串行执行(v1 不做并行;权限闸门 = approve 回调)
-    const results: ContentBlock[] = [];
+    // 4. 两阶段执行:审批串行(逐个弹窗),执行并行(互不依赖的调用并发跑),
+    //    结果按原始 tool_use 顺序回填,保证与请求块配对。
     const toolContextBase = {
       cwd: deps.cwd,
       artifactDir: deps.artifactDir,
       abortSignal: deps.abortSignal,
     };
+    const ordered = new Array<ContentBlock | null>(toolCalls.length).fill(null);
 
-    for (const call of toolCalls) {
+    interface Planned {
+      call: ToolCallBlock;
+      tool: Tool;
+      preview: string;
+      args: unknown;
+      index: number;
+      denied?: boolean;
+    }
+
+    // 4a. 预处理:abort/未知工具直接占位,其余进审批队列
+    const pending: Planned[] = [];
+    toolCalls.forEach((call, index) => {
       const tool = toolsByName.get(call.name);
       const preview = previewFor(tool, call);
-
       if (deps.abortSignal?.aborted) {
-        results.push({
+        ordered[index] = {
           type: "tool-result",
           toolCallId: call.id,
           name: call.name,
           isError: true,
           content: ABORT_RESULT,
-        });
-        deps.emit({
-          type: "tool-state",
-          toolCallId: call.id,
-          state: "denied",
-          preview,
-        });
-        continue;
+        };
+        deps.emit({ type: "tool-state", toolCallId: call.id, state: "denied", preview });
+        return;
       }
-
-      // fail-closed:未知工具报错回喂
       if (!tool) {
-        results.push({
+        ordered[index] = {
           type: "tool-result",
           toolCallId: call.id,
           name: call.name,
           isError: true,
           content: `未知工具: ${call.name}`,
-        });
+        };
         deps.emit({
           type: "tool-state",
           toolCallId: call.id,
@@ -249,129 +253,164 @@ export async function runAgent(
           preview,
           summary: "未知工具",
         });
-        continue;
+        return;
       }
+      // 插件 before 钩子:审批前改写 args
+      let args: unknown;
+      try {
+        const originalArgs = JSON.parse(call.arguments);
+        const rewritten = applyToolBefore(pluginHooks, call.name, originalArgs);
+        if (typeof rewritten === "string") {
+          try {
+            args = JSON.parse(rewritten);
+          } catch {
+            args = originalArgs;
+          }
+        } else {
+          args = rewritten;
+        }
+      } catch {
+        args = null;
+      }
+      pending.push({ call, tool, preview, args, index });
+    });
 
-      // 审批闸门
+    // 4b. 审批串行(保持弹窗顺序与交互稳定)
+    for (const item of pending) {
+      if (deps.abortSignal?.aborted) break;
       const outcome = await deps.approve({
-        toolCallId: call.id,
-        toolName: call.name,
-        preview,
-        description: tool.description,
+        toolCallId: item.call.id,
+        toolName: item.call.name,
+        preview: item.preview,
+        description: item.tool.description,
       });
       if (outcome.decision === "deny") {
         const reason =
           outcome.reason ??
           "工具调用被用户拒绝。请改用其他方式完成任务,或向用户说明为什么需要此操作。";
-        results.push({
+        ordered[item.index] = {
           type: "tool-result",
-          toolCallId: call.id,
-          name: call.name,
+          toolCallId: item.call.id,
+          name: item.call.name,
           isError: true,
           content: reason,
-        });
-        deps.emit({
-          type: "tool-state",
-          toolCallId: call.id,
-          state: "denied",
-          preview,
-        });
-        continue;
-      }
-
-      deps.emit({
-        type: "tool-state",
-        toolCallId: call.id,
-        state: "executing",
-        preview,
-      });
-
-      // 执行 + 截断 + 错误回喂
-      try {
-        // 插件 before 钩子:审批通过后、call 之前改写 args
-        const originalArgs = JSON.parse(call.arguments);
-        const rewritten = applyToolBefore(pluginHooks, call.name, originalArgs);
-        let args: unknown = originalArgs;
-        if (typeof rewritten === "string") {
-          try {
-            args = JSON.parse(rewritten);
-          } catch {
-            // 非法 JSON:沿用原 args(管理器内已兜底,此处双保险)
-          }
-        } else {
-          args = rewritten;
-        }
-        // 审批可能跨越 SetConfig;在真正调用工具前读取最新模式。
-        const toolContext: ToolContext = {
-          ...toolContextBase,
-          sandboxMode: getSandboxMode(),
-          imageProvider: deps.imageProvider,
-          subagentLog: (line: string) => {
-            deps.emit({ type: "subagent-activity", toolCallId: call.id, text: line });
-          },
-          subagentEmit: (part: SubagentPart) => {
-            deps.emit({ type: "subagent-part", toolCallId: call.id, part });
-          },
         };
-        const output = await tool.call(args, toolContext);
-        const truncated = await truncateOutput(output, deps.artifactDir);
-        // 插件 after 钩子:只观察不修改结果
-        notifyToolAfter(pluginHooks, call.name, truncated.content, false);
-        // 文件产出事件:write/edit/image 成功后通知 UI 渲染文件卡片
-        if (tool.name === "write" || tool.name === "edit" || tool.name === "generate_image") {
-          const filePath = (args as { file_path?: unknown } | null)?.file_path;
-          if (typeof filePath === "string" && filePath.length > 0) {
-            const absolute = path.resolve(deps.cwd, filePath);
-            const insideCwd =
-              absolute === deps.cwd || absolute.startsWith(deps.cwd + path.sep);
-            const display = insideCwd
-              ? path.relative(deps.cwd, absolute)
-              : absolute;
-            deps.emit({
-              type: "file-changed",
-              toolCallId: call.id,
-              path: display,
-              action: tool.name === "edit" ? "edited" : "written",
-            });
-          }
-        }
-        results.push({
-          type: "tool-result",
-          toolCallId: call.id,
-          name: call.name,
-          isError: false,
-          content: truncated.content,
-        });
         deps.emit({
           type: "tool-state",
-          toolCallId: call.id,
-          state: "completed",
-          preview,
-          summary:
-            call.name === "task"
-              ? truncated.content
-              : (truncated.spilledTo ?? undefined),
+          toolCallId: item.call.id,
+          state: "denied",
+          preview: item.preview,
         });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        const content = `<tool_use_error>${message}</tool_use_error>`;
-        notifyToolAfter(pluginHooks, call.name, content, true);
-        results.push({
-          type: "tool-result",
-          toolCallId: call.id,
-          name: call.name,
-          isError: true,
-          content,
-        });
-        deps.emit({
-          type: "tool-state",
-          toolCallId: call.id,
-          state: "failed",
-          preview,
-          summary: message.slice(0, 200),
-        });
+        item.denied = true;
       }
     }
+
+    // 4c. 执行并行:仅剩已批准的调用;结果按索引占位,顺序不变
+    await Promise.all(
+      pending.map(async (item) => {
+        if (item.denied) return;
+        const index = item.index;
+        if (deps.abortSignal?.aborted) {
+          ordered[index] = {
+            type: "tool-result",
+            toolCallId: item.call.id,
+            name: item.call.name,
+            isError: true,
+            content: ABORT_RESULT,
+          };
+          deps.emit({
+            type: "tool-state",
+            toolCallId: item.call.id,
+            state: "denied",
+            preview: item.preview,
+          });
+          return;
+        }
+        deps.emit({
+          type: "tool-state",
+          toolCallId: item.call.id,
+          state: "executing",
+          preview: item.preview,
+        });
+        try {
+          // 审批可能跨越 SetConfig;在真正调用工具前读取最新模式。
+          const toolContext: ToolContext = {
+            ...toolContextBase,
+            sandboxMode: getSandboxMode(),
+            imageProvider: deps.imageProvider,
+            subagentLog: (line: string) => {
+              deps.emit({ type: "subagent-activity", toolCallId: item.call.id, text: line });
+            },
+            subagentEmit: (part: SubagentPart) => {
+              deps.emit({ type: "subagent-part", toolCallId: item.call.id, part });
+            },
+          };
+          const output = await item.tool.call(item.args, toolContext);
+          const truncated = await truncateOutput(output, deps.artifactDir);
+          notifyToolAfter(pluginHooks, item.call.name, truncated.content, false);
+          if (
+            item.call.name === "write" ||
+            item.call.name === "edit" ||
+            item.call.name === "generate_image"
+          ) {
+            const filePath = (item.args as { file_path?: unknown } | null)?.file_path;
+            if (typeof filePath === "string" && filePath.length > 0) {
+              const absolute = path.resolve(deps.cwd, filePath);
+              const insideCwd =
+                absolute === deps.cwd || absolute.startsWith(deps.cwd + path.sep);
+              const display = insideCwd
+                ? path.relative(deps.cwd, absolute)
+                : absolute;
+              deps.emit({
+                type: "file-changed",
+                toolCallId: item.call.id,
+                path: display,
+                action: item.call.name === "edit" ? "edited" : "written",
+              });
+            }
+          }
+          ordered[index] = {
+            type: "tool-result",
+            toolCallId: item.call.id,
+            name: item.call.name,
+            isError: false,
+            content: truncated.content,
+          };
+          deps.emit({
+            type: "tool-state",
+            toolCallId: item.call.id,
+            state: "completed",
+            preview: item.preview,
+            summary:
+              item.call.name === "task" || item.call.name === "todowrite"
+                ? truncated.content
+                : (truncated.spilledTo ?? undefined),
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const content = `<tool_use_error>${message}</tool_use_error>`;
+          notifyToolAfter(pluginHooks, item.call.name, content, true);
+          ordered[index] = {
+            type: "tool-result",
+            toolCallId: item.call.id,
+            name: item.call.name,
+            isError: true,
+            content,
+          };
+          deps.emit({
+            type: "tool-state",
+            toolCallId: item.call.id,
+            state: "failed",
+            preview: item.preview,
+            summary: message.slice(0, 200),
+          });
+        }
+      }),
+    );
+
+    const results: ContentBlock[] = ordered.filter(
+      (block): block is ContentBlock => block !== null,
+    );
 
     // 5. tool_result 回填(紧跟 tool_use,配对铁律)
     const toolResultMessage: Message = { role: "user", content: results };

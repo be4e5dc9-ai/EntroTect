@@ -60,17 +60,18 @@
 }
 
 /* ---------- 日间模式:同一套 token 换值,组件零改动 ---------- */
+/* 暖黄白取自 Claude Code 桌面版:底色 #fdf8ef、卡片纯白、hover 带暖调 */
 [data-theme="light"] {
-  --bg: #fafafc;
-  --bg-sidebar: #fafafc;
+  --bg: #fdf8ef;
+  --bg-sidebar: #fdf8ef;
   --surface: #ffffff;
-  --surface-hover: #f1f1f6;
-  --surface-active: #e9e9f0;
-  --border: rgba(20, 20, 30, 0.08);
-  --border-strong: rgba(20, 20, 30, 0.15);
-  --text: #1c1c24;
-  --text-secondary: #565664;
-  --text-tertiary: #8f8f9e;
+  --surface-hover: #f5ede0;
+  --surface-active: #eee5d3;
+  --border: rgba(60, 40, 20, 0.08);
+  --border-strong: rgba(60, 40, 20, 0.14);
+  --text: #1e1a14;
+  --text-secondary: #5a5348;
+  --text-tertiary: #9a9386;
   --accent: #8d6fea;
   --accent-strong: #745bc0;
   --accent-dim: rgba(141, 111, 234, 0.10);
@@ -82,11 +83,11 @@
   --danger-dim: rgba(220, 38, 38, 0.08);
   --danger-hover: rgba(220, 38, 38, 0.14);
   --danger-border: rgba(220, 38, 38, 0.35);
-  --modal-shadow: 0 20px 48px rgba(24, 24, 40, 0.14);
+  --modal-shadow: 0 20px 48px rgba(60, 40, 20, 0.14);
   --toast-shadow: var(--modal-shadow);
-  --scrollbar: rgba(20, 20, 30, 0.16);
-  --scrollbar-hover: rgba(20, 20, 30, 0.3);
-  --code-bg: #f6f6fa;
+  --scrollbar: rgba(60, 40, 20, 0.16);
+  --scrollbar-hover: rgba(60, 40, 20, 0.3);
+  --code-bg: #fdf6ec;
   --input-bg: #ffffff;
   --swatch-border: var(--border-strong);
 

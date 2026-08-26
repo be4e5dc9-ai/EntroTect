@@ -32,6 +32,8 @@ import {
   SessionStore,
   applyChatMessage,
   loadPluginsFromDir,
+  compactMessages,
+  shouldAutoCompact,
   type PluginHooks,
   type Provider,
 } from "@entrotect/core";
@@ -184,6 +186,33 @@ export class SessionHost {
       case "ListSessions":
         this.emit({ type: "sessions-listed", sessions: await this.store.list() });
         break;
+      case "Compact": {
+        if (!this.active) {
+          this.emit({ type: "error", message: "当前没有活动会话,无法压缩" });
+          break;
+        }
+        if (this.active.running) {
+          this.emit({ type: "error", message: "会话正在运行中,请先停止再压缩" });
+          break;
+        }
+        const loaded = await this.store.load(this.active.meta.id);
+        if (loaded.messages.length < 2) {
+          this.emit({ type: "error", message: "会话内容太少,无需压缩" });
+          break;
+        }
+        try {
+          const { compacted, summary } = await compactMessages(
+            this.provider,
+            loaded.messages,
+          );
+          await this.store.replaceMessages(this.active.meta.id, compacted);
+          this.emit({ type: "session-compacted", summary });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.emit({ type: "error", message });
+        }
+        break;
+      }
       case "ListModels": {
         const providerId = op.providerId ?? this.config.activeProviderId ?? "";
         let provider = this.config.providers?.find((p) => p.id === providerId) as
@@ -431,13 +460,28 @@ export class SessionHost {
       this.emit({ type: "message-appended", message: userMessage });
 
       // 首条消息提取标题
-      const messages = (await this.store.load(run.meta.id)).messages;
+      let messages = (await this.store.load(run.meta.id)).messages;
       if (messages.length === 1) {
         const title = text.trim().slice(0, 24) || "新会话";
         await this.store.appendTitle(run.meta.id, title);
         run.meta.title = title;
         this.emit({ type: "session-meta", meta: run.meta });
         this.emit({ type: "sessions-listed", sessions: await this.store.list() });
+      }
+
+      // 自动压缩:开启且占用超阈值时,历史替换为 [摘要 + 最近 N 条]
+      if (
+        (config.autoCompact ?? true) &&
+        shouldAutoCompact(messages, config.model, config.providers)
+      ) {
+        try {
+          const { compacted, summary } = await compactMessages(provider, messages, abort.signal);
+          await this.store.replaceMessages(run.meta.id, compacted);
+          messages = compacted;
+          this.emit({ type: "session-compacted", summary });
+        } catch {
+          // 压缩失败不阻塞主流程,沿用原历史
+        }
       }
 
       // 主循环与子代理共用的装配:同源提示词 / 审批 / 事件 / 工作目录

@@ -93,8 +93,15 @@ export function Composer(): React.JSX.Element {
     );
   }, [text, hasSlashSpace, slashQuery, slashSkills]);
 
+  // 内置指令:/compact 匹配则显示在斜杠面板顶部
+  const compactMatches = "compact".startsWith(slashQuery);
   const showSlash =
-    text.startsWith("/") && !hasSlashSpace && !slashDismissed && !busy && hasSession && filteredSkills.length > 0;
+    text.startsWith("/") &&
+    !hasSlashSpace &&
+    !slashDismissed &&
+    !busy &&
+    hasSession &&
+    (filteredSkills.length > 0 || compactMatches);
 
   useEffect(() => {
     setSlashCursor(0);
@@ -118,6 +125,14 @@ export function Composer(): React.JSX.Element {
   const send = () => {
     const value = text.trim();
     if (!value || busy) return;
+    // 内置指令:/compact 手动压缩当前会话上下文
+    if (value === "/compact") {
+      bridge().send({ kind: "Compact" });
+      setText("");
+      setSlashDismissed(false);
+      if (ref.current) ref.current.style.height = "auto";
+      return;
+    }
     bridge().send({ kind: "SendMessage", text: value });
     setText("");
     setSlashDismissed(false);
@@ -202,6 +217,21 @@ export function Composer(): React.JSX.Element {
         {showSlash && (
           <div className="slash-panel" role="listbox" aria-label="技能指令">
             <div className="menu-heading">Skills · 以 / 触发</div>
+            {compactMatches && (
+              <button
+                type="button"
+                role="option"
+                className="slash-item"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                }}
+                onClick={() => selectSlash("compact")}
+              >
+                <span className="slash-item-name">/compact</span>
+                <span className="slash-item-desc">压缩当前会话上下文</span>
+                <span className="slash-item-source">内置</span>
+              </button>
+            )}
             {filteredSkills.map((skill, index) => (
               <button
                 key={skill.path}
@@ -260,6 +290,7 @@ export function Composer(): React.JSX.Element {
                 e.preventDefault();
                 const current = filteredSkills[slashCursor];
                 if (current) selectSlash(current.name);
+                else if (compactMatches) selectSlash("compact");
                 return;
               }
               if (e.key === "Tab" && !e.nativeEvent.isComposing) {

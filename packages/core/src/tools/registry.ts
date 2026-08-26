@@ -13,6 +13,12 @@ import { grepTool } from "./grep.js";
 import { bashTool } from "./bash.js";
 import { taskTool, setTaskRunner } from "./task.js";
 import { imageTool, setImageProvider } from "./image.js";
+import { webfetchTool } from "./webfetch.js";
+import { websearchTool } from "./websearch.js";
+import { todowriteTool } from "./todowrite.js";
+import { diagnosticsTool } from "./diagnostics.js";
+import { bashOutputTool } from "./bash-output.js";
+import { killShellTool } from "./kill-shell.js";
 import type { SubagentRunner } from "../subagent/run.js";
 
 export interface BuildBuiltinToolsOptions {
@@ -23,7 +29,22 @@ export interface BuildBuiltinToolsOptions {
 }
 
 export function buildBuiltinTools(options?: BuildBuiltinToolsOptions): Tool[] {
-  const base: Tool[] = [readTool, writeTool, editTool, globTool, grepTool, bashTool, imageTool];
+  // 连续前缀保 prompt cache：只读工具在前，可变/高危在后，task 固定末尾
+  const base: Tool[] = [
+    readTool,
+    globTool,
+    grepTool,
+    webfetchTool,
+    websearchTool,
+    diagnosticsTool,
+    bashOutputTool,
+    writeTool,
+    editTool,
+    bashTool,
+    killShellTool,
+    todowriteTool,
+    imageTool,
+  ];
   if (options?.taskRunner) setTaskRunner(options.taskRunner);
   else setTaskRunner(null);
 

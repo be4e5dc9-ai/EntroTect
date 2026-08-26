@@ -154,6 +154,7 @@ export async function loadConfig(appDataDir: string): Promise<AppConfig> {
     maxTokens: fromFile.maxTokens,
     temperature: fromFile.temperature,
     skillOverrides: fromFile.skillOverrides,
+    autoCompact: fromFile.autoCompact ?? DEFAULT_CONFIG.autoCompact,
   };
 
   // 供应商列表:文件里缺某个预设时补默认,自定义条目原样保留

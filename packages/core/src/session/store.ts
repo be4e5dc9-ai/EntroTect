@@ -77,6 +77,32 @@ export class SessionStore {
     ]);
   }
 
+  /**
+   * 压缩后整体替换消息流:保留 meta 首行与最后一条 title,
+   * 用新消息列表重写 transcript(compaction 语义 = 历史被摘要取代)。
+   */
+  async replaceMessages(sessionId: string, messages: Message[]): Promise<void> {
+    const lines = await this.readLines(sessionId);
+    const metaLine = lines.find((line) => line.kind === "meta");
+    const titleLines = lines.filter((line) => line.kind === "title");
+    const lastTitle = titleLines.length > 0 ? titleLines[titleLines.length - 1] : undefined;
+    if (!metaLine) throw new Error(`会话 ${sessionId} 无 meta 行,无法重写`);
+    const rebuilt: Line[] = [
+      metaLine,
+      ...(lastTitle ? [lastTitle] : []),
+      ...messages.map((message) => ({
+        ordinal: this.nextOrdinal(),
+        ts: new Date().toISOString(),
+        kind: "message" as const,
+        message,
+      })),
+    ];
+    const dir = this.sessionDir(sessionId);
+    await mkdir(dir, { recursive: true });
+    const text = rebuilt.map((line) => JSON.stringify(line)).join("\n") + "\n";
+    await writeFile(this.transcriptPath(sessionId), text, { encoding: "utf8" });
+  }
+
   /** 重建会话:meta + 全部 message + 最后一条 title */
   async load(sessionId: string): Promise<LoadedSession> {
     const lines = await this.readLines(sessionId);

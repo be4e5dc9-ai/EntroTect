@@ -762,6 +762,26 @@ export function applyEvent(event: AppEvent): void {
         return { sessions: event.sessions };
       });
       break;
+    case "session-compacted":
+      // 压缩后:在消息流顶部插入摘要卡,保留现有可见消息
+      useStore.setState((state) => ({
+        messages: [
+          {
+            key: nextKey++,
+            role: "assistant",
+            blocks: [
+              {
+                kind: "text",
+                text: `上下文已压缩（保留最近对话）\n\n${event.summary}`,
+              },
+            ],
+            streaming: false,
+            reasoning: "",
+          },
+          ...state.messages,
+        ],
+      }));
+      break;
     case "models-listed":
       // 空结果代表失败/无数据,不能抹掉已有缓存;状态页仍由原始事件更新失败提示。
       if (event.models.length === 0) break;
@@ -800,7 +820,7 @@ export function applyEvent(event: AppEvent): void {
             state: result.isError ? "failed" : "completed",
             summary: result.isError
               ? result.content.slice(0, 200)
-              : toolBlock?.name === "task"
+              : toolBlock?.name === "task" || toolBlock?.name === "todowrite"
                 ? result.content
                 : undefined,
           });
