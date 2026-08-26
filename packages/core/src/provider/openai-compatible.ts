@@ -325,7 +325,7 @@ export class OpenAiCompatibleProvider implements Provider {
   ): Promise<Response> {
     const effectiveEffort = this.resolveEffectiveEffort(options.reasoningEffort);
     let attempt = 0;
-    let stripOptional = false; // 400 后降级:去掉 reasoning_effort / stream_options, max_tokens→max_completion_tokens
+    let stripOptional = false; // 400 后降级:去掉多余头/参数,兼容 Mimo 等严格 API
     for (;;) {
       try {
         const response = await this.fetchImpl(
@@ -334,9 +334,13 @@ export class OpenAiCompatibleProvider implements Provider {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${this.apiKey}`,
-              "api-key": this.apiKey,
-              "x-api-key": this.apiKey,
+              ...(stripOptional
+                ? { "api-key": this.apiKey }
+                : {
+                    Authorization: `Bearer ${this.apiKey}`,
+                    "api-key": this.apiKey,
+                    "x-api-key": this.apiKey,
+                  }),
             },
             body: JSON.stringify({
               model: this.model,
@@ -373,7 +377,7 @@ export class OpenAiCompatibleProvider implements Provider {
           } catch {
             detail = "";
           }
-          // 400 且尚未降级:去掉可选参数重试一次(兼容不支持 reasoning_effort / stream_options 的 API)
+          // 400 且尚未降级:去掉多余头和可选参数重试一次(兼容 Mimo 等严格 API)
           if (response.status === 400 && !stripOptional) {
             stripOptional = true;
             continue;
