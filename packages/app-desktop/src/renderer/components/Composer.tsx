@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AppConfig, ReasoningEffort } from "@entrotect/shared";
 import {
+  DEFAULT_REASONING_EFFORT,
   EFFORT_LABELS,
   clampEffort,
   getSupportedEffortsForModel,
@@ -376,9 +377,19 @@ export function Composer(): React.JSX.Element {
             />
           )}
           {isBooleanThinking && (
-            <span className="composer-hint" title="该模型为布尔 thinking，无分档">
-              思考常开
-            </span>
+            <button
+              type="button"
+              className="composer-toggle"
+              aria-label="思考开关"
+              title="该模型只有 开/关 两档思考；工具调用频繁时关闭更稳定"
+              onClick={() =>
+                updateConfig({
+                  reasoningEffort: currentEffort === "off" ? DEFAULT_REASONING_EFFORT : "off",
+                })
+              }
+            >
+              思考·{currentEffort === "off" ? "关" : "开"}
+            </button>
           )}
           <ContextUsagePopover
             inputTokens={usage?.inputTokens}

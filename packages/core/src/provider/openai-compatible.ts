@@ -1,24 +1,30 @@
 // =====================================================================
-// OpenAI 兼容协议适配器(DeepSeek / OpenAI / Moonshot / Ollama 通用)
-// 设计依据:ClaudeCode/02 §4 手写 SSE 状态机 + 90s 看门狗;
-//          tool 参数字符串累积,结束后一次性 parse。
+// OpenAI 兼容协议适配器(DeepSeek / OpenAI / Moonshot / Mimo / Qwen 等)
+//
+// 重构纪律:
+//   1. 请求格式由 profiles.ts 的供应商 profile 决定(鉴权头/token 字段/
+//      思考参数/usage chunk),绝不靠 400 之后猜测换格式;
+//   2. HTTP 错误走 errors.ts 统一解析(状态码 + 上游正文 + 脱敏 URL),
+//      网络错误由 transport.ts 有限退避重试;
+//   3. reasoning_content 双向保留:流中累积后随 turn-complete 上交,
+//      历史 assistant 消息按 profile 回传(Mimo/Kimi 工具调用回合必需,
+//      缺失会被上游 400 拒绝)。
 // =====================================================================
 
-import type { Message, ReasoningEffort } from "@entrotect/shared";
-import { clampEffort, getPresetEfforts, isReasoningEffort } from "@entrotect/shared";
+import type { ApiProfile, Message, ReasoningEffort } from "@entrotect/shared";
 import type { BlockEvent, GenerateOptions, Provider } from "./types.js";
 import { readSseLines } from "./sse.js";
+import { ProviderError } from "./errors.js";
+import { requestWithNetworkRetry, type FetchLike } from "./transport.js";
+import {
+  appendEndpoint,
+  buildProviderHeaders,
+  mapReasoningEffort,
+  resolveProviderProfile,
+  type ResolvedProviderProfile,
+} from "./profiles.js";
 
-export class ProviderError extends Error {
-  readonly status: number | null;
-  constructor(message: string, status: number | null = null) {
-    super(message);
-    this.name = "ProviderError";
-    this.status = status;
-  }
-}
-
-type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
+export { ProviderError } from "./errors.js";
 
 interface OpenAiToolCall {
   id?: string;
@@ -29,7 +35,7 @@ interface OpenAiChunk {
   choices?: Array<{
     delta?: {
       content?: string | null;
-      /** DeepSeek/OpenAI 思考链增量(reasoning 内容不回喂历史) */
+      /** 思考链增量(DeepSeek/Mimo/Kimi 等;按 profile 决定是否回喂历史) */
       reasoning_content?: string | null;
       tool_calls?: Array<{
         index: number;
@@ -43,21 +49,25 @@ interface OpenAiChunk {
   error?: { message?: string };
 }
 
-/** 流空闲看门狗:90s 无任何数据即判定挂死(照抄 ClaudeCode) */
+/** 流空闲看门狗:90s 无任何数据即判定挂死 */
 const STREAM_IDLE_TIMEOUT_MS = 90_000;
-
-/** 网络错误重试:指数退避,最多 2 次(照抄 withRetry 思路的精简版) */
-const RETRY_DELAY_BASE_MS = 1000;
-const RETRY_MAX = 2;
 
 type TextBlock = Extract<import("@entrotect/shared").ContentBlock, { type: "text" }>;
 type ToolCallBlock = Extract<import("@entrotect/shared").ContentBlock, { type: "tool-call" }>;
+
+export interface ToOpenAiMessagesOptions {
+  /** 为 true 时把 assistant 消息的 reasoningContent 以 reasoning_content 字段回传 */
+  preserveReasoning?: boolean;
+}
 
 /**
  * 把共享词汇层消息翻译成 OpenAI 对话格式。
  * 注意 tool-result 展开为多条 role:"tool" 消息(tool_call_id 配对)。
  */
-export function toOpenAiMessages(messages: Message[]): unknown[] {
+export function toOpenAiMessages(
+  messages: Message[],
+  options: ToOpenAiMessagesOptions = {},
+): unknown[] {
   const out: Record<string, unknown>[] = [];
   for (const message of messages) {
     if (message.role === "system") {
@@ -77,10 +87,15 @@ export function toOpenAiMessages(messages: Message[]): unknown[] {
       const toolCalls = message.content.filter(
         (b): b is ToolCallBlock => b.type === "tool-call",
       );
+      const preserved =
+        options.preserveReasoning && message.reasoningContent
+          ? { reasoning_content: message.reasoningContent }
+          : {};
       if (toolCalls.length > 0) {
         out.push({
           role: "assistant",
           content: text || null,
+          ...preserved,
           tool_calls: toolCalls.map((c) => ({
             id: c.id,
             type: "function",
@@ -88,7 +103,7 @@ export function toOpenAiMessages(messages: Message[]): unknown[] {
           })),
         });
       } else if (text) {
-        out.push({ role: "assistant", content: text });
+        out.push({ role: "assistant", content: text, ...preserved });
       }
       continue;
     }
@@ -118,6 +133,10 @@ export interface OpenAiCompatibleOptions {
   fetchImpl?: FetchLike;
   /** 声明的真实档位（来自 ProviderConfig.modelReasoningLevels）；未声明时用 preset 回退 */
   supportedEfforts?: ReasoningEffort[];
+  /** 显式供应商 profile；缺省按 providerId/baseUrl/model 自动识别 */
+  apiProfile?: ApiProfile;
+  /** 供应商 id(自动识别 profile 用) */
+  providerId?: string;
 }
 
 /** OpenAI 兼容 SSE 流 → 统一 BlockEvent(内含块装配) */
@@ -127,6 +146,7 @@ export class OpenAiCompatibleProvider implements Provider {
   private readonly apiKey: string;
   private readonly fetchImpl: FetchLike;
   private readonly supportedEfforts?: ReasoningEffort[];
+  private readonly profile: ResolvedProviderProfile;
 
   constructor(options: OpenAiCompatibleOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
@@ -134,24 +154,87 @@ export class OpenAiCompatibleProvider implements Provider {
     this.model = options.model;
     this.fetchImpl = options.fetchImpl ?? ((url, init) => fetch(url, init));
     this.supportedEfforts = options.supportedEfforts;
+    this.profile = resolveProviderProfile({
+      apiProfile: options.apiProfile,
+      providerId: options.providerId,
+      baseUrl: options.baseUrl,
+      model: options.model,
+    });
   }
 
-  private resolveEffectiveEffort(requested: ReasoningEffort | undefined): ReasoningEffort | undefined {
-    if (!requested || requested === "off") return undefined;
-    if (!isReasoningEffort(requested)) return undefined;
-    // 优先使用声明集
-    if (this.supportedEfforts !== undefined) {
-      if (this.supportedEfforts.length === 0) return undefined; // 布尔 thinking 模型，不发
-      return clampEffort(requested, this.supportedEfforts);
+  /** 组装请求体:字段取舍全部由 profile 决定,一次发对,不靠 400 猜。 */
+  private buildRequestBody(messages: Message[], options: GenerateOptions): Record<string, unknown> {
+    const profile = this.profile;
+
+    const wireMessages = toOpenAiMessages(messages, {
+      preserveReasoning: profile.preserveReasoningContent,
+    }) as Record<string, unknown>[];
+
+    // systemPrompt 是配置级系统提示,不在持久化历史里;注入为第一条 system 消息
+    const systemText = options.systemPrompt?.trim() ?? "";
+    if (systemText.length > 0) {
+      const first = wireMessages[0];
+      const alreadyLeadingSystem =
+        first && first.role === "system" && first.content === systemText;
+      if (!alreadyLeadingSystem) {
+        wireMessages.unshift({ role: "system", content: systemText });
+      }
     }
-    // 无声明时按 preset 回退（DeepSeek 三档等）
-    const preset = getPresetEfforts(this.model);
-    if (preset !== undefined) {
-      if (preset.length === 0) return undefined;
-      return clampEffort(requested, preset);
+
+    const body: Record<string, unknown> = {
+      model: this.model,
+      messages: wireMessages,
+      stream: true,
+    };
+
+    // 空 tools 数组会被部分严格网关 400,整个字段省略
+    if (options.tools.length > 0) {
+      body.tools = options.tools.map((tool) => ({
+        type: "function",
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+        },
+      }));
     }
-    // 未知模型保持原行为（不 clamp）
-    return requested;
+
+    if (profile.includeStreamUsage) {
+      body.stream_options = { include_usage: true };
+    }
+
+    if (options.maxTokens) {
+      body[profile.tokenField] = options.maxTokens;
+    }
+
+    if (options.temperature !== undefined && !profile.omitTemperature) {
+      body.temperature = options.temperature;
+    }
+
+    const requested = options.reasoningEffort;
+    switch (profile.reasoning) {
+      case "reasoning_effort": {
+        // 布尔 thinking 模型(声明空档位集)不发分档参数
+        if (this.supportedEfforts !== undefined && this.supportedEfforts.length === 0) break;
+        const effort = mapReasoningEffort(requested, this.supportedEfforts, profile.reasoningValues);
+        if (effort) body.reasoning_effort = effort;
+        break;
+      }
+      case "enable_thinking": {
+        if (requested !== undefined) body.enable_thinking = requested !== "off";
+        break;
+      }
+      case "thinking": {
+        if (requested === undefined) break;
+        const disable = requested === "off" && profile.supportsExplicitThinkingToggle;
+        body.thinking = { type: disable ? "disabled" : "enabled" };
+        break;
+      }
+      case "none":
+        break;
+    }
+
+    return body;
   }
 
   async *streamBlocks(
@@ -168,7 +251,27 @@ export class OpenAiCompatibleProvider implements Provider {
 
     let response: Response;
     try {
-      response = await this.requestWithRetry(messages, options, controller.signal);
+      const url = appendEndpoint(this.baseUrl, "/chat/completions");
+      const headers = buildProviderHeaders({
+        apiFormat: "openai",
+        apiProfile: this.profile.id,
+        apiKey: this.apiKey,
+        includeContentType: true,
+      });
+      const init: RequestInit = {
+        method: "POST",
+        headers,
+        body: JSON.stringify(this.buildRequestBody(messages, options)),
+        signal: controller.signal,
+      };
+      response = await requestWithNetworkRetry(
+        this.fetchImpl,
+        url,
+        init,
+        "模型",
+        [this.apiKey],
+        controller.signal,
+      );
     } catch (error) {
       if (signal?.aborted) return;
       const message = error instanceof Error ? error.message : String(error);
@@ -187,6 +290,7 @@ export class OpenAiCompatibleProvider implements Provider {
     // 文本块与工具调用装配状态
     let textBuffer = "";
     let textStarted = false;
+    let reasoningBuffer = "";
     const toolCalls = new Map<number, OpenAiToolCall>();
     let finishReason: string | null = null;
     let blocksFlushed = false;
@@ -269,6 +373,7 @@ export class OpenAiCompatibleProvider implements Provider {
         for (const choice of chunk.choices ?? []) {
           const delta = choice.delta ?? {};
           if (delta.reasoning_content) {
+            reasoningBuffer += delta.reasoning_content;
             yield { type: "reasoning-delta", text: delta.reasoning_content };
           }
           if (delta.content) {
@@ -298,7 +403,12 @@ export class OpenAiCompatibleProvider implements Provider {
 
       // 流结束:补一次收口(防御无 finish_reason 的流),再发 turn-complete
       for (const event of flushBlocksOnce()) yield event;
-      yield { type: "turn-complete", finishReason, usage };
+      yield {
+        type: "turn-complete",
+        finishReason,
+        usage,
+        ...(reasoningBuffer.length > 0 ? { reasoningContent: reasoningBuffer } : {}),
+      };
     } catch (error) {
       if (controller.signal.aborted) {
         if (watchdogFired) {
@@ -314,93 +424,6 @@ export class OpenAiCompatibleProvider implements Provider {
     } finally {
       if (watchdog) clearTimeout(watchdog);
       signal?.removeEventListener("abort", onExternalAbort);
-    }
-  }
-
-  /** 带重试的请求发起(网络错误指数退避;HTTP 错误直接抛 ProviderError) */
-  private async requestWithRetry(
-    messages: Message[],
-    options: GenerateOptions,
-    signal?: AbortSignal,
-  ): Promise<Response> {
-    const effectiveEffort = this.resolveEffectiveEffort(options.reasoningEffort);
-    let attempt = 0;
-    let stripOptional = false; // 400 后降级:去掉多余头/参数,兼容 Mimo 等严格 API
-    for (;;) {
-      try {
-        const response = await this.fetchImpl(
-          `${this.baseUrl}/chat/completions`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...(stripOptional
-                ? { "api-key": this.apiKey }
-                : {
-                    Authorization: `Bearer ${this.apiKey}`,
-                    "api-key": this.apiKey,
-                    "x-api-key": this.apiKey,
-                  }),
-            },
-            body: JSON.stringify({
-              model: this.model,
-              messages: toOpenAiMessages(messages),
-              tools: options.tools.map((tool) => ({
-                type: "function",
-                function: {
-                  name: tool.name,
-                  description: tool.description,
-                  parameters: tool.parameters,
-                },
-              })),
-              stream: true,
-              ...(stripOptional ? {} : { stream_options: { include_usage: true } }),
-              ...(options.maxTokens
-                ? stripOptional
-                  ? { max_completion_tokens: options.maxTokens }
-                  : { max_tokens: options.maxTokens }
-                : {}),
-              ...(options.temperature !== undefined
-                ? { temperature: options.temperature }
-                : {}),
-              ...(effectiveEffort && !stripOptional ? { reasoning_effort: effectiveEffort } : {}),
-            }),
-            signal,
-          },
-        );
-
-        if (!response.ok) {
-          let detail = "";
-          try {
-            const body = (await response.json()) as { error?: { message?: string } };
-            detail = body.error?.message ?? "";
-          } catch {
-            detail = "";
-          }
-          // 400 且尚未降级:去掉多余头和可选参数重试一次(兼容 Mimo 等严格 API)
-          if (response.status === 400 && !stripOptional) {
-            stripOptional = true;
-            continue;
-          }
-          throw new ProviderError(
-            `模型接口返回 ${response.status}: ${detail || response.statusText}`,
-            response.status,
-          );
-        }
-        return response;
-      } catch (error) {
-        // 业务错误不重试;取消不重试;仅网络层失败重试
-        if (error instanceof ProviderError) throw error;
-        if (signal?.aborted) throw error;
-        if (attempt >= RETRY_MAX) {
-          const message = error instanceof Error ? error.message : String(error);
-          throw new ProviderError(`请求模型失败(已重试 ${RETRY_MAX} 次): ${message}`);
-        }
-        await new Promise((resolve) =>
-          setTimeout(resolve, RETRY_DELAY_BASE_MS * 2 ** attempt),
-        );
-        attempt += 1;
-      }
     }
   }
 }

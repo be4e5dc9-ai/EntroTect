@@ -109,6 +109,8 @@ export async function runAgent(
     // 1. 流式调模型,收集内容块
     const assistantBlocks: ContentBlock[] = [];
     let providerError: string | null = null;
+    // 模型原始思考内容(Mimo/Kimi 工具调用回合需随历史回传,缺失会被 400)
+    let turnReasoningContent: string | undefined;
     const stream = deps.provider.streamBlocks(
       history,
       {
@@ -139,6 +141,7 @@ export async function runAgent(
           break;
         case "turn-complete":
           lastUsage = event.usage;
+          if (event.reasoningContent) turnReasoningContent = event.reasoningContent;
           break;
         case "error":
           providerError = event.message;
@@ -178,7 +181,11 @@ export async function runAgent(
         interrupted: false,
       };
     }
-    const assistantMessage: Message = { role: "assistant", content: assistantBlocks };
+    const assistantMessage: Message = {
+      role: "assistant",
+      content: assistantBlocks,
+      ...(turnReasoningContent ? { reasoningContent: turnReasoningContent } : {}),
+    };
     history.push(assistantMessage);
     deps.emit({ type: "message-appended", message: assistantMessage });
     await deps.onMessage?.(assistantMessage);

@@ -7,18 +7,16 @@
 import type { Message } from "@entrotect/shared";
 import type { BlockEvent, GenerateOptions, Provider } from "./types.js";
 import { readSseLines } from "./sse.js";
-import { ProviderError } from "./openai-compatible.js";
-
-type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
+import { requestWithNetworkRetry, type FetchLike } from "./transport.js";
+import { buildProviderHeaders } from "./profiles.js";
 
 const STREAM_IDLE_TIMEOUT_MS = 90_000;
-const RETRY_DELAY_BASE_MS = 1000;
-const RETRY_MAX = 2;
 
 type TextBlock = Extract<import("@entrotect/shared").ContentBlock, { type: "text" }>;
 
 interface GeminiPart {
   text?: string;
+  thought?: boolean;
   functionCall?: { name: string; args: Record<string, unknown> };
   functionResponse?: { name: string; response: { result: string } };
 }
@@ -33,7 +31,7 @@ interface GeminiChunk {
 }
 
 function toGeminiMessages(messages: Message[]): {
-  systemInstruction?: { parts: GeminiPart[] };
+  systemText: string;
   contents: Array<{ role: string; parts: GeminiPart[] }>;
 } {
   let systemText = "";
@@ -77,7 +75,7 @@ function toGeminiMessages(messages: Message[]): {
       if (b.type === "tool-result") {
         parts.push({
           functionResponse: {
-            name: b.toolCallId, // Gemini 用 tool name 而非 id 配对
+            name: b.name, // Gemini 用工具名配对 functionResponse
             response: { result: b.content },
           },
         });
@@ -86,10 +84,7 @@ function toGeminiMessages(messages: Message[]): {
     if (parts.length > 0) contents.push({ role: "user", parts });
   }
 
-  return {
-    systemInstruction: systemText ? { parts: [{ text: systemText }] } : undefined,
-    contents,
-  };
+  return { systemText, contents };
 }
 
 export interface GoogleProviderOptions {
@@ -125,7 +120,7 @@ export class GoogleProvider implements Provider {
 
     let response: Response;
     try {
-      response = await this.requestWithRetry(messages, options, controller.signal);
+      response = await this.requestOnce(messages, options, controller.signal);
     } catch (error) {
       if (signal?.aborted) return;
       const msg = error instanceof Error ? error.message : String(error);
@@ -230,9 +225,13 @@ export class GoogleProvider implements Provider {
         for (const candidate of chunk.candidates ?? []) {
           for (const part of candidate.content?.parts ?? []) {
             if (part.text) {
-              textStarted = true;
-              textBuffer += part.text;
-              yield { type: "text-delta", text: part.text };
+              if (part.thought === true) {
+                yield { type: "reasoning-delta", text: part.text };
+              } else {
+                textStarted = true;
+                textBuffer += part.text;
+                yield { type: "text-delta", text: part.text };
+              }
             }
             if (part.functionCall) {
               const textBlock = flushTextBlock();
@@ -276,70 +275,53 @@ export class GoogleProvider implements Provider {
     }
   }
 
-  private async requestWithRetry(
+  private async requestOnce(
     messages: Message[],
     options: GenerateOptions,
     signal?: AbortSignal,
   ): Promise<Response> {
-    const { systemInstruction, contents } = toGeminiMessages(messages);
-
-    const tools = options.tools.length > 0
-      ? [{ functionDeclarations: options.tools.map((t) => ({
-          name: t.name,
-          description: t.description,
-          parameters: t.parameters,
-        })) }]
-      : undefined;
+    const { systemText, contents } = toGeminiMessages(messages);
+    // options.systemPrompt 是配置级提示,优先于历史中的 system 消息
+    const fullSystem = [options.systemPrompt?.trim(), systemText]
+      .filter((s) => s && s.length > 0)
+      .join("\n");
 
     const body: Record<string, unknown> = {
       contents,
-      tools,
       generationConfig: {
         ...(options.maxTokens ? { maxOutputTokens: options.maxTokens } : {}),
         ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
       },
     };
-    if (systemInstruction) body.systemInstruction = systemInstruction;
-
-    const url = `${this.baseUrl}/models/${this.model}:streamGenerateContent?alt=sse`;
-
-    let attempt = 0;
-    for (;;) {
-      try {
-        const response = await this.fetchImpl(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": this.apiKey,
-          },
-          body: JSON.stringify(body),
-          signal,
-        });
-
-        if (!response.ok) {
-          let detail = "";
-          try {
-            const errBody = (await response.json()) as { error?: { message?: string } };
-            detail = errBody.error?.message ?? "";
-          } catch { /* ignore */ }
-          throw new ProviderError(
-            `Google API 返回 ${response.status}: ${detail || response.statusText}`,
-            response.status,
-          );
-        }
-        return response;
-      } catch (error) {
-        if (error instanceof ProviderError) throw error;
-        if (signal?.aborted) throw error;
-        if (attempt >= RETRY_MAX) {
-          const msg = error instanceof Error ? error.message : String(error);
-          throw new ProviderError(`请求 Google API 失败(已重试 ${RETRY_MAX} 次): ${msg}`);
-        }
-        await new Promise((resolve) =>
-          setTimeout(resolve, RETRY_DELAY_BASE_MS * 2 ** attempt),
-        );
-        attempt++;
-      }
+    if (options.tools.length > 0) {
+      body.tools = [{
+        functionDeclarations: options.tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters,
+        })),
+      }];
     }
+    if (fullSystem) body.systemInstruction = { parts: [{ text: fullSystem }] };
+
+    const url = `${this.baseUrl}/models/${encodeURIComponent(this.model)}:streamGenerateContent?alt=sse`;
+
+    return requestWithNetworkRetry(
+      this.fetchImpl,
+      url,
+      {
+        method: "POST",
+        headers: buildProviderHeaders({
+          apiFormat: "google",
+          apiKey: this.apiKey,
+          includeContentType: true,
+        }),
+        body: JSON.stringify(body),
+        signal,
+      },
+      "Google API",
+      [this.apiKey],
+      signal,
+    );
   }
 }

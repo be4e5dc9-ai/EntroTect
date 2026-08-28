@@ -64,8 +64,8 @@ export const PRESET_MODEL_EFFORTS: Array<{
   { pattern: /claude/i, efforts: ["low", "medium", "high"], defaultEffort: "medium" },
   // DeepSeek V4-Pro/V4-Flash/V3.2 等 — low/high/max
   { pattern: /deepseek/i, efforts: ["low", "high", "max"], defaultEffort: "high" },
-  // Mimo v2.5 / v2 — Xiaomi MiMo，low/high/max（兼容 OpenAI）
-  { pattern: /mimo/i, efforts: ["low", "high", "max"], defaultEffort: "high" },
+  // Mimo v2.5 / v2 — Xiaomi MiMo，官方仅 thinking enabled/disabled（默认 enabled），无分档
+  { pattern: /mimo/i, efforts: [], defaultEffort: "high" },
   // OpenAI GPT-5.6 / GPT-5* / o3 / o4-mini — 支持 none/off 全档位
   { pattern: /gpt-5\.6/i, efforts: ["off", "low", "medium", "high", "xhigh", "max"], defaultEffort: "high" },
   { pattern: /gpt-5/i, efforts: ["off", "low", "medium", "high", "xhigh", "max"], defaultEffort: "high" },

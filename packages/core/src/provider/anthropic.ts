@@ -1,21 +1,18 @@
 // =====================================================================
 // Anthropic Messages API 适配器
-// 端点:{baseUrl}/messages  鉴权:x-api-key  流式:SSE event: 行
+// 端点:{baseUrl}/messages  鉴权:x-api-key + anthropic-version
+// 流式:SSE event:/data: 行对(必须按事件边界解析,event 行不可丢)
 // =====================================================================
 
-import type { Message, ReasoningEffort } from "@entrotect/shared";
+import type { Message } from "@entrotect/shared";
 import type { BlockEvent, GenerateOptions, Provider } from "./types.js";
-import { readSseLines } from "./sse.js";
-import { ProviderError } from "./openai-compatible.js";
-
-type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
+import { readSseEvents } from "./sse.js";
+import { requestWithNetworkRetry, type FetchLike } from "./transport.js";
+import { appendEndpoint, buildProviderHeaders } from "./profiles.js";
 
 const STREAM_IDLE_TIMEOUT_MS = 90_000;
-const RETRY_DELAY_BASE_MS = 1000;
-const RETRY_MAX = 2;
 
 type TextBlock = Extract<import("@entrotect/shared").ContentBlock, { type: "text" }>;
-type ToolCallBlock = Extract<import("@entrotect/shared").ContentBlock, { type: "tool-call" }>;
 
 interface AnthropicContentBlock {
   type: string;
@@ -99,6 +96,7 @@ interface AnthropicStreamEvent {
   delta?: { type?: string; text?: string; thinking?: string; stop_reason?: string };
   content_block?: { type?: string; id?: string; name?: string };
   message?: { usage?: { input_tokens: number; output_tokens: number }; stop_reason?: string };
+  usage?: { output_tokens?: number };
   error?: { type?: string; message?: string };
 }
 
@@ -135,7 +133,7 @@ export class AnthropicProvider implements Provider {
 
     let response: Response;
     try {
-      response = await this.requestWithRetry(messages, options, controller.signal);
+      response = await this.requestOnce(messages, options, controller.signal);
     } catch (error) {
       if (signal?.aborted) return;
       const msg = error instanceof Error ? error.message : String(error);
@@ -156,7 +154,9 @@ export class AnthropicProvider implements Provider {
     const toolCalls = new Map<number, { id: string; name: string; inputBuffer: string }>();
     let finishReason: string | null = null;
     let blocksFlushed = false;
-    let usage: { inputTokens: number; outputTokens: number } | null = null;
+    // message_start 报告输入,message_delta 只带累计输出,分头累积
+    let inputTokens: number | null = null;
+    let outputTokens: number | null = null;
 
     const flushTextBlock = (): BlockEvent | null => {
       if (textStarted && textBuffer.length > 0) {
@@ -202,35 +202,34 @@ export class AnthropicProvider implements Provider {
 
     try {
       armWatchdog();
-      const lines = readSseLines(response.body!);
-      let currentEvent = "";
+      // Anthropic 的 event: 行是事件类型的唯一来源,必须按 SSE 事件边界解析
+      const events = readSseEvents(response.body!);
 
       while (true) {
-        const next = await lines.next();
+        const next = await events.next();
         if (next.done) break;
         armWatchdog();
-        const line = next.value;
-
-        // Anthropic SSE: "event: xxx" 行在 "data: ..." 行之前
-        if (line.startsWith("event:")) {
-          currentEvent = line.slice(6).trim();
-          continue;
-        }
+        const sseEvent = next.value;
 
         let event: AnthropicStreamEvent;
         try {
-          event = JSON.parse(line) as AnthropicStreamEvent;
+          event = JSON.parse(sseEvent.data) as AnthropicStreamEvent;
         } catch {
           continue;
         }
 
-        if (event.error) {
-          yield { type: "error", message: event.error.message ?? "Anthropic 返回错误" };
+        if (event.error || sseEvent.event === "error") {
+          yield {
+            type: "error",
+            message: event.error?.message ?? "Anthropic 返回错误",
+          };
           controller.abort();
           return;
         }
 
-        switch (currentEvent) {
+        // 事件类型以 SSE event: 行为准,缺省时回退 data.type
+        const kind = sseEvent.event || event.type;
+        switch (kind) {
           case "content_block_start": {
             const cb = event.content_block;
             if (cb?.type === "tool_use") {
@@ -249,6 +248,8 @@ export class AnthropicProvider implements Provider {
               textStarted = true;
               textBuffer += delta.text;
               yield { type: "text-delta", text: delta.text };
+            } else if (delta.type === "thinking_delta" && delta.thinking) {
+              yield { type: "reasoning-delta", text: delta.thinking };
             } else if (delta.type === "input_json_delta" && delta.text) {
               // tool_use input 片段
               const call = toolCalls.get(event.index!);
@@ -268,27 +269,27 @@ export class AnthropicProvider implements Provider {
           case "message_delta": {
             const delta = event.delta;
             if (delta?.stop_reason) finishReason = delta.stop_reason;
-            const msgUsage = event.message?.usage;
-            if (msgUsage) {
-              usage = {
-                inputTokens: msgUsage.input_tokens,
-                outputTokens: msgUsage.output_tokens,
-              };
+            // message_delta 的 usage 只带 output_tokens(累计值)
+            if (typeof event.usage?.output_tokens === "number") {
+              outputTokens = event.usage.output_tokens;
             }
             break;
           }
           case "message_start": {
             const msgUsage = event.message?.usage;
             if (msgUsage) {
-              usage = {
-                inputTokens: msgUsage.input_tokens,
-                outputTokens: msgUsage.output_tokens,
-              };
+              inputTokens = msgUsage.input_tokens;
+              outputTokens = msgUsage.output_tokens;
             }
             break;
           }
         }
       }
+
+      const usage =
+        inputTokens === null && outputTokens === null
+          ? null
+          : { inputTokens: inputTokens ?? 0, outputTokens: outputTokens ?? 0 };
 
       for (const ev of flushBlocksOnce()) yield ev;
       yield { type: "turn-complete", finishReason, usage };
@@ -310,69 +311,49 @@ export class AnthropicProvider implements Provider {
     }
   }
 
-  private async requestWithRetry(
+  private async requestOnce(
     messages: Message[],
     options: GenerateOptions,
     signal?: AbortSignal,
   ): Promise<Response> {
     const { system, messages: anthropicMsgs } = toAnthropicMessages(messages);
-
-    const tools = options.tools.map((t) => ({
-      name: t.name,
-      description: t.description,
-      input_schema: t.parameters,
-    }));
+    // options.systemPrompt 是配置级提示,优先级高于历史中的 system 消息
+    const systemText = [options.systemPrompt?.trim(), system]
+      .filter((s) => s && s.length > 0)
+      .join("\n");
 
     const body: Record<string, unknown> = {
       model: this.model,
       max_tokens: options.maxTokens,
       messages: anthropicMsgs,
-      tools,
       stream: true,
     };
-    if (system) body.system = system;
-
-    let attempt = 0;
-    for (;;) {
-      try {
-        const response = await this.fetchImpl(
-          `${this.baseUrl}/messages`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-api-key": this.apiKey,
-              "anthropic-version": "2023-06-01",
-            },
-            body: JSON.stringify(body),
-            signal,
-          },
-        );
-
-        if (!response.ok) {
-          let detail = "";
-          try {
-            const errBody = (await response.json()) as { error?: { message?: string } };
-            detail = errBody.error?.message ?? "";
-          } catch { /* ignore */ }
-          throw new ProviderError(
-            `Anthropic 接口返回 ${response.status}: ${detail || response.statusText}`,
-            response.status,
-          );
-        }
-        return response;
-      } catch (error) {
-        if (error instanceof ProviderError) throw error;
-        if (signal?.aborted) throw error;
-        if (attempt >= RETRY_MAX) {
-          const msg = error instanceof Error ? error.message : String(error);
-          throw new ProviderError(`请求 Anthropic 失败(已重试 ${RETRY_MAX} 次): ${msg}`);
-        }
-        await new Promise((resolve) =>
-          setTimeout(resolve, RETRY_DELAY_BASE_MS * 2 ** attempt),
-        );
-        attempt++;
-      }
+    if (systemText) body.system = systemText;
+    if (options.tools.length > 0) {
+      body.tools = options.tools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.parameters,
+      }));
     }
+    if (options.temperature !== undefined) body.temperature = options.temperature;
+
+    return requestWithNetworkRetry(
+      this.fetchImpl,
+      appendEndpoint(this.baseUrl, "/messages"),
+      {
+        method: "POST",
+        headers: buildProviderHeaders({
+          apiFormat: "anthropic",
+          apiKey: this.apiKey,
+          includeContentType: true,
+        }),
+        body: JSON.stringify(body),
+        signal,
+      },
+      "Anthropic",
+      [this.apiKey],
+      signal,
+    );
   }
 }

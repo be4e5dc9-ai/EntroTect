@@ -15,6 +15,9 @@ export type BlockEvent =
       type: "turn-complete";
       finishReason: string | null;
       usage: TokenUsage | null;
+      /** 当前 assistant 回合的原始思考字段，供需要 preserved thinking 的协议回传。 */
+      reasoningContent?: string;
+      reasoningSignature?: string;
     }
   | { type: "error"; message: string };
 

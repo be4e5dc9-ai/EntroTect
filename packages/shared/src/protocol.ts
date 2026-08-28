@@ -22,6 +22,11 @@ export type Role = "system" | "user" | "assistant";
 export interface Message {
   role: Role;
   content: ContentBlock[];
+  /**
+   * 原始模型返回的思考内容(仅在供应商协议要求时回传)。
+   * 不放进 ContentBlock，避免把内部推理误当作用户可见正文。
+   */
+  reasoningContent?: string;
 }
 
 export interface TokenUsage {
@@ -51,6 +56,26 @@ export interface SessionMeta {
 /** 单条供应商配置:baseUrl/apiKey 决定模型来源,models 为缓存列表 */
 export type ReasoningEffort = "off" | "low" | "medium" | "high" | "xhigh" | "max";
 
+/** 模型请求协议。openai 表示 Chat Completions 兼容协议。 */
+export type ApiFormat = "openai" | "anthropic" | "google";
+
+/**
+ * OpenAI 兼容网关的供应商 profile。
+ * 协议格式和供应商 profile 分开：前者决定消息/流格式，后者决定鉴权、
+ * 最大输出字段和 thinking 扩展，避免通过 400 猜测请求格式。
+ */
+export type ApiProfile =
+  | "generic"
+  | "openai"
+  | "deepseek"
+  | "qwen"
+  | "moonshot"
+  | "zhipu"
+  | "minimax"
+  | "ollama"
+  | "openrouter"
+  | "mimo";
+
 export interface ProviderConfig {
   /** 稳定 id:预设用固定名,自定义用 "custom-<randomUUID 前 8 位>" */
   id: string;
@@ -70,8 +95,10 @@ export interface ProviderConfig {
   builtin?: boolean;
   /** 模型列表端点覆盖(非空时直连该 URL) */
   modelsUrl?: string;
-  /** 接口协议格式,决定鉴权头 */
-  apiFormat?: "openai" | "anthropic" | "google";
+  /** 接口协议格式,决定消息与流的编码 */
+  apiFormat?: ApiFormat;
+  /** OpenAI 兼容供应商差异；缺省按 id/URL 自动识别 */
+  apiProfile?: ApiProfile;
   /** 供应商分组 */
   category?: "official" | "cn_official" | "cloud" | "aggregator";
   /** 图标标识 */
@@ -118,6 +145,7 @@ export const PROVIDER_PRESETS: ProviderConfig[] = [
     builtin: true,
     modelsUrl: "https://api.deepseek.com/models",
     apiFormat: "openai",
+    apiProfile: "deepseek",
     category: "official",
     icon: "deepseek",
   },
@@ -130,6 +158,7 @@ export const PROVIDER_PRESETS: ProviderConfig[] = [
     builtin: true,
     modelsUrl: "https://api.openai.com/v1/models",
     apiFormat: "openai",
+    apiProfile: "openai",
     category: "official",
     icon: "openai",
   },
@@ -166,6 +195,7 @@ export const PROVIDER_PRESETS: ProviderConfig[] = [
     builtin: true,
     modelsUrl: "https://api.moonshot.cn/v1/models",
     apiFormat: "openai",
+    apiProfile: "moonshot",
     category: "cn_official",
     icon: "moonshot",
   },
@@ -178,6 +208,7 @@ export const PROVIDER_PRESETS: ProviderConfig[] = [
     builtin: true,
     modelsUrl: "https://open.bigmodel.cn/api/paas/v4/models",
     apiFormat: "openai",
+    apiProfile: "zhipu",
     category: "cn_official",
     icon: "zhipu",
   },
@@ -190,6 +221,7 @@ export const PROVIDER_PRESETS: ProviderConfig[] = [
     builtin: true,
     modelsUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1/models",
     apiFormat: "openai",
+    apiProfile: "qwen",
     category: "cn_official",
     icon: "qwen",
   },
@@ -202,6 +234,7 @@ export const PROVIDER_PRESETS: ProviderConfig[] = [
     builtin: true,
     modelsUrl: "https://api.minimax.chat/v1/models",
     apiFormat: "openai",
+    apiProfile: "minimax",
     category: "cn_official",
     icon: "minimax",
   },
@@ -214,6 +247,7 @@ export const PROVIDER_PRESETS: ProviderConfig[] = [
     builtin: true,
     modelsUrl: "http://localhost:11434/v1/models",
     apiFormat: "openai",
+    apiProfile: "ollama",
     category: "official",
     icon: "ollama",
   },
@@ -226,6 +260,7 @@ export const PROVIDER_PRESETS: ProviderConfig[] = [
     builtin: true,
     modelsUrl: "https://api.xiaomimimo.com/v1/models",
     apiFormat: "openai",
+    apiProfile: "mimo",
     category: "cn_official",
     icon: "mimo",
   },
@@ -238,6 +273,7 @@ export const PROVIDER_PRESETS: ProviderConfig[] = [
     builtin: true,
     modelsUrl: "https://openrouter.ai/api/v1/models",
     apiFormat: "openai",
+    apiProfile: "openrouter",
     category: "aggregator",
     icon: "openrouter",
   },
@@ -305,7 +341,8 @@ export type Op =
       baseUrl?: string;
       apiKey?: string;
       modelsUrl?: string;
-      apiFormat?: "openai" | "anthropic" | "google";
+      apiFormat?: ApiFormat;
+      apiProfile?: ApiProfile;
     }
   | {
       kind: "ApprovalDecision";
@@ -442,6 +479,7 @@ export const contentBlockSchema = z.discriminatedUnion("type", [
 export const messageSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),
   content: z.array(contentBlockSchema),
+  reasoningContent: z.string().optional(),
 });
 
 export const sessionMetaSchema = z.object({
@@ -467,6 +505,20 @@ export const providerConfigSchema = z.object({
   builtin: z.boolean().optional(),
   modelsUrl: z.string().optional(),
   apiFormat: z.enum(["openai", "anthropic", "google"]).optional(),
+  apiProfile: z
+    .enum([
+      "generic",
+      "openai",
+      "deepseek",
+      "qwen",
+      "moonshot",
+      "zhipu",
+      "minimax",
+      "ollama",
+      "openrouter",
+      "mimo",
+    ])
+    .optional(),
   category: z.enum(["official", "cn_official", "cloud", "aggregator"]).optional(),
   icon: z.string().optional(),
 });
@@ -508,6 +560,20 @@ export const opSchema = z.discriminatedUnion("kind", [
     apiKey: z.string().optional(),
     modelsUrl: z.string().optional(),
     apiFormat: z.enum(["openai", "anthropic", "google"]).optional(),
+    apiProfile: z
+      .enum([
+        "generic",
+        "openai",
+        "deepseek",
+        "qwen",
+        "moonshot",
+        "zhipu",
+        "minimax",
+        "ollama",
+        "openrouter",
+        "mimo",
+      ])
+      .optional(),
   }),
   z.object({
     kind: z.literal("ApprovalDecision"),

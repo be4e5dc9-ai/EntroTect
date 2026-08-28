@@ -4,11 +4,19 @@ export * from "./models.js";
 export * from "./contexts.js";
 export * from "./catalog.js";
 export * from "./presets.js";
+export * from "./errors.js";
+export {
+  resolveProviderProfile,
+  buildProviderHeaders,
+  mapReasoningEffort,
+  appendEndpoint,
+} from "./profiles.js";
+export type { ResolvedProviderProfile, AuthScheme, TokenField, ReasoningStrategy } from "./profiles.js";
 export {
   OpenAiCompatibleProvider,
-  ProviderError,
   toOpenAiMessages,
 } from "./openai-compatible.js";
+export type { OpenAiCompatibleOptions, ToOpenAiMessagesOptions } from "./openai-compatible.js";
 export { AnthropicProvider } from "./anthropic.js";
 export { GoogleProvider } from "./google.js";
 
@@ -46,12 +54,14 @@ export function createProvider(config: AppConfig): Provider {
       model: config.model,
     });
   }
-  // 默认: OpenAI 兼容(DeepSeek / OpenAI / Moonshot / Ollama 等)
+  // 默认: OpenAI 兼容(DeepSeek / OpenAI / Moonshot / Mimo / Qwen 等)
   return new OpenAiCompatibleProvider({
     baseUrl: config.baseUrl,
     apiKey: config.apiKey,
     model: config.model,
     supportedEfforts: passSupported,
+    apiProfile: providerEntry?.apiProfile,
+    providerId: activeId,
   });
 }
 

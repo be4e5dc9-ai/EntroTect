@@ -30,7 +30,7 @@ Windows 桌面 Coding Agent。设计依据见 `agent-study/`（ClaudeCode / deep
 - 会话持久化：JSONL append-only 存于 `%APPDATA%\EntroTect\sessions\`，重启可续
 - 输出治理：工具输出超 50KB 自动落盘换预览，防上下文爆炸
 - 外观：对话列表背景与主区一致（平坦分隔），支持日/夜间主题与强调色自定义；日间模式为 Claude Code 同款暖黄白基调
-- 协议缝：OpenAI 兼容 provider（DeepSeek/OpenAI/Moonshot/Ollama/Mimo 等可配），支持沙箱与插件 hooks
+- 协议缝：多协议 provider（OpenAI 兼容 / Anthropic Messages / Google Gemini），OpenAI 兼容侧按**供应商 profile** 决定鉴权头、token 字段、思考参数与 `stream_options`，一次发对而非靠 400 重试猜测；支持沙箱与插件 hooks
 
 ## 结构
 
@@ -43,7 +43,7 @@ tools/         Python 构建期工具链(venv 隔离)
   smoke/       无头冒烟测试驱动
 packages/
   shared/      core↔UI 协议 DTO(Op/EventMsg/ContentBlock) + 设计 tokens
-  core/        Agent 核心(纯 TS,零 Electron 依赖,219 单测；含 permission/sandbox/clarification)
+  core/        Agent 核心(纯 TS,零 Electron 依赖,272 单测；含 permission/sandbox/clarification)
   app-desktop/ Electron 壳 + React UI（Composer 斜杠补全、ClarificationCard、Skills 设置页）
 release/      安装包产物（仅保留当前版本）
 ```
@@ -80,7 +80,7 @@ powershell -ExecutionPolicy Bypass -File tools\release\auto-release.ps1 -SkipGit
 
 | 命令 | 内容 |
 |---|---|
-| `pnpm test` | 260 个单元测试（SSE/块装配/主循环/工具/权限/会话/clarification/appearance/compact 等） |
+| `pnpm test` | 272 个单元测试（SSE/块装配/主循环/工具/权限/会话/clarification/appearance/compact/provider profile 等） |
 | `tools/smoke/smoke.py` | mock provider 全链路冒烟 |
 | `node packages/core/scripts/e2e.mjs` | 真实 API 端到端 |
 
