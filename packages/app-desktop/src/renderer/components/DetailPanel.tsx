@@ -143,39 +143,37 @@ export function DetailPanel({ width, onWidthChange, onCollapse }: DetailPanelPro
 
   return (
     <aside className="detail-panel" style={{ width }}>
-      <div className="detail-tabs">
-        {tabs.map((tab) => (
-          <div
-            key={tab.id}
-            className={`detail-tab${tab.id === active.id ? " active" : ""}`}
-            onClick={() => activateDetailTab(tab.id)}
-            role="tab"
-            aria-selected={tab.id === active.id}
-            title={tab.kind === "file" ? tab.path : tabTitle(tab)}
-          >
-            <span className="detail-tab-icon">
-              {tab.kind === "file" ? <FileIcon /> : <SubagentIcon />}
-            </span>
-            <span className="detail-tab-title">{tabTitle(tab)}</span>
-            <button
-              className="detail-tab-close"
-              onClick={(e) => {
-                e.stopPropagation();
-                closeDetailTab(tab.id);
-              }}
-              aria-label="关闭标签页"
+      <div className="detail-head">
+        <div className="detail-tabs" role="tablist">
+          {tabs.map((tab) => (
+            <div
+              key={tab.id}
+              className={`detail-tab${tab.id === active.id ? " active" : ""}`}
+              onClick={() => activateDetailTab(tab.id)}
+              role="tab"
+              aria-selected={tab.id === active.id}
+              title={tab.kind === "file" ? tab.path : tabTitle(tab)}
             >
-              ×
-            </button>
-          </div>
-        ))}
-      </div>
-      <div className="detail-address">
-        <span className={`detail-address-dot${active.kind === "subagent" ? " subagent" : ""}`} aria-hidden="true" />
-        <span className="detail-address-text" title={address(active)}>
-          {address(active)}
-        </span>
-        <div className="detail-address-actions">
+              <span className="detail-tab-icon">
+                {tab.kind === "file" ? <FileIcon /> : <SubagentIcon />}
+              </span>
+              <span className="detail-tab-title">{tabTitle(tab)}</span>
+              <button
+                className="detail-tab-close"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeDetailTab(tab.id);
+                }}
+                aria-label="关闭标签页"
+              >
+                <svg width="9" height="9" viewBox="0 0 9 9" fill="none" aria-hidden="true">
+                  <path d="M1.5 1.5l6 6M7.5 1.5l-6 6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="detail-head-actions">
           <button
             type="button"
             className="detail-panel-collapse"
@@ -185,16 +183,24 @@ export function DetailPanel({ width, onWidthChange, onCollapse }: DetailPanelPro
           >
             <PanelCollapseIcon direction="right" />
           </button>
-          <button
-            type="button"
-            className="detail-close"
-            onClick={() => closeDetailTab(active.id)}
-            aria-label="关闭当前页"
-            title="关闭当前页"
-          >
-            ×
-          </button>
         </div>
+      </div>
+      <div className="detail-meta">
+        <span className={`detail-meta-dot${active.kind === "subagent" ? " subagent" : ""}`} aria-hidden="true" />
+        <span className="detail-meta-text" title={address(active)}>
+          {address(active)}
+        </span>
+        <button
+          type="button"
+          className="detail-close"
+          onClick={() => closeDetailTab(active.id)}
+          aria-label="关闭当前页"
+          title="关闭当前页"
+        >
+          <svg width="10" height="10" viewBox="0 0 9 9" fill="none" aria-hidden="true">
+            <path d="M1.5 1.5l6 6M7.5 1.5l-6 6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          </svg>
+        </button>
       </div>
       <div className="detail-body">
         {active.kind === "file" ? (

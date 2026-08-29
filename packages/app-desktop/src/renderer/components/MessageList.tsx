@@ -1,5 +1,7 @@
 // =====================================================================
-// 消息与消息列表
+// 消息与消息列表(opencode / Claude Code 风格)
+// - 用户消息:右对齐,无气泡,顶部小字 "You" 标签
+// - 助手消息:无头像,文本平铺;思考过程折叠;工具调用为紧凑行
 // =====================================================================
 
 import { useEffect, useRef, useState } from "react";
@@ -11,7 +13,7 @@ import { ToolCard } from "./ToolCard";
 import { FileCard } from "./FileCard";
 import { ClarificationCard } from "./ClarificationCard";
 
-/** 思考过程区:流式时自动展开,结束后可手动折叠 */
+/** 思考过程区:流式时自动展开,结束后可手动折叠(Claude Code 风格"Thinking") */
 function ReasoningSection({ text, streaming }: { text: string; streaming: boolean }): React.JSX.Element {
   const [open, setOpen] = useState(streaming);
   useEffect(() => {
@@ -27,7 +29,7 @@ function ReasoningSection({ text, streaming }: { text: string; streaming: boolea
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+        <svg className="reasoning-head-icon" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
           <path
             d="M2.5 7.5 6 10l3.5-2.5M2.5 4.5 6 7l3.5-2.5"
             stroke="currentColor"
@@ -37,7 +39,7 @@ function ReasoningSection({ text, streaming }: { text: string; streaming: boolea
           />
         </svg>
         <span className="reasoning-title">
-          思考过程{streaming ? " · 思考中…" : `(${text.length} 字)`}
+          {streaming ? "Thinking…" : `思考过程(${text.length} 字)`}
         </span>
         <svg
           className={`tool-chevron${open ? " open" : ""}`}
@@ -70,21 +72,19 @@ export function Message({ message }: { message: UiMessage }): React.JSX.Element 
       .join("\n");
     return (
       <div className="msg msg-user">
-        <div className="msg-user-bubble">{text}</div>
+        <div className="msg-user-label">You</div>
+        <div className="msg-user-text">{text}</div>
       </div>
     );
   }
 
   return (
     <div className="msg msg-assistant">
-      <div className="msg-assistant-mark" aria-hidden="true">
-        <BrandMark className="brand-mark" />
-      </div>
       <div className="msg-assistant-content">
         {showReasoning && <ReasoningSection text={message.reasoning} streaming={message.streaming} />}
         {message.blocks.map((block, index) =>
           block.kind === "text" ? (
-            <div key={`t${index}`}>
+            <div key={`t${index}`} className="msg-text-block">
               <div
                 className="markdown"
                 dangerouslySetInnerHTML={{ __html: renderMarkdown(block.text) }}

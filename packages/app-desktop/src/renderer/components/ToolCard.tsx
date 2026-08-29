@@ -1,19 +1,57 @@
 // =====================================================================
-// 工具调用卡片:可折叠,五态(等待审批/执行中/完成/失败/被拒)
-// task(子代理)工具渲染为"子代理任务"卡:展开可见内部活动日志
-// (subagent-activity 行),不进主对话流。
+// 工具调用卡片:Claude Code 风格紧凑行
+// 一行 = 状态图标 + 工具名 + 实参预览 + 状态;点击展开详情(摘要/日志)。
+// task(子代理)卡:头部点击跳右侧详情栏,展开可见内部活动日志。
 // =====================================================================
 
 import { useState } from "react";
 import type { UiToolBlock } from "../store";
 
 export const STATE_LABEL: Record<UiToolBlock["state"], string> = {
-  "awaiting-approval": "等待审批",
+  "awaiting-approval": "等待批准",
   executing: "执行中",
-  completed: "已完成",
+  completed: "完成",
   failed: "失败",
   denied: "已拒绝",
 };
+
+/** 状态图标:时钟/转圈/对勾/叉/横杠(Claude Code 式) */
+function StateIcon({ state }: { state: UiToolBlock["state"] }): React.JSX.Element {
+  switch (state) {
+    case "executing":
+      return (
+        <svg className="tool-state-spin" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4" opacity="0.35" />
+          <path d="M6 1.5a4.5 4.5 0 0 1 4.5 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      );
+    case "completed":
+      return (
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path d="M2.5 6.5 5 9l4.5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case "failed":
+      return (
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      );
+    case "denied":
+      return (
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path d="M2.5 6h7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      );
+    case "awaiting-approval":
+      return (
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4" />
+          <path d="M6 3.5V6l1.8 1.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+        </svg>
+      );
+  }
+}
 
 function SubagentIcon(): React.JSX.Element {
   return (
@@ -36,6 +74,7 @@ export function ToolCard({ block, onOpenDetail }: ToolCardProps): React.JSX.Elem
   const [open, setOpen] = useState(false);
   const isSubagent = block.name === "task";
   const hasLog = isSubagent && !!block.log;
+  const hasDetail = hasLog || !!block.summary;
 
   const toggleInline = (): void => setOpen((v) => !v);
   const onHeadClick = isSubagent && onOpenDetail ? onOpenDetail : toggleInline;
@@ -46,67 +85,36 @@ export function ToolCard({ block, onOpenDetail }: ToolCardProps): React.JSX.Elem
         className="tool-card-head"
         onClick={onHeadClick}
         aria-expanded={open}
+        title={hasDetail ? "点击展开详情" : undefined}
       >
-        {isSubagent ? (
-          <span className={`tool-subagent-icon state-${block.state}`}>
-            <SubagentIcon />
-          </span>
-        ) : (
-          <span className={`tool-state-dot dot-${block.state}`} aria-hidden="true" />
-        )}
+        <span className={`tool-state-icon state-${block.state}`}>
+          <StateIcon state={block.state} />
+        </span>
+        {isSubagent && <span className="tool-subagent-badge">Subagent</span>}
         <span className="tool-name">{isSubagent ? "子代理" : block.name}</span>
         <span className="tool-preview">{block.preview}</span>
         <span className={`tool-state-label state-${block.state}`}>
-          {block.state === "executing" && <span className="spin" aria-hidden="true" />}
           {STATE_LABEL[block.state]}
         </span>
-        {isSubagent && onOpenDetail ? (
-          <span
-            className="tool-chevron-wrap"
-            role="button"
-            tabIndex={0}
-            aria-label="展开子代理日志"
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleInline();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.stopPropagation();
-                toggleInline();
-              }
-            }}
-          >
-            <svg
-              className={`tool-chevron${open ? " open" : ""}`}
-              width="12"
-              height="12"
-              viewBox="0 0 12 12"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path d="M3 4.5 6 7.5l3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-        ) : (
-          <svg
-            className={`tool-chevron${open ? " open" : ""}`}
-            width="12"
-            height="12"
-            viewBox="0 0 12 12"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path d="M3 4.5 6 7.5l3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        )}
+        <svg
+          className={`tool-chevron${open ? " open" : ""}`}
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path d="M3 4.5 6 7.5l3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </button>
       <div className={`tool-card-body${open ? " open" : ""}`}>
         <div className="tool-card-body-inner">
           {hasLog && (
             <pre className="tool-subagent-log">{block.log}</pre>
           )}
-          <pre className="tool-summary">{block.summary ?? "(无摘要)"}</pre>
+          {block.summary && (
+            <pre className="tool-summary">{block.summary}</pre>
+          )}
         </div>
       </div>
     </div>
