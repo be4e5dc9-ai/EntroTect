@@ -123,26 +123,49 @@ body {
   overflow: hidden;
 }
 
-/* ---------- 复古纸纹:极细微噪点颗粒,叠加于全部界面之上 ----------
- * 单层 SVG feTurbulence 平铺,pointer-events 穿透,静态无重绘开销;
- * 日间略强(multiply 仿纸纹),夜间更弱避免噪点干扰阅读。 */
+/* ---------- 复古纸纹:大颗粒噪点 + 横向纸张纤维,叠加于全部界面之上 ----------
+ * body::before = 暖纸 tint(vignette)形成"阳光晒过的页脚"古典感;
+ * body::after  = 双层 SVG feTurbulence(fractalNoise 颗粒 + turbulence 纤维)
+ *                平铺,pointer-events 穿透,静态无重绘开销;
+ * 日间略强(multiply 仿纸纹),夜间稍弱避免噪点干扰阅读。 */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 160;
+  pointer-events: none;
+  background:
+    /* 暖黄纸心 */
+    radial-gradient(ellipse at 50% 18%, rgba(255, 246, 228, 0.32) 0%, rgba(255, 246, 228, 0.10) 48%, transparent 72%),
+    /* 页缘微暗(vignette) */
+    radial-gradient(ellipse at center, transparent 55%, rgba(92, 78, 60, 0.10) 100%);
+  background-color: transparent;
+}
+
 body::after {
   content: "";
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: 165;
   pointer-events: none;
-  opacity: 0.028;
+  opacity: 0.09;
   mix-blend-mode: normal;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g1'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.38' numOctaves='3' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g1)' opacity='0.55'/%3E%3Cfilter id='g2'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.012 0.055' numOctaves='2' seed='11' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g2)' opacity='0.7'/%3E%3C/svg%3E");
   background-repeat: repeat;
-  background-size: 160px 160px;
+  background-size: 220px 220px;
 }
 
 [data-theme="light"] body::after {
-  opacity: 0.045;
+  opacity: 0.13;
   mix-blend-mode: multiply;
 }
+
+[data-theme="light"] body::before {
+  background:
+    radial-gradient(ellipse at 50% 18%, rgba(255, 246, 228, 0.42) 0%, rgba(255, 246, 228, 0.16) 48%, transparent 74%),
+    radial-gradient(ellipse at center, transparent 52%, rgba(92, 78, 60, 0.13) 100%);
+}
+
 
 button {
   font-family: inherit;
