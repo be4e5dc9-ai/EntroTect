@@ -47,9 +47,10 @@ interface WeekCell {
 }
 
 function buildWeeks(daily: UsageStats["daily"], range: Range): WeekCell[][] {
-  if (daily.length === 0) return [];
-  const lastEntry = daily[daily.length - 1]!;
-  const lastDate = parseLocal(lastEntry.date);
+  const today = new Date();
+  const todayIso = localIso(today);
+  const hasData = daily.length > 0;
+  const lastDate = hasData ? parseLocal(daily[daily.length - 1]!.date) : today;
   let first: Date;
   if (range === "7d") {
     first = new Date(lastDate);
@@ -58,14 +59,14 @@ function buildWeeks(daily: UsageStats["daily"], range: Range): WeekCell[][] {
     first = new Date(lastDate);
     first.setDate(first.getDate() - 29);
   } else {
-    first = parseLocal(daily[0]!.date);
+    first = hasData ? parseLocal(daily[0]!.date) : new Date(today);
+    first.setDate(first.getDate() - 26 * 7); // All 视图至少 27 周(无记录占位)
   }
-  // 补空日 -> 最后记录日为止
+  // 补空日 -> 今天为止
   const byDate = new Map(daily.map((d) => [d.date, d]));
-  const todayIso = localIso(new Date());
   const cursor = new Date(first);
   const cells: WeekCell[] = [];
-  const end = new Date(lastDate);
+  const end = new Date(today);
   while (cursor <= end) {
     const iso = localIso(cursor);
     const entry = byDate.get(iso);
