@@ -1886,31 +1886,34 @@
 .heatmap-weekdays {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   padding-top: 2px;
   flex-shrink: 0;
 }
 .heatmap-weekday {
-  font-size: 9.5px;
+  font-size: 10px;
   color: var(--text-tertiary);
   line-height: 1;
-  height: 11px;
-  width: 10px;
+  height: 14px;
+  width: 12px;
   text-align: center;
 }
 .heatmap-grid {
   display: flex;
-  gap: 3px;
+  gap: 5px;
+  flex: 1;
+  justify-content: flex-end;
+  min-width: max-content;
 }
 .heatmap-col {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 5px;
 }
 .heatmap-cell {
-  width: 11px;
-  height: 11px;
-  border-radius: 2.5px;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
   background: var(--heatmap-0, rgba(128, 128, 128, 0.08));
   transition: transform var(--dur-fast) var(--ease-out);
 }
