@@ -135,4 +135,50 @@ describe("App 首条消息与子代理点击", () => {
       expect(screen.getByText(/主代理委派/)).toBeDefined();
     });
   });
+
+  it("折叠详情栏后不再被自动弹回;再次关闭标签栏收起面板", async () => {
+    localStorage.setItem("entrotect-detail-collapsed", "1");
+    render(<App />);
+    await waitFor(() => expect(screen.getByText(/新会话|让 EntroTect/)).toBeDefined());
+    feed({
+      type: "session-meta",
+      meta: { id: "s1", title: "会话", model: "deepseek-chat", cwd: "/tmp", createdAt: "x", updatedAt: "x" },
+    });
+    feed({
+      type: "message-appended",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "tool-call", id: "ct1", name: "task", arguments: JSON.stringify({ prompt: "调研 hello.txt" }) },
+        ],
+      },
+    });
+    feed({
+      type: "message-appended",
+      message: {
+        role: "user",
+        content: [{ type: "tool-result", toolCallId: "ct1", name: "task", isError: false, content: "完成" }],
+      },
+    });
+    // 首次激活 → 自动展开(点击任务卡打开子代理标签)
+    fireEvent.click(screen.getByText("调研 hello.txt").closest("button")!);
+    await waitFor(() => expect(screen.getByLabelText("Collapse details")).toBeDefined());
+    fireEvent.click(screen.getByLabelText("Collapse details"));
+    // 面板收起:右栏折叠按钮消失,消息流卡片仍在
+    await waitFor(() => expect(screen.queryByLabelText("Collapse details")).toBeNull());
+    expect(screen.getByText("调研 hello.txt")).toBeDefined();
+    // 等待一会儿确保没有回弹(手动折叠后不应被自动展开)
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByLabelText("Collapse details")).toBeNull();
+    // 点击幽灵按钮重新展开
+    fireEvent.click(screen.getByLabelText("Open details"));
+    // 关闭当前标签 → activeDetailId 应变为 null → 面板隐藏
+    await waitFor(() => expect(screen.getByLabelText("Collapse details")).toBeDefined());
+    fireEvent.click(screen.getByLabelText("关闭当前页"));
+    await waitFor(() => {
+      expect(useStore.getState().activeDetailId).toBeNull();
+      expect(useStore.getState().detailTabs.length).toBe(0);
+    });
+    expect(screen.queryByLabelText("Collapse details")).toBeNull();
+  });
 });

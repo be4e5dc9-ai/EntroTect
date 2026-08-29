@@ -4,7 +4,7 @@
 // 侧栏/详情栏宽度与收起状态持久化(localStorage)。
 // =====================================================================
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchSkills, useStore, applyEvent } from "./store";
 import { bridge } from "./bridge";
 import { PanelCollapseIcon, Sidebar } from "./components/Sidebar";
@@ -41,6 +41,20 @@ export function App(): React.JSX.Element {
   const [detailCollapsed, setDetailCollapsed] = useState(
     () => localStorage.getItem("entrotect-detail-collapsed") === "1",
   );
+  const lastActiveDetailRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    // 折叠状态下激活新标签(如点击子代理卡片)时自动展开详情栏;
+    // 仅在本会话内激活 id 变化时触发,用户手动折叠后不再回弹。
+    const id = activeDetailId ?? null;
+    if (id !== lastActiveDetailRef.current) {
+      if (detailCollapsed && id !== null) {
+        setDetailCollapsed(false);
+        localStorage.setItem("entrotect-detail-collapsed", "0");
+      }
+      lastActiveDetailRef.current = id;
+    }
+  }, [activeDetailId, detailCollapsed]);
 
   useEffect(() => {
     const unsubscribe = bridge().onEvent(applyEvent);
@@ -88,15 +102,6 @@ export function App(): React.JSX.Element {
   };
 
   const hasDetail = detailTabs.length > 0 && activeDetailId !== null;
-
-  // 折叠状态下激活新标签(如点击子代理卡片)时自动展开详情栏,
-  // 否则面板被 localStorage 的 collapsed 状态永远藏住。
-  useEffect(() => {
-    if (hasDetail && detailCollapsed) {
-      setDetailCollapsed(false);
-      localStorage.setItem("entrotect-detail-collapsed", "0");
-    }
-  }, [activeDetailId, hasDetail, detailCollapsed]);
 
   return (
     <div className="app">
