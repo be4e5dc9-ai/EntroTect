@@ -1880,7 +1880,6 @@
   display: flex;
   gap: 6px;
   align-items: flex-start;
-  overflow-x: auto;
   padding-bottom: 4px;
 }
 .heatmap-weekdays {
@@ -1901,12 +1900,13 @@
 .heatmap-grid {
   display: flex;
   width: 100%;
-  justify-content: space-between;
 }
 .heatmap-col {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  align-items: center;
 }
 .heatmap-cell {
   width: 14px;
