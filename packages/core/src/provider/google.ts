@@ -9,6 +9,7 @@ import type { BlockEvent, GenerateOptions, Provider } from "./types.js";
 import { readSseLines } from "./sse.js";
 import { requestWithNetworkRetry, type FetchLike } from "./transport.js";
 import { buildProviderHeaders } from "./profiles.js";
+import { clampMaxTokens } from "./contexts.js";
 
 const STREAM_IDLE_TIMEOUT_MS = 90_000;
 
@@ -289,7 +290,7 @@ export class GoogleProvider implements Provider {
     const body: Record<string, unknown> = {
       contents,
       generationConfig: {
-        ...(options.maxTokens ? { maxOutputTokens: options.maxTokens } : {}),
+        ...(options.maxTokens ? { maxOutputTokens: clampMaxTokens(this.model, options.maxTokens) } : {}),
         ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
       },
     };

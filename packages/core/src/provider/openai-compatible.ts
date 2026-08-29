@@ -16,6 +16,7 @@ import type { BlockEvent, GenerateOptions, Provider } from "./types.js";
 import { readSseLines } from "./sse.js";
 import { ProviderError } from "./errors.js";
 import { requestWithNetworkRetry, type FetchLike } from "./transport.js";
+import { clampMaxTokens } from "./contexts.js";
 import {
   appendEndpoint,
   buildProviderHeaders,
@@ -204,7 +205,8 @@ export class OpenAiCompatibleProvider implements Provider {
     }
 
     if (options.maxTokens) {
-      body[profile.tokenField] = options.maxTokens;
+      // 按内置目录 clamp 到模型真实最大输出(Mimo 仅支持 131072,超限上游 400)
+      body[profile.tokenField] = clampMaxTokens(this.model, options.maxTokens);
     }
 
     if (options.temperature !== undefined && !profile.omitTemperature) {

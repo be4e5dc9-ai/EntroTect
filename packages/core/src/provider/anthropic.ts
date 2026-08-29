@@ -9,6 +9,7 @@ import type { BlockEvent, GenerateOptions, Provider } from "./types.js";
 import { readSseEvents } from "./sse.js";
 import { requestWithNetworkRetry, type FetchLike } from "./transport.js";
 import { appendEndpoint, buildProviderHeaders } from "./profiles.js";
+import { clampMaxTokens } from "./contexts.js";
 
 const STREAM_IDLE_TIMEOUT_MS = 90_000;
 
@@ -324,7 +325,7 @@ export class AnthropicProvider implements Provider {
 
     const body: Record<string, unknown> = {
       model: this.model,
-      max_tokens: options.maxTokens,
+      max_tokens: clampMaxTokens(this.model, options.maxTokens),
       messages: anthropicMsgs,
       stream: true,
     };

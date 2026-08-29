@@ -11,9 +11,29 @@ export const KNOWN_MODEL_CONTEXTS: Record<string, number> = Object.fromEntries(
   Object.entries(catalog).map(([k, v]) => [k.split("/").pop()!, v.capabilities.contextWindow]),
 );
 
+/** 由 catalog 派生的已知最大输出(tokens),键为模型 id(去前缀) */
+export const KNOWN_MODEL_MAX_TOKENS: Record<string, number> = Object.fromEntries(
+  Object.entries(catalog).map(([k, v]) => [k.split("/").pop()!, v.capabilities.maxTokens]),
+);
+
 /** 内置表查上下文窗口 */
 export function knownContextWindow(model: string): number | undefined {
   return KNOWN_MODEL_CONTEXTS[model];
+}
+
+/** 内置表查最大输出上限;未知模型返回 undefined(不限制) */
+export function knownMaxTokens(model: string): number | undefined {
+  return KNOWN_MODEL_MAX_TOKENS[model];
+}
+
+/** clamp 到模型已知最大输出;未知模型原样返回(不限制) */
+export function clampMaxTokens<T extends number | undefined>(
+  model: string,
+  maxTokens: T,
+): T {
+  const cap = knownMaxTokens(model);
+  if (!cap || !maxTokens) return maxTokens;
+  return Math.min(maxTokens, cap) as T;
 }
 
 /** 从模型 id 尾部解析 k/m 后缀(如 "xxx-128k" → 131072、"yyy-1m" → 1000000) */

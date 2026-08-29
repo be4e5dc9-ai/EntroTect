@@ -65,7 +65,7 @@ export function resolveProviderProfile(input: {
     id = explicit;
   } else if (explicit === "generic") {
     id = "generic";
-  } else if (providerId === "mimo" || providerId.includes("mimo") || baseUrl.includes("xiaomimo")) {
+  } else if (providerId === "mimo" || providerId.includes("mimo") || baseUrl.includes("xiaomimimo")) {
     id = "mimo";
   } else if (
     providerId === "qwen" ||

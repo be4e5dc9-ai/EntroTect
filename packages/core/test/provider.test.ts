@@ -378,12 +378,12 @@ async function runOnce(
 describe("OpenAiCompatibleProvider 请求构建(profile 驱动)", () => {
   it("Mimo: 仅 api-key 头 / max_completion_tokens / thinking.type,且不发 stream_options", async () => {
     const request = await runOnce(
-      { baseUrl: "https://api.xiaomimo.com/v1", apiKey: "sk-x", model: "mimo-v2.5", apiProfile: "mimo" },
+      { baseUrl: "https://api.xiaomimimo.com/v1", apiKey: "sk-x", model: "mimo-v2.5", apiProfile: "mimo" },
       [userMessage],
       { reasoningEffort: "high", temperature: 0.3 },
     );
 
-    expect(request.url).toBe("https://api.xiaomimo.com/v1/chat/completions");
+    expect(request.url).toBe("https://api.xiaomimimo.com/v1/chat/completions");
     expect(request.headers["api-key"]).toBe("sk-x");
     expect(request.headers).not.toHaveProperty("Authorization");
     expect(request.headers).not.toHaveProperty("x-api-key");
@@ -411,6 +411,24 @@ describe("OpenAiCompatibleProvider 请求构建(profile 驱动)", () => {
       { reasoningEffort: "off" },
     );
     expect(request.body).toMatchObject({ thinking: { type: "disabled" } });
+  });
+
+  it("Mimo max_completion_tokens 超出模型上限时按内置目录 clamp(官方最大 131072)", async () => {
+    const request = await runOnce(
+      { baseUrl: "https://api.xiaomimimo.com/v1", apiKey: "sk-x", model: "mimo-v2.5-pro", providerId: "mimo" },
+      [userMessage],
+      { maxTokens: 384000 },
+    );
+    expect(request.body).toMatchObject({ max_completion_tokens: 131_072 });
+  });
+
+  it("catalog 未知模型不 clamp(保持原值)", async () => {
+    const request = await runOnce(
+      { baseUrl: "https://example.com/v1", apiKey: "k", model: "unknown-model-v9" },
+      [userMessage],
+      { maxTokens: 384000 },
+    );
+    expect(request.body).toMatchObject({ max_tokens: 384000 });
   });
 
   it("DeepSeek: Bearer 鉴权 + max_tokens + stream_options + reasoning_effort", async () => {
