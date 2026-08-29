@@ -30,7 +30,7 @@ export interface AgentDeps {
   provider: Provider;
   tools: Tool[];
   systemPrompt: string;
-  maxTokens: number;
+  maxTokens?: number;
   temperature?: number;
   /** 思考强度(off = 不发送该参数) */
   reasoningEffort?: ReasoningEffort;

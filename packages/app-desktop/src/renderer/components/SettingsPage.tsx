@@ -559,25 +559,6 @@ export function SettingsPage(): React.JSX.Element | null {
                   </div>
                 </label>
 
-                <label className="field">
-                  <span>最大输出 tokens(留空用默认 8192)</span>
-                  <input
-                    type="number"
-                    min={256}
-                    value={form.maxTokens ?? ""}
-                    onChange={(e) =>
-                      setForm((f) =>
-                        f
-                          ? {
-                              ...f,
-                              maxTokens: e.target.value === "" ? undefined : Number(e.target.value),
-                            }
-                          : f,
-                      )
-                    }
-                  />
-                </label>
-
                 <div className="field field-inline">
                   <div className="field-inline-text">
                     <span className="field-inline-title">显示模型思考过程</span>

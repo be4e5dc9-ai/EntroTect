@@ -157,7 +157,6 @@ export async function loadConfig(appDataDir: string): Promise<AppConfig> {
     permissionMode: fromFile.permissionMode ?? DEFAULT_CONFIG.permissionMode,
     sandboxMode: fromFile.sandboxMode ?? DEFAULT_CONFIG.sandboxMode,
     showReasoning: fromFile.showReasoning ?? DEFAULT_CONFIG.showReasoning,
-    maxTokens: fromFile.maxTokens,
     temperature: fromFile.temperature,
     skillOverrides: fromFile.skillOverrides,
     autoCompact: fromFile.autoCompact ?? DEFAULT_CONFIG.autoCompact,

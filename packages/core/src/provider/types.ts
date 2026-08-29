@@ -25,7 +25,8 @@ export interface GenerateOptions {
   systemPrompt: string;
   /** 工具 json schema 数组(顺序固定,保 prompt cache 前缀稳定) */
   tools: Array<{ name: string; description: string; parameters: unknown }>;
-  maxTokens: number;
+  /** 输出上限;缺省时由 provider 按模型默认处理 */
+  maxTokens?: number;
   temperature?: number;
   /** OpenAI 兼容 reasoning_effort(DeepSeek: low / high / xhigh / max;"off" = 不发送) */
   reasoningEffort?: ReasoningEffort;

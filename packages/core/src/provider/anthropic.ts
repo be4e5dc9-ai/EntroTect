@@ -325,7 +325,7 @@ export class AnthropicProvider implements Provider {
 
     const body: Record<string, unknown> = {
       model: this.model,
-      max_tokens: clampMaxTokens(this.model, options.maxTokens),
+      max_tokens: clampMaxTokens(this.model, options.maxTokens ?? 8192),
       messages: anthropicMsgs,
       stream: true,
     };

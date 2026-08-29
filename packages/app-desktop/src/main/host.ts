@@ -26,6 +26,7 @@ import {
   listModelsForProvider,
   loadConfig,
   mergeContextWindows,
+  knownMaxTokens,
   runAgent,
   saveConfig,
   SessionPermissionGate,
@@ -60,9 +61,13 @@ interface AcceptedRun {
   abort: AbortController;
 }
 
-const MAX_TOKENS_DEFAULT = 8192;
 /** ReadFile 应答的内容上限:超过则截断并在尾部加一行提示 */
 const MAX_FILE_CONTENT_BYTES = 256 * 1024;
+
+/** 模型最大输出:内置目录优先;未收录返回 undefined(请求侧省略字段,用模型默认) */
+function resolveMaxTokens(model: string): number | undefined {
+  return knownMaxTokens(model);
+}
 
 /** 复制 SendMessage 需要的完整配置,避免后续 SetConfig 改写运行参数。 */
 function cloneConfig(config: AppConfig): AppConfig {
@@ -521,7 +526,7 @@ export class SessionHost {
             cwd: run.meta.cwd,
             artifactDir: this.store.artifactDir(run.meta.id),
             sandboxMode: getSandboxMode,
-            maxTokens: config.maxTokens ?? MAX_TOKENS_DEFAULT,
+            maxTokens: resolveMaxTokens(config.model),
             temperature: config.temperature,
             reasoningEffort: effectiveEffort,
             abortSignal: abort.signal,
@@ -530,7 +535,7 @@ export class SessionHost {
         }),
         imageProvider,
         systemPrompt,
-        maxTokens: config.maxTokens ?? MAX_TOKENS_DEFAULT,
+        maxTokens: resolveMaxTokens(config.model),
         temperature: config.temperature,
         reasoningEffort: effectiveEffort,
         emit: emitRunEvent,

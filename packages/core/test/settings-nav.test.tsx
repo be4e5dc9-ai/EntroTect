@@ -39,7 +39,6 @@ function makeConfig(): AppConfig {
     model: "deepseek-chat",
     activeProviderId: "deepseek",
     workspaceDir: "/tmp",
-    maxTokens: 4096,
     showReasoning: false,
     sandboxMode: "full",
     providers: [
@@ -348,7 +347,7 @@ describe("settings-nav Task3: General Pane + Actions", () => {
     render(<SettingsPage />);
     // general pane visible initially
     expect(screen.getByText(/工作目录/)).toBeDefined();
-    expect(screen.getByText(/最大输出 tokens/)).toBeDefined();
+    expect(screen.getByText(/显示模型思考过程/)).toBeDefined();
     expect(document.querySelector(".switch")).not.toBeNull();
     // provider detail not visible yet
     expect(document.querySelector(".provider-grid")).toBeNull();
@@ -381,13 +380,12 @@ describe("settings-nav Task3: General Pane + Actions", () => {
       kind: "SetConfig",
       config: expect.objectContaining({ workspaceDir: "/new/workspace" }),
     }));
-    // also test that provider merge keeps contextWindows
-    // change maxTokens and save
-    const maxInput = document.querySelector('input[type="number"]') as HTMLInputElement;
-    fireEvent.change(maxInput, { target: { value: "8192" } });
+    // save again with a toggle change(显示模型思考过程)to prove merge persists
+    const switchBtn = document.querySelector(".switch") as HTMLButtonElement;
+    fireEvent.click(switchBtn);
     fireEvent.click(saveBtn);
     expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({
-      config: expect.objectContaining({ maxTokens: 8192 }),
+      config: expect.objectContaining({ showReasoning: true }),
     }));
   });
 

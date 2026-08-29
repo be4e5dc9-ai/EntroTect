@@ -26,12 +26,7 @@ function streamResponse(): Response {
   });
 }
 
-function configFor(
-  providerId: string,
-  baseUrl: string,
-  model: string,
-  maxTokens: number,
-): AppConfig {
+function configFor(providerId: string, baseUrl: string, model: string): AppConfig {
   return {
     baseUrl,
     apiKey: `${providerId}-top-level-key`,
@@ -49,7 +44,6 @@ function configFor(
     permissionMode: "full",
     sandboxMode: "full",
     reasoningEffort: "low",
-    maxTokens,
     temperature: 0.25,
   };
 }
@@ -82,8 +76,8 @@ describe("SessionHost run context", () => {
       });
       await host.init();
 
-      const configA = configFor("provider-a", "https://provider-a.example/v1", "model-a", 111);
-      const configB = configFor("provider-b", "https://provider-b.example/v1", "model-b", 999);
+      const configA = configFor("provider-a", "https://provider-a.example/v1", "model-a");
+      const configB = configFor("provider-b", "https://provider-b.example/v1", "model-b");
       await host.handleOp({ kind: "SetConfig", config: configA });
       await host.handleOp({ kind: "NewSession" });
       events.length = 0;
@@ -115,10 +109,11 @@ describe("SessionHost run context", () => {
       expect(calls[0]?.url).toBe("https://provider-a.example/v1/chat/completions");
       expect(calls[0]?.body).toMatchObject({
         model: "model-a",
-        max_tokens: 111,
         temperature: 0.25,
         reasoning_effort: "low",
       });
+      // catalog 未知模型不发送 max_tokens,避免猜错上限
+      expect(calls[0]?.body).not.toHaveProperty("max_tokens");
     } finally {
       await rm(appDataDir, { recursive: true, force: true });
     }

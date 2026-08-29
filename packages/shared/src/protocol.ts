@@ -123,7 +123,6 @@ export interface AppConfig {
   sandboxMode?: "full" | "restricted";
   /** UI 是否显示模型思考过程 */
   showReasoning?: boolean;
-  maxTokens?: number;
   temperature?: number;
   /** 每个 skill 的使用开关(key = skill 绝对路径;缺省 = 启用且斜杠可见) */
   skillOverrides?: Record<string, SkillOverride>;
@@ -535,7 +534,6 @@ export const appConfigSchema = z.object({
   permissionMode: z.enum(["full", "write", "ask"]).optional(),
   sandboxMode: z.enum(["full", "restricted"]).optional(),
   showReasoning: z.boolean().optional(),
-  maxTokens: z.number().positive().optional(),
   temperature: z.number().min(0).max(2).optional(),
   skillOverrides: z
     .record(z.string(), z.object({ enabled: z.boolean(), inSlash: z.boolean() }))
