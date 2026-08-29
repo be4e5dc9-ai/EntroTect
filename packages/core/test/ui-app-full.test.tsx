@@ -1,0 +1,138 @@
+/** @vitest-environment jsdom */
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import React from "react";
+import { render, screen, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
+
+(globalThis as Record<string, unknown>).requestAnimationFrame = (cb: FrameRequestCallback) =>
+  setTimeout(() => cb(Date.now()), 0) as unknown as number;
+(globalThis as Record<string, unknown>).cancelAnimationFrame = (id: number) => clearTimeout(id);
+(Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {};
+
+import { App } from "../../app-desktop/src/renderer/App.js";
+import { useStore, applyEvent } from "../../app-desktop/src/renderer/store.js";
+import type { AppConfig as SharedConfig } from "@entrotect/shared";
+
+function mockBridge() {
+  const send = vi.fn();
+  window.entrotect = {
+    send,
+    onEvent: vi.fn((handler: (event: unknown) => void) => {
+      // 真实预加载桥:事件直达 applyEvent
+      mockEvents.push(handler);
+      return () => {};
+    }),
+    chooseFolder: vi.fn(async () => null),
+    setTheme: vi.fn(),
+    setAccentColor: vi.fn(),
+    listSkills: vi.fn(async () => []),
+  };
+  return { send };
+}
+
+const mockEvents: Array<(event: unknown) => void> = [];
+
+function feed(event: unknown) {
+  act(() => {
+    for (const handler of mockEvents) handler(event);
+  });
+}
+
+function makeConfig(): SharedConfig {
+  return {
+    baseUrl: "https://api.deepseek.com/v1",
+    apiKey: "sk-x",
+    model: "deepseek-chat",
+    activeProviderId: "deepseek",
+    permissionMode: "full",
+    providers: [
+      {
+        id: "deepseek",
+        name: "DeepSeek",
+        baseUrl: "https://api.deepseek.com/v1",
+        apiKey: "sk-x",
+        models: ["deepseek-chat"],
+      },
+    ],
+  };
+}
+
+beforeEach(() => {
+  localStorage.clear();
+  mockEvents.length = 0;
+  useStore.setState({
+    config: makeConfig(),
+    currentSession: {
+      id: "s1",
+      title: "会话",
+      model: "deepseek-chat",
+      cwd: "/tmp",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    },
+    messages: [],
+    subagentChats: {},
+    detailTabs: [],
+    activeDetailId: null,
+  });
+  mockBridge();
+});
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+
+describe("App 首条消息与子代理点击", () => {
+  it("首条用户消息渲染 You 标签与文本", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText(/新会话|让 EntroTect/)).toBeDefined());
+    feed({
+      type: "message-appended",
+      message: { role: "user", content: [{ type: "text", text: "帮我调研" }] },
+    });
+    await waitFor(() => expect(screen.getByText("You")).toBeDefined());
+    expect(screen.getByText("帮我调研")).toBeDefined();
+  });
+
+  it("折叠详情栏后点击子代理卡自动展开并显示面板", async () => {
+    localStorage.setItem("entrotect-detail-collapsed", "1");
+    render(<App />);
+    // 模拟既有会话重放:assistant 带 task 工具块
+    feed({
+      type: "session-meta",
+      meta: { id: "s1", title: "会话", model: "deepseek-chat", cwd: "/tmp", createdAt: "x", updatedAt: "x" },
+    });
+    feed({
+      type: "message-appended",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "tool-call", id: "ct1", name: "task", arguments: JSON.stringify({ prompt: "调研 hello.txt" }) },
+        ],
+      },
+    });
+    // 子代理最终答复回填
+    feed({
+      type: "message-appended",
+      message: {
+        role: "user",
+        content: [{ type: "tool-result", toolCallId: "ct1", name: "task", isError: false, content: "完成" }],
+      },
+    });
+
+    // 点击 task 卡头部
+    const card = screen.getByText("调研 hello.txt").closest("button");
+    expect(card).not.toBeNull();
+    fireEvent.click(card!);
+
+    await waitFor(() => {
+      const state = useStore.getState();
+      expect(state.activeDetailId).toBe("subagent-ct1");
+    });
+    // 详情面板出现(子代理头部与委派)
+    await waitFor(() => {
+      expect(screen.getAllByText("子代理").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText(/主代理委派/)).toBeDefined();
+    });
+  });
+});

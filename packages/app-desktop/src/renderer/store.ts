@@ -434,6 +434,22 @@ function parseToolArgs(arguments_: string): unknown {
   }
 }
 
+/** 工具卡片预览:task/todowrite 从 args 取描述,其余用工具名 */
+function previewOf(call: { name: string; arguments?: string }): string {
+  const args = parseToolArgs(call.arguments ?? "");
+  if (call.name === "task" || call.name === "todowrite") {
+    const prompt = (args as { prompt?: unknown; tasks?: unknown } | null)?.prompt;
+    const text =
+      typeof prompt === "string" && prompt.length > 0
+        ? prompt
+        : (args as { tasks?: Array<{ description?: string }> } | null)?.tasks?.[0]?.description;
+    if (typeof text === "string" && text.length > 0) {
+      return text.length > 60 ? `${text.slice(0, 60)}…` : text;
+    }
+  }
+  return call.name;
+}
+
 /** 跨 messages 查找工具卡片 */
 function findToolBlock(toolCallId: string): UiToolBlock | undefined {
   for (const message of useStore.getState().messages) {
@@ -613,17 +629,17 @@ function applySubagentPart(toolCallId: string, part: SubagentPart): void {
               state.subagentChats[toolCallId] ?? [],
               (message) => ({
                 ...message,
-                blocks: [
-                  ...message.blocks,
-                  {
-                    kind: "tool-call",
-                    id: call.id,
-                    name: call.name,
-                    preview: call.name,
-                    state: "awaiting-approval",
-                    args: parseToolArgs(call.arguments),
-                  },
-                ],
+                  blocks: [
+                    ...message.blocks,
+                    {
+                      kind: "tool-call",
+                      id: call.id,
+                      name: call.name,
+                      preview: previewOf(call),
+                      state: "awaiting-approval",
+                      args: parseToolArgs(call.arguments),
+                    },
+                  ],
               }),
             ),
           },
@@ -898,7 +914,7 @@ export function applyEvent(event: AppEvent): void {
                 kind: "tool-call" as const,
                 id: b.id,
                 name: b.name,
-                preview: b.name,
+                preview: previewOf(b),
                 state: "completed" as const,
                 args: parseToolArgs(b.arguments),
               })),
@@ -960,7 +976,7 @@ export function applyEvent(event: AppEvent): void {
                       kind: "tool-call",
                       id: call.id,
                       name: call.name,
-                      preview: call.name,
+                      preview: previewOf(call),
                       state: "awaiting-approval",
                       args: parseToolArgs(call.arguments),
                     },

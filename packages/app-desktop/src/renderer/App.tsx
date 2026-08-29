@@ -89,6 +89,15 @@ export function App(): React.JSX.Element {
 
   const hasDetail = detailTabs.length > 0 && activeDetailId !== null;
 
+  // 折叠状态下激活新标签(如点击子代理卡片)时自动展开详情栏,
+  // 否则面板被 localStorage 的 collapsed 状态永远藏住。
+  useEffect(() => {
+    if (hasDetail && detailCollapsed) {
+      setDetailCollapsed(false);
+      localStorage.setItem("entrotect-detail-collapsed", "0");
+    }
+  }, [activeDetailId, hasDetail, detailCollapsed]);
+
   return (
     <div className="app">
       <div className="titlebar">
