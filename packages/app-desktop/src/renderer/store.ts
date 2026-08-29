@@ -11,6 +11,7 @@ import type {
   SubagentPart,
   ToolCallState,
   TokenUsage,
+  UsageStats,
   AppConfig,
 } from "@entrotect/shared";
 import { DEFAULT_ACCENT_COLOR } from "../appearance";
@@ -138,6 +139,8 @@ interface UiState {
   messages: UiMessage[];
   busy: boolean;
   usage: TokenUsage | null;
+  /** 用量总览(usage-stats 事件写入,空态页 Overview 面板展示) */
+  usageStats: UsageStats | null;
   activeRunId: string | null;
   usageUpdatesBlocked: boolean;
   usageBlockedRunId: string | null;
@@ -179,6 +182,7 @@ export const useStore = create<UiState>()(() => ({
   messages: [],
   busy: false,
   usage: null,
+  usageStats: null,
   activeRunId: null,
   usageUpdatesBlocked: false,
   usageBlockedRunId: null,
@@ -1106,6 +1110,9 @@ export function applyEvent(event: AppEvent): void {
           ...(configChanged ? invalidateUsage(state) : {}),
         };
       });
+      break;
+    case "usage-stats":
+      useStore.setState({ usageStats: event.stats });
       break;
   }
 }

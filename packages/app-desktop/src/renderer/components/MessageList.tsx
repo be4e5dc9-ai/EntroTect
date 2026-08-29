@@ -7,11 +7,20 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore, openSubagentTab, type UiMessage } from "../store";
 import { renderMarkdown } from "../markdown";
-import { bridge } from "../bridge";
-import { BrandMark } from "./BrandMark";
 import { ToolCard } from "./ToolCard";
 import { FileCard } from "./FileCard";
 import { ClarificationCard } from "./ClarificationCard";
+import { UsageOverview } from "./UsageOverview";
+
+/** 按当前时刻打招呼 */
+function greeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 5) return "夜深了";
+  if (hour < 11) return "早上好";
+  if (hour < 14) return "中午好";
+  if (hour < 18) return "下午好";
+  return "晚上好";
+}
 
 /** 思考过程区:流式时自动展开,结束后可手动折叠(Claude Code 风格"Thinking") */
 function ReasoningSection({ text, streaming }: { text: string; streaming: boolean }): React.JSX.Element {
@@ -130,14 +139,11 @@ export function MessageList(): React.JSX.Element {
   if (messages.length === 0) {
     return (
       <div className="empty-state">
-        <BrandMark className="brand-mark empty-mark" />
-        <h2>让 EntroTect 帮你写代码</h2>
-        <p className="empty-hint">点击侧栏 New 新建任务(选择工作目录),然后在下方输入任务,例如:</p>
-        <div className="empty-suggestions">
-          <Suggestion text="看看当前目录有什么文件,总结一下这个项目的结构" />
-          <Suggestion text="写一个 Python 脚本,列出磁盘占用最大的 10 个文件" />
-          <Suggestion text="找到项目里的 TODO 注释,整理成清单" />
+        <div className="empty-greeting">
+          <h2>{greeting()}</h2>
+          <p className="empty-hint">告诉我接下来想做什么</p>
         </div>
+        <UsageOverview />
       </div>
     );
   }
@@ -149,13 +155,5 @@ export function MessageList(): React.JSX.Element {
       ))}
       <div ref={bottomRef} />
     </div>
-  );
-}
-
-function Suggestion({ text }: { text: string }): React.JSX.Element {
-  return (
-    <button className="suggestion" onClick={() => bridge().send({ kind: "SendMessage", text })}>
-      {text}
-    </button>
   );
 }

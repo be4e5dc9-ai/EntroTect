@@ -20,6 +20,11 @@
   --accent-dim: rgba(184, 162, 255, 0.14);
   --accent-glow: rgba(184, 162, 255, 0.35);
   --accent-foreground: #241d34;
+  /* accent 色阶(热力图等分级场景):从弱到强 */
+  --accent-300: #6f5ad1;
+  --accent-400: #8d76ea;
+  --accent-500: #a48ff2;
+  --heatmap-0: rgba(255, 255, 255, 0.06);
   --success: #34d399;
   --danger: #f87171;
   --warning: #fbbf24;
@@ -77,6 +82,10 @@
   --accent-dim: rgba(141, 111, 234, 0.10);
   --accent-glow: rgba(141, 111, 234, 0.25);
   --accent-foreground: #000000;
+  --accent-300: #c4b1f0;
+  --accent-400: #a68ae8;
+  --accent-500: #9678e0;
+  --heatmap-0: rgba(45, 38, 28, 0.07);
   --success: #059669;
   --danger: #dc2626;
   --warning: #d97706;

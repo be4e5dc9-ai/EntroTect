@@ -1779,59 +1779,164 @@
   justify-content: center;
   padding: 24px;
   text-align: center;
+  gap: 20px;
+  overflow-y: auto;
 }
-.empty-mark {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  margin-bottom: 18px;
-  animation: entro-pop-in var(--spring-pop-ms) linear both;
-}
-.empty-state h2 {
+.empty-greeting h2 {
   font-family: var(--font-display);
-  font-size: 19px;
+  font-size: 22px;
   font-weight: 600;
-  margin: 0 0 6px;
+  margin: 0 0 4px;
+  animation: entro-pop-in var(--spring-pop-ms) linear both;
 }
 .empty-hint {
   color: var(--text-secondary);
-  margin: 0 0 18px;
+  margin: 0;
   font-size: 13.5px;
 }
-.empty-suggestions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: min(480px, 100%);
-}
-.suggestion {
+
+/* ---------- 用量总览面板 ---------- */
+.usage-overview {
+  width: min(560px, 100%);
   text-align: left;
-  padding: 11px 15px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  color: var(--text-secondary);
-  font-size: 13.5px;
-  transition:
-    transform var(--dur-press) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out);
   animation: entro-rise-in var(--spring-rise-ms) linear both;
 }
-.suggestion:nth-child(2) {
-  animation-delay: 40ms;
+.usage-empty {
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 18px 4px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  text-align: center;
 }
-.suggestion:nth-child(3) {
-  animation-delay: 80ms;
+.usage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
 }
-@media (hover: hover) and (pointer: fine) {
-  .suggestion:hover {
-    border-color: var(--accent);
-    color: var(--text);
-  }
+.usage-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
 }
-.suggestion:active {
-  transform: scale(0.985);
+.usage-range {
+  display: inline-flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px;
+  gap: 2px;
+}
+.usage-range-btn {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 3px 10px;
+  border-radius: 999px;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.usage-range-btn.active {
+  background: var(--surface-active);
+  color: var(--text);
+  font-weight: 500;
+}
+.usage-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.usage-stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 9px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.usage-stat.wide {
+  grid-column: span 1;
+}
+.usage-stat-label {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.usage-stat-value {
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 热力图 ---------- */
+.usage-heatmap {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.heatmap-weekdays {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 2px;
+  flex-shrink: 0;
+}
+.heatmap-weekday {
+  font-size: 9.5px;
+  color: var(--text-tertiary);
+  line-height: 1;
+  height: 11px;
+  width: 10px;
+  text-align: center;
+}
+.heatmap-grid {
+  display: flex;
+  gap: 3px;
+}
+.heatmap-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.heatmap-cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 2.5px;
+  background: var(--heatmap-0, rgba(128, 128, 128, 0.08));
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.heatmap-cell.lv-1 {
+  background: var(--accent-300);
+}
+.heatmap-cell.lv-2 {
+  background: var(--accent-400);
+}
+.heatmap-cell.lv-3 {
+  background: var(--accent-500);
+}
+.heatmap-cell.lv-4 {
+  background: var(--accent);
+}
+.heatmap-cell.today {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 1px;
+}
+.heatmap-cell.ghost {
+  background: transparent;
+}
+.usage-footnote {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 /* ---------- 审批弹窗 ---------- */

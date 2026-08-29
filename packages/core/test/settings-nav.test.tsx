@@ -130,7 +130,9 @@ describe("settings-nav Task1: Nav Shell + State", () => {
     const { App } = await import("../../app-desktop/src/renderer/App.js");
     useStore.setState({ view: "chat", messages: [] });
     render(<App />);
-    expect(document.querySelector(".brand-mark")).not.toBeNull();
+    await waitFor(() =>
+      expect(screen.getByText(/早上好|中午好|下午好|晚上好|夜深了/)).toBeDefined(),
+    );
     expect(document.querySelector('.empty-state img[src="./icon.png"]')).toBeNull();
   });
 

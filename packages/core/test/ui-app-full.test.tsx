@@ -85,13 +85,38 @@ afterEach(() => {
 describe("App 首条消息与子代理点击", () => {
   it("首条用户消息渲染 You 标签与文本", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByText(/新会话|让 EntroTect/)).toBeDefined());
+    await waitFor(() => expect(screen.getByText(/早上好|中午好|下午好|晚上好|夜深了/)).toBeDefined());
     feed({
       type: "message-appended",
       message: { role: "user", content: [{ type: "text", text: "帮我调研" }] },
     });
     await waitFor(() => expect(screen.getByText("You")).toBeDefined());
     expect(screen.getByText("帮我调研")).toBeDefined();
+  });
+
+  it("空态显示用量概览与统计卡", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText(/早上好|中午好|下午好|晚上好|夜深了/)).toBeDefined());
+    feed({
+      type: "usage-stats",
+      stats: {
+        sessions: 14,
+        messages: 5203,
+        totalTokens: 15_000_000,
+        activeDays: 12,
+        currentStreak: 0,
+        longestStreak: 3,
+        peakHour: 17,
+        favoriteModel: "deepseek-chat",
+        daily: [],
+      },
+    });
+    await waitFor(() => expect(screen.getByText("用量概览")).toBeDefined());
+    expect(screen.getAllByText("会话").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("14")).toBeDefined();
+    expect(screen.getByText("15M")).toBeDefined();
+    expect(screen.getByText("常用模型")).toBeDefined();
+    expect(screen.getAllByText("deepseek-chat").length).toBeGreaterThanOrEqual(1);
   });
 
   it("折叠详情栏后点击子代理卡自动展开并显示面板", async () => {
@@ -139,7 +164,7 @@ describe("App 首条消息与子代理点击", () => {
   it("折叠详情栏后不再被自动弹回;再次关闭标签栏收起面板", async () => {
     localStorage.setItem("entrotect-detail-collapsed", "1");
     render(<App />);
-    await waitFor(() => expect(screen.getByText(/新会话|让 EntroTect/)).toBeDefined());
+    await waitFor(() => expect(screen.getByText(/早上好|中午好|下午好|晚上好|夜深了/)).toBeDefined());
     feed({
       type: "session-meta",
       meta: { id: "s1", title: "会话", model: "deepseek-chat", cwd: "/tmp", createdAt: "x", updatedAt: "x" },

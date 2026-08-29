@@ -8,6 +8,8 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import type { BrowserWindow } from "electron";
+import { aggregateUsageStats, type UsageRecord } from "@entrotect/core";
+import { UsageStore } from "./usage-store.js";
 import type {
   AppConfig,
   AppEvent,
@@ -114,6 +116,7 @@ function truncateUtf8(content: string, maxBytes: number): string {
 export class SessionHost {
   private readonly deps: HostDeps;
   private readonly store: SessionStore;
+  private readonly usageStore: UsageStore;
   private config!: AppConfig;
   private provider!: Provider;
   private active: ActiveRun | null = null;
@@ -124,6 +127,7 @@ export class SessionHost {
   constructor(deps: HostDeps) {
     this.deps = deps;
     this.store = new SessionStore(path.join(deps.appDataDir, "sessions"));
+    this.usageStore = new UsageStore(deps.appDataDir);
   }
 
   async init(): Promise<void> {
@@ -165,6 +169,39 @@ export class SessionHost {
   /** 事件汇:发往 UI(主循环与 host 共用) */
   emit(event: AppEvent): void {
     this.deps.getWindow()?.webContents.send("entrotect:event", event);
+  }
+
+  /** 回合结束落盘 usage,并推送最新用量统计 */
+  private async recordUsage(usage: { inputTokens: number; outputTokens: number }, context: TurnContext): Promise<void> {
+    const record: UsageRecord = {
+      ts: new Date().toISOString(),
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      sessionId: context.sessionId,
+      model: context.model,
+    };
+    await this.usageStore.append(record);
+    await this.pushUsageStats();
+  }
+
+  /** 聚合全量用量(消息/会话数来自会话存储),推送 usage-stats 事件 */
+  private async pushUsageStats(): Promise<void> {
+    const [records, sessions] = await Promise.all([
+      this.usageStore.loadAll(),
+      this.store.list(),
+    ]);
+    let messages = 0;
+    for (const meta of sessions) {
+      try {
+        messages += (await this.store.load(meta.id)).messages.length;
+      } catch {
+        // 损坏会话跳过
+      }
+    }
+    this.emit({
+      type: "usage-stats",
+      stats: aggregateUsageStats(records, { sessions: sessions.length, messages }),
+    });
   }
 
   async handleOp(op: Op): Promise<void> {
@@ -268,6 +305,9 @@ export class SessionHost {
         break;
       case "GetConfig":
         this.emit({ type: "config", config: this.config });
+        break;
+      case "GetUsageStats":
+        await this.pushUsageStats();
         break;
       case "ReadFile": {
         const cwd = this.active?.meta.cwd ?? this.workspaceDir();
@@ -448,6 +488,9 @@ export class SessionHost {
     const emitRunEvent = (event: AppEvent): void => {
       if (event.type === "turn-started" || event.type === "turn-completed") {
         this.emit({ ...event, runId, ...context });
+        if (event.type === "turn-completed" && event.usage) {
+          void this.recordUsage(event.usage, context);
+        }
         return;
       }
       this.emit(event);

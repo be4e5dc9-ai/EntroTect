@@ -34,6 +34,29 @@ export interface TokenUsage {
   outputTokens: number;
 }
 
+/** 单日用量条目(热力图/统计用),date 为本地日期 YYYY-MM-DD */
+export interface DailyUsage {
+  date: string;
+  tokens: number;
+  messages: number;
+}
+
+/** 用量总览:主进程聚合,供空态页 Overview 面板展示 */
+export interface UsageStats {
+  sessions: number;
+  messages: number;
+  totalTokens: number;
+  activeDays: number;
+  currentStreak: number;
+  longestStreak: number;
+  /** 最活跃小时(0-23) */
+  peakHour: number;
+  /** 累计 token 最多的模型 */
+  favoriteModel: string;
+  /** 每日用量(升序,仅活跃日) */
+  daily: DailyUsage[];
+}
+
 /** 一次 SendMessage 固定的会话与模型上下文,随回合事件传递。 */
 export interface TurnContext {
   sessionId: string;
@@ -351,7 +374,8 @@ export type Op =
     }
   | { kind: "GetConfig" }
   | { kind: "SetConfig"; config: AppConfig }
-  | { kind: "ReadFile"; path: string };
+  | { kind: "ReadFile"; path: string }
+  | { kind: "GetUsageStats" };
 
 // =====================================================================
 // EventMsg:核心 → UI(同源信封,双向皆可演进)
@@ -447,7 +471,8 @@ export type AppEvent =
     }
   | { type: "file-content"; path: string; content: string | null; error?: string }
   | { type: "error"; message: string }
-  | { type: "config"; config: AppConfig };
+  | { type: "config"; config: AppConfig }
+  | { type: "usage-stats"; stats: UsageStats };
 
 // =====================================================================
 // zod 校验 schema:跨 IPC 边界的唯一事实源(工具 schema 也由 zod 派生)
@@ -582,6 +607,7 @@ export const opSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("GetConfig") }),
   z.object({ kind: z.literal("SetConfig"), config: appConfigSchema }),
   z.object({ kind: z.literal("ReadFile"), path: z.string().min(1) }),
+  z.object({ kind: z.literal("GetUsageStats") }),
 ]);
 
 export const subagentPartSchema = z.discriminatedUnion("kind", [
@@ -605,8 +631,7 @@ export const subagentPartSchema = z.discriminatedUnion("kind", [
 ]);
 
 export const appEventSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("session-meta"), meta: sessionMetaSchema }),
-  z.object({ type: z.literal("sessions-listed"), sessions: z.array(sessionMetaSchema) }),
+  z.object({ type: z.literal("session-meta"), meta: sessionMetaSchema }),  z.object({ type: z.literal("sessions-listed"), sessions: z.array(sessionMetaSchema) }),
   z.object({ type: z.literal("session-compacted"), summary: z.string() }),
   z.object({
     type: z.literal("models-listed"),
@@ -686,6 +711,26 @@ export const appEventSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("error"), message: z.string() }),
   z.object({ type: z.literal("config"), config: appConfigSchema }),
+  z.object({
+    type: z.literal("usage-stats"),
+    stats: z.object({
+      sessions: z.number(),
+      messages: z.number(),
+      totalTokens: z.number(),
+      activeDays: z.number(),
+      currentStreak: z.number(),
+      longestStreak: z.number(),
+      peakHour: z.number(),
+      favoriteModel: z.string(),
+      daily: z.array(
+        z.object({
+          date: z.string(),
+          tokens: z.number(),
+          messages: z.number(),
+        }),
+      ),
+    }),
+  }),
 ]);
 
 // =====================================================================

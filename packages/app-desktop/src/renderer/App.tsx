@@ -60,6 +60,7 @@ export function App(): React.JSX.Element {
     const unsubscribe = bridge().onEvent(applyEvent);
     bridge().send({ kind: "ListSessions" });
     bridge().send({ kind: "GetConfig" });
+    bridge().send({ kind: "GetUsageStats" });
     void fetchSkills();
     return unsubscribe;
   }, []);
