@@ -1900,10 +1900,8 @@
 }
 .heatmap-grid {
   display: flex;
-  gap: 4px;
-  flex: 1;
-  justify-content: flex-end;
-  min-width: max-content;
+  width: 100%;
+  justify-content: space-between;
 }
 .heatmap-col {
   display: flex;
