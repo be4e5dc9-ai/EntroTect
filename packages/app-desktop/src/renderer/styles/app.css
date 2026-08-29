@@ -1878,7 +1878,7 @@
 /* ---------- 热力图 ---------- */
 .usage-heatmap {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: flex-start;
   overflow-x: auto;
   padding-bottom: 4px;
@@ -1886,7 +1886,7 @@
 .heatmap-weekdays {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
   padding-top: 2px;
   flex-shrink: 0;
 }
@@ -1900,7 +1900,7 @@
 }
 .heatmap-grid {
   display: flex;
-  gap: 5px;
+  gap: 4px;
   flex: 1;
   justify-content: flex-end;
   min-width: max-content;
@@ -1908,7 +1908,7 @@
 .heatmap-col {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 .heatmap-cell {
   width: 14px;
