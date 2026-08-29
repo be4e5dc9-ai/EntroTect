@@ -64,11 +64,7 @@ export class SessionPermissionGate {
    * 其余挂起,等待 host 调 respond() 或超时 fail-closed deny。
    */
   request(request: ApprovalRequest): Promise<ApprovalOutcome> {
-    const autoAllow =
-      this.mode === "full" ||
-      this.alwaysAllowed.has(request.toolName) ||
-      (this.mode === "write" && this.readOnlyTools.has(request.toolName));
-    if (autoAllow) {
+    if (this.shouldAutoAllow(request)) {
       return Promise.resolve({ decision: "allow-once" });
     }
     return new Promise<ApprovalOutcome>((resolve) => {
@@ -78,6 +74,19 @@ export class SessionPermissionGate {
       }, this.timeoutMs);
       this.pending.set(request.toolCallId, { request, resolve, timer });
     });
+  }
+
+  /** 请求是否会走挂起(需要用户裁决)路径;用于 host 决定是否上报 approval-requested */
+  wantsApproval(request: ApprovalRequest): boolean {
+    return !this.shouldAutoAllow(request);
+  }
+
+  private shouldAutoAllow(request: ApprovalRequest): boolean {
+    return (
+      this.mode === "full" ||
+      this.alwaysAllowed.has(request.toolName) ||
+      (this.mode === "write" && this.readOnlyTools.has(request.toolName))
+    );
   }
 
   /** host(UI)回传用户决定。已超时的调用幂等忽略。 */

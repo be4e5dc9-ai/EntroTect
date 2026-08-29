@@ -1048,6 +1048,7 @@ export function applyEvent(event: AppEvent): void {
     case "tool-state":
       updateToolState(event.toolCallId, {
         state: event.state,
+        ...(event.preview !== undefined ? { preview: event.preview } : {}),
         ...(event.summary !== undefined ? { summary: event.summary } : {}),
       });
       // 该工具已有裁决:关闭对应审批弹窗(含超时自动 deny 路径)

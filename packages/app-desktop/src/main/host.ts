@@ -495,8 +495,12 @@ export class SessionHost {
         platform: process.platform,
         date: new Date().toISOString().slice(0, 10),
       });
-      const approve = (request: ApprovalRequest) => {
-        this.emit({ type: "approval-requested", request });
+      const approve = async (request: ApprovalRequest) => {
+        // 仅在真正需要用户裁决时才上报弹窗;
+        // full/write 只读/allow-always 等自动放行路径不打扰。
+        if (gate.wantsApproval(request)) {
+          this.emit({ type: "approval-requested", request });
+        }
         return gate.request(request);
       };
       const activeProv = this.activeProvider(config);
