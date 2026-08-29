@@ -112,7 +112,9 @@ Write-Host "SHA256SUMS.txt 已更新($($sums.Count) 项)" -ForegroundColor Green
 Step "5/6 静默安装 $current"
 $installer = Join-Path $releaseDir "EntroTect-Setup-$current.exe"
 if (-not (Test-Path -LiteralPath $installer)) { throw "安装包不存在: $installer" }
-$process = Start-Process -FilePath $installer -ArgumentList "/S" -Wait -PassThru
+# /D= 固定安装目录(必须为末参):避免 NSIS 记忆上次手动选择的临时目录
+$installDir = Join-Path $env:LOCALAPPDATA "Programs\EntroTect"
+$process = Start-Process -FilePath $installer -ArgumentList "/S", "/D=$installDir" -Wait -PassThru
 if ($process.ExitCode -ne 0) { throw "安装失败(exit $($process.ExitCode))" }
 Write-Host "安装器退出码 0" -ForegroundColor Green
 
