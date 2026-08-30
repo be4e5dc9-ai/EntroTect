@@ -46,18 +46,14 @@ interface WeekCell {
   today: boolean;
 }
 
-function buildWeeks(daily: UsageStats["daily"]): WeekCell[][] {
-  const today = new Date();
+export function buildWeeks(daily: UsageStats["daily"], today: Date = new Date()): WeekCell[][] {
   const todayIso = localIso(today);
   const hasData = daily.length > 0;
-  const lastDate = hasData ? parseLocal(daily[daily.length - 1]!.date) : today;
-  let first: Date;
-  if (hasData) {
-    first = parseLocal(daily[0]!.date);
-  } else {
-    first = new Date(today);
-    first.setDate(first.getDate() - 26 * 7); // 无记录时 27 周占位网格
-  }
+  // 至少回退 26 周:即便只有几天数据,也铺满约 27 周网格,避免热力图空荡荡
+  const floor = new Date(`${todayIso}T00:00:00`);
+  floor.setDate(floor.getDate() - 26 * 7);
+  let first: Date = hasData ? parseLocal(daily[0]!.date) : floor;
+  if (first > floor) first = floor;
   // 补空日 -> 今天为止
   const byDate = new Map(daily.map((d) => [d.date, d]));
   const cursor = new Date(first);

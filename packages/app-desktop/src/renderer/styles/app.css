@@ -1989,13 +1989,15 @@
 .heatmap-grid {
   display: flex;
   width: 100%;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 2px;
 }
 .heatmap-col {
-  flex: 1;
+  flex: 0 0 14px;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  align-items: center;
 }
 .heatmap-cell {
   width: 14px;
