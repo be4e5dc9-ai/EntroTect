@@ -46,21 +46,17 @@ interface WeekCell {
   today: boolean;
 }
 
-function buildWeeks(daily: UsageStats["daily"], range: Range): WeekCell[][] {
+function buildWeeks(daily: UsageStats["daily"]): WeekCell[][] {
   const today = new Date();
   const todayIso = localIso(today);
   const hasData = daily.length > 0;
   const lastDate = hasData ? parseLocal(daily[daily.length - 1]!.date) : today;
   let first: Date;
-  if (range === "7d") {
-    first = new Date(lastDate);
-    first.setDate(first.getDate() - 6);
-  } else if (range === "30d") {
-    first = new Date(lastDate);
-    first.setDate(first.getDate() - 29);
+  if (hasData) {
+    first = parseLocal(daily[0]!.date);
   } else {
-    first = hasData ? parseLocal(daily[0]!.date) : new Date(today);
-    first.setDate(first.getDate() - 26 * 7); // All 视图至少 27 周(无记录占位)
+    first = new Date(today);
+    first.setDate(first.getDate() - 26 * 7); // 无记录时 27 周占位网格
   }
   // 补空日 -> 今天为止
   const byDate = new Map(daily.map((d) => [d.date, d]));
@@ -104,13 +100,15 @@ function colorOf(tokens: number, max: number): number {
 export function UsageOverview(): React.JSX.Element | null {
   const stats = useStore((s) => s.usageStats);
   const [range, setRange] = useState<Range>("all");
+  const summary = stats ? stats[range === "all" ? "all" : range === "30d" ? "d30" : "d7"] : null;
 
+  // 热力图恒定:始终按全量 daily 铺网格(不随右上角切换变化)
   const weeks = useMemo(() => {
     if (!stats) return [];
-    return buildWeeks(stats.daily, range);
-  }, [stats, range]);
+    return buildWeeks(stats.daily);
+  }, [stats]);
 
-  if (!stats || stats.totalTokens === 0 && stats.messages === 0) {
+  if (!stats || !summary) {
     return (
       <div className="usage-overview">
         <div className="usage-head">
@@ -124,14 +122,14 @@ export function UsageOverview(): React.JSX.Element | null {
   const maxTokens = Math.max(1, ...stats.daily.map((d) => d.tokens));
 
   const statCards: Array<{ label: string; value: string }> = [
-    { label: "会话", value: String(stats.sessions) },
-    { label: "消息", value: String(stats.messages) },
-    { label: "总 tokens", value: formatTokens(stats.totalTokens) },
-    { label: "活跃天数", value: String(stats.activeDays) },
-    { label: "当前连续", value: `${stats.currentStreak} 天` },
-    { label: "最长连续", value: `${stats.longestStreak} 天` },
-    { label: "最活跃时段", value: `${String(stats.peakHour).padStart(2, "0")}:00` },
-    { label: "常用模型", value: stats.favoriteModel || "—" },
+    { label: "会话", value: String(summary.sessions) },
+    { label: "消息", value: String(summary.messages) },
+    { label: "总 tokens", value: formatTokens(summary.totalTokens) },
+    { label: "活跃天数", value: String(summary.activeDays) },
+    { label: "当前连续", value: `${summary.currentStreak} 天` },
+    { label: "最长连续", value: `${summary.longestStreak} 天` },
+    { label: "最活跃时段", value: `${String(summary.peakHour).padStart(2, "0")}:00` },
+    { label: "常用模型", value: summary.favoriteModel || "—" },
   ];
 
   return (
@@ -197,7 +195,7 @@ export function UsageOverview(): React.JSX.Element | null {
       </div>
 
       <p className="usage-footnote">
-        累计 {formatTokens(stats.totalTokens)} tokens · 最常用「{stats.favoriteModel}」
+        累计 {formatTokens(summary.totalTokens)} tokens · 最常用「{summary.favoriteModel}」
       </p>
     </div>
   );

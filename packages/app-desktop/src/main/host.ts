@@ -200,7 +200,7 @@ export class SessionHost {
     }
     this.emit({
       type: "usage-stats",
-      stats: aggregateUsageStats(records, { sessions: sessions.length, messages }),
+      stats: aggregateUsageStats(records, { allMessages: messages }),
     });
   }
 

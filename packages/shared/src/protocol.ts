@@ -41,8 +41,8 @@ export interface DailyUsage {
   messages: number;
 }
 
-/** 用量总览:主进程聚合,供空态页 Overview 面板展示 */
-export interface UsageStats {
+/** 单档(All/30d/7d)用量汇总:卡片展示用 */
+export interface UsageSummary {
   sessions: number;
   messages: number;
   totalTokens: number;
@@ -53,7 +53,17 @@ export interface UsageStats {
   peakHour: number;
   /** 累计 token 最多的模型 */
   favoriteModel: string;
-  /** 每日用量(升序,仅活跃日) */
+}
+
+/**
+ * 用量总览:主进程聚合,供空态页 Overview 面板展示。
+ * 三档汇总卡片共用(切换天数只变卡片);daily 为全量每日数据,供热力图(恒定)。
+ */
+export interface UsageStats {
+  all: UsageSummary;
+  d30: UsageSummary;
+  d7: UsageSummary;
+  /** 每日用量(升序,仅活跃日;热力图恒定用) */
   daily: DailyUsage[];
 }
 
@@ -483,6 +493,17 @@ export const tokenUsageSchema = z.object({
   outputTokens: z.number(),
 });
 
+const usageSummarySchema = z.object({
+  sessions: z.number(),
+  messages: z.number(),
+  totalTokens: z.number(),
+  activeDays: z.number(),
+  currentStreak: z.number(),
+  longestStreak: z.number(),
+  peakHour: z.number(),
+  favoriteModel: z.string(),
+});
+
 export const contentBlockSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text"), text: z.string() }),
   z.object({
@@ -714,14 +735,9 @@ export const appEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("usage-stats"),
     stats: z.object({
-      sessions: z.number(),
-      messages: z.number(),
-      totalTokens: z.number(),
-      activeDays: z.number(),
-      currentStreak: z.number(),
-      longestStreak: z.number(),
-      peakHour: z.number(),
-      favoriteModel: z.string(),
+      all: usageSummarySchema,
+      d30: usageSummarySchema,
+      d7: usageSummarySchema,
       daily: z.array(
         z.object({
           date: z.string(),

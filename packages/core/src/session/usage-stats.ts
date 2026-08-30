@@ -1,9 +1,10 @@
 // =====================================================================
 // 用量聚合:从逐回合记录(usage.jsonl 行)计算 UsageStats。
 // 纯函数,便于单元测试;时间相关(日历日/小时)以本地时区为准。
+// All/30d/7d 三档汇总各算一份;daily 恒为全量(热力图定位)。
 // =====================================================================
 
-import type { DailyUsage, UsageStats } from "@entrotect/shared";
+import type { DailyUsage, UsageStats, UsageSummary } from "@entrotect/shared";
 
 /** 一条回合用量记录(usage.jsonl 行) */
 export interface UsageRecord {
@@ -43,7 +44,9 @@ function fillRange(sorted: Map<string, { tokens: number; messages: number }>): D
   while (cursor <= end) {
     const iso = localIso(cursor);
     const entry = sorted.get(iso);
-    out.push(entry ? { date: iso, tokens: entry.tokens, messages: entry.messages } : { date: iso, tokens: 0, messages: 0 });
+    out.push(
+      entry ? { date: iso, tokens: entry.tokens, messages: entry.messages } : { date: iso, tokens: 0, messages: 0 },
+    );
     cursor.setDate(cursor.getDate() + 1);
   }
   return out;
@@ -85,46 +88,38 @@ function isNextDay(prev: string, next: string): boolean {
   return localIso(d) === next;
 }
 
-/**
- * 聚合统计。records 应已含当天用量;messages/sessions 由调用方
- * 从会话存储层补充(本函数不知道消息形状)。
- */
-export function aggregateUsageStats(
-  records: UsageRecord[],
-  extra: { sessions: number; messages: number },
-): UsageStats {
+/** 对一份记录算汇总(无条件,调用方自行过滤范围);messagesOverride 覆盖消息数(全量档用会话遍历值) */
+function summarize(records: UsageRecord[], messagesOverride: number | null = null): UsageSummary {
   const totalTokens = records.reduce((sum, r) => sum + r.inputTokens + r.outputTokens, 0);
   if (records.length === 0) {
     return {
-      sessions: extra.sessions,
-      messages: extra.messages,
+      sessions: 0,
+      messages: 0,
       totalTokens: 0,
       activeDays: 0,
       currentStreak: 0,
       longestStreak: 0,
       peakHour: 0,
       favoriteModel: "",
-      daily: [],
     };
   }
 
   // 每日聚合 + 活跃日期集合
-  const byDate = new Map<string, { tokens: number; messages: number }>();
+  const byDate = new Map<string, { tokens: number }>();
   const hourTokens = new Array<number>(24).fill(0);
   const modelTokens = new Map<string, number>();
-  let activeDays = 0;
+  const sessions = new Set<string>();
   for (const r of records) {
     const date = localDateOf(r.ts);
-    const existing = byDate.get(date) ?? { tokens: 0, messages: 0 };
+    const existing = byDate.get(date) ?? { tokens: 0 };
     existing.tokens += r.inputTokens + r.outputTokens;
-    existing.messages += 1;
     byDate.set(date, existing);
     const tokens = r.inputTokens + r.outputTokens;
     const hour = localHourOf(r.ts);
     hourTokens[hour] = (hourTokens[hour] ?? 0) + tokens;
     modelTokens.set(r.model, (modelTokens.get(r.model) ?? 0) + tokens);
+    sessions.add(r.sessionId);
   }
-  activeDays = byDate.size;
 
   let peakHour = 0;
   let peakTokens = hourTokens[0] ?? 0;
@@ -148,14 +143,54 @@ export function aggregateUsageStats(
   const { current, longest } = streaks(new Set(byDate.keys()));
 
   return {
-    sessions: extra.sessions,
-    messages: extra.messages,
+    sessions: sessions.size,
+    messages: messagesOverride ?? records.length,
     totalTokens,
-    activeDays,
+    activeDays: byDate.size,
     currentStreak: current,
     longestStreak: longest,
     peakHour,
     favoriteModel,
-    daily: fillRange(byDate),
+  };
+}
+
+/**
+ * 聚合统计。按时间窗分三档:
+ * - all:全部记录
+ * - d30:最近 30 天(含今天)
+ * - d7 :最近 7 天(含今天)
+ * daily 恒为全量(升序,补零),热力图恒定。
+ */
+export function aggregateUsageStats(
+  records: UsageRecord[],
+  options: { allMessages: number | null } = { allMessages: null },
+): UsageStats {
+  const now = new Date();
+  const cutoffs = {
+    d7: new Date(now),
+    d30: new Date(now),
+  };
+  cutoffs.d7.setHours(0, 0, 0, 0);
+  cutoffs.d7.setDate(cutoffs.d7.getDate() - 6);
+  cutoffs.d30.setHours(0, 0, 0, 0);
+  cutoffs.d30.setDate(cutoffs.d30.getDate() - 29);
+
+  const within = (r: UsageRecord, cutoff: Date): boolean => new Date(r.ts) >= cutoff;
+
+  // 每日聚合(全量)
+  const daily = new Map<string, { tokens: number; messages: number }>();
+  for (const r of records) {
+    const date = localDateOf(r.ts);
+    const existing = daily.get(date) ?? { tokens: 0, messages: 0 };
+    existing.tokens += r.inputTokens + r.outputTokens;
+    existing.messages += 1;
+    daily.set(date, existing);
+  }
+
+  return {
+    all: summarize(records, options.allMessages),
+    d30: summarize(records.filter((r) => within(r, cutoffs.d30))),
+    d7: summarize(records.filter((r) => within(r, cutoffs.d7))),
+    daily: fillRange(daily),
   };
 }
