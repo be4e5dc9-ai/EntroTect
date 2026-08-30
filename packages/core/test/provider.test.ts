@@ -329,6 +329,27 @@ describe("toOpenAiMessages", () => {
     });
     expect(toOpenAiMessages(messages)[0]).not.toHaveProperty("reasoning_content");
   });
+
+  it("图片块转为 image_url 部件(content 数组)", () => {
+    const messages: Message[] = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "这是什么" },
+          { type: "image", mime: "image/png", dataBase64: "AAAA" },
+        ],
+      },
+    ];
+    expect(toOpenAiMessages(messages)).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "这是什么" },
+          { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+        ],
+      },
+    ]);
+  });
 });
 
 // =====================================================================

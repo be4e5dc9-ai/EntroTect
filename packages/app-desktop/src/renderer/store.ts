@@ -26,6 +26,13 @@ export interface UiBlock {
   text: string;
 }
 
+/** 用户内嵌图片附件(Base64):消息流中以缩略图呈现 */
+export interface UiImageBlock {
+  kind: "image";
+  mime: string;
+  dataBase64: string;
+}
+
 export interface UiToolBlock {
   kind: "tool-call";
   id: string;
@@ -46,7 +53,7 @@ export interface UiFileBlock {
   action: "written" | "edited";
 }
 
-export type UiAnyBlock = UiBlock | UiToolBlock | UiFileBlock;
+export type UiAnyBlock = UiBlock | UiToolBlock | UiFileBlock | UiImageBlock;
 
 /**
  * 右侧详情栏标签页:浏览器式多标签。
@@ -920,16 +927,22 @@ export function applyEvent(event: AppEvent): void {
         return;
       }
 
-      // 普通 user 文本消息
+      // 普通 user 文本/图片消息
       if (message.role === "user") {
-        if (textBlocks.length === 0) return;
+        const imageBlocks = message.content.filter(
+          (b): b is Extract<typeof b, { type: "image" }> => b.type === "image",
+        );
+        if (textBlocks.length === 0 && imageBlocks.length === 0) return;
         useStore.setState((state) => ({
           messages: [
             ...state.messages,
             {
               key: nextKey++,
               role: "user",
-              blocks: textBlocks.map((b) => ({ kind: "text" as const, text: b.text })),
+              blocks: [
+                ...textBlocks.map((b) => ({ kind: "text" as const, text: b.text })),
+                ...imageBlocks.map((b) => ({ kind: "image" as const, mime: b.mime, dataBase64: b.dataBase64 })),
+              ],
               streaming: false,
               reasoning: "",
             },

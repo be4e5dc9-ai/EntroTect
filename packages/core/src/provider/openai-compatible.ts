@@ -112,12 +112,26 @@ export function toOpenAiMessages(
       continue;
     }
 
-    // user:文本块拼成一条;tool-result 块各自成为 role:"tool" 消息
+    // user:文本块拼成一条;图片块转为 image_url 部件;tool-result 块各自成为 role:"tool" 消息
     const text = message.content
       .filter((b): b is TextBlock => b.type === "text")
       .map((b) => b.text)
       .join("\n");
-    if (text) out.push({ role: "user", content: text });
+    const images = message.content.filter((b) => b.type === "image");
+    if (images.length > 0) {
+      // vision:content 变数组,文本可缺省
+      const parts: Record<string, unknown>[] = [];
+      if (text) parts.push({ type: "text", text });
+      for (const img of images) {
+        parts.push({
+          type: "image_url",
+          image_url: { url: `data:${img.mime};base64,${img.dataBase64}` },
+        });
+      }
+      out.push({ role: "user", content: parts });
+    } else if (text) {
+      out.push({ role: "user", content: text });
+    }
     for (const block of message.content) {
       if (block.type !== "tool-result") continue;
       out.push({

@@ -75,6 +75,7 @@ export function Message({ message }: { message: UiMessage }): React.JSX.Element 
   const showReasoning = useStore((s) => s.config?.showReasoning ?? false);
 
   if (message.role === "user") {
+    const images = message.blocks.filter((b) => b.kind === "image");
     const text = message.blocks
       .filter((b) => b.kind === "text")
       .map((b) => (b.kind === "text" ? b.text : ""))
@@ -82,7 +83,19 @@ export function Message({ message }: { message: UiMessage }): React.JSX.Element 
     return (
       <div className="msg msg-user">
         <div className="msg-user-label">You</div>
-        <div className="msg-user-text">{text}</div>
+        {images.length > 0 && (
+          <div className="msg-user-images">
+            {images.map((img, i) => (
+              <img
+                key={i}
+                className="msg-user-image"
+                src={`data:${img.mime};base64,${img.dataBase64}`}
+                alt="附件图片"
+              />
+            ))}
+          </div>
+        )}
+        {text && <div className="msg-user-text">{text}</div>}
       </div>
     );
   }
@@ -102,6 +115,14 @@ export function Message({ message }: { message: UiMessage }): React.JSX.Element 
             </div>
           ) : block.kind === "file" ? (
             <FileCard key={`f${index}`} block={block} />
+          ) : block.kind === "image" ? (
+            <div className="msg-assistant-images" key={`img${index}`}>
+              <img
+                className="msg-user-image"
+                src={`data:${block.mime};base64,${block.dataBase64}`}
+                alt="图片"
+              />
+            </div>
           ) : (
             <ToolCard
               key={block.id}

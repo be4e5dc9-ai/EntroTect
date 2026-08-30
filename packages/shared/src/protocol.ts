@@ -15,7 +15,9 @@ export type ContentBlock =
       name: string;
       isError: boolean;
       content: string;
-    };
+    }
+  /** 内嵌图片(Base64):用户附件/截图等,vision 模型可读 */
+  | { type: "image"; mime: string; dataBase64: string };
 
 export type Role = "system" | "user" | "assistant";
 
@@ -358,8 +360,13 @@ export const DEFAULT_CONFIG: AppConfig = {
 
 export type ApprovalDecision = "allow-once" | "allow-always" | "deny";
 
+/** 拖入对话栏的附件:图片走 Base64 内嵌,其他文件带路径(由核心工具读取) */
+export type MessageAttachment =
+  | { kind: "image"; mime: string; dataBase64: string; name: string }
+  | { kind: "file"; path: string; name: string };
+
 export type Op =
-  | { kind: "SendMessage"; text: string }
+  | { kind: "SendMessage"; text: string; attachments?: MessageAttachment[] }
   | { kind: "Interrupt" }
   | { kind: "NewSession" }
   | { kind: "NewProject"; cwd: string }
@@ -519,6 +526,11 @@ export const contentBlockSchema = z.discriminatedUnion("type", [
     isError: z.boolean(),
     content: z.string(),
   }),
+  z.object({
+    type: z.literal("image"),
+    mime: z.string(),
+    dataBase64: z.string(),
+  }),
 ]);
 
 export const messageSchema = z.object({
@@ -589,7 +601,27 @@ export const appConfigSchema = z.object({
 });
 
 export const opSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("SendMessage"), text: z.string() }),
+  z.object({
+    kind: z.literal("SendMessage"),
+    text: z.string(),
+    attachments: z
+      .array(
+        z.discriminatedUnion("kind", [
+          z.object({
+            kind: z.literal("image"),
+            mime: z.string(),
+            dataBase64: z.string(),
+            name: z.string(),
+          }),
+          z.object({
+            kind: z.literal("file"),
+            path: z.string(),
+            name: z.string(),
+          }),
+        ]),
+      )
+      .optional(),
+  }),
   z.object({ kind: z.literal("Interrupt") }),
   z.object({ kind: z.literal("NewSession") }),
   z.object({ kind: z.literal("NewProject"), cwd: z.string().min(1) }),

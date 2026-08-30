@@ -5,7 +5,7 @@
 // =====================================================================
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AppConfig, ReasoningEffort } from "@entrotect/shared";
+import type { AppConfig, MessageAttachment, ReasoningEffort } from "@entrotect/shared";
 import {
   DEFAULT_REASONING_EFFORT,
   EFFORT_LABELS,
@@ -56,6 +56,10 @@ export function Composer(): React.JSX.Element {
   const [slashCursor, setSlashCursor] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState(false);
   const [clampedHint, setClampedHint] = useState<string | null>(null);
+  /** 拖入的附件(图片 Base64 / 文件路径) */
+  const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
 
   // 自动拉取 skills(首次挂载)
   useEffect(() => {
@@ -125,17 +129,18 @@ export function Composer(): React.JSX.Element {
 
   const send = () => {
     const value = text.trim();
-    if (!value || busy) return;
+    if ((!value && attachments.length === 0) || busy) return;
     // 内置指令:/compact 手动压缩当前会话上下文
-    if (value === "/compact") {
+    if (value === "/compact" && attachments.length === 0) {
       bridge().send({ kind: "Compact" });
       setText("");
       setSlashDismissed(false);
       if (ref.current) ref.current.style.height = "auto";
       return;
     }
-    bridge().send({ kind: "SendMessage", text: value });
+    bridge().send({ kind: "SendMessage", text: value, attachments });
     setText("");
+    setAttachments([]);
     setSlashDismissed(false);
     if (ref.current) ref.current.style.height = "auto";
   };
@@ -145,6 +150,38 @@ export function Composer(): React.JSX.Element {
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  };
+
+  /** 拖入文件 → MessageAttachment(图片转 Base64;其他取绝对路径) */
+  const addFilesFromDrag = (files: File[]) => {
+    for (const file of files) {
+      const name = file.name;
+      if (/^image\//.test(file.type) && file.size <= 8 * 1024 * 1024) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const data = String(reader.result ?? "");
+          const base64 = data.includes(",") ? data.slice(data.indexOf(",") + 1) : data;
+          setAttachments((prev) => [
+            ...prev,
+            { kind: "image", mime: file.type, dataBase64: base64, name },
+          ]);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        let filePath = "";
+        try {
+          filePath = bridge().pathOfDragFile(file);
+        } catch {
+          filePath = "";
+        }
+        if (!filePath) continue;
+        setAttachments((prev) => [...prev, { kind: "file", path: filePath, name }]);
+      }
+    }
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
   const updateConfig = (patch: Partial<AppConfig>) => {
@@ -213,7 +250,70 @@ export function Composer(): React.JSX.Element {
   }, [clampedHint]);
 
   return (
-    <div className="composer" ref={composerRef}>
+    <div
+      className={`composer${dragging ? " is-dragging" : ""}`}
+      ref={composerRef}
+      onDragEnter={(e) => {
+        e.preventDefault();
+        dragDepth.current += 1;
+        setDragging(true);
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+      }}
+      onDragLeave={(e) => {
+        e.preventDefault();
+        dragDepth.current -= 1;
+        if (dragDepth.current <= 0) {
+          dragDepth.current = 0;
+          setDragging(false);
+        }
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        dragDepth.current = 0;
+        setDragging(false);
+        const files = Array.from(e.dataTransfer?.files ?? []);
+        if (files.length > 0) addFilesFromDrag(files);
+      }}
+    >
+      {dragging && <div className="composer-drop-mask">拖到这里添加附件</div>}
+      {attachments.length > 0 && (
+        <div className="composer-attachments">
+          {attachments.map((attachment, index) =>
+            attachment.kind === "image" ? (
+              <div className="attachment-chip attachment-image" key={index}>
+                <img
+                  src={`data:${attachment.mime};base64,${attachment.dataBase64}`}
+                  alt={attachment.name}
+                />
+                <button
+                  type="button"
+                  className="attachment-remove"
+                  aria-label="移除附件"
+                  onClick={() => removeAttachment(index)}
+                >
+                  ×
+                </button>
+              </div>
+            ) : (
+              <div className="attachment-chip attachment-file" key={index}>
+                <span className="attachment-name" title={attachment.path}>
+                  {attachment.name}
+                </span>
+                <button
+                  type="button"
+                  className="attachment-remove"
+                  aria-label="移除附件"
+                  onClick={() => removeAttachment(index)}
+                >
+                  ×
+                </button>
+              </div>
+            ),
+          )}
+        </div>
+      )}
       <div className="composer-box" style={{ position: "relative" }}>
         {showSlash && (
           <div className="slash-panel" role="listbox" aria-label="技能指令">
@@ -324,7 +424,7 @@ export function Composer(): React.JSX.Element {
           <button
             className="btn btn-primary composer-send"
             onClick={send}
-            disabled={!text.trim()}
+            disabled={!text.trim() && attachments.length === 0}
             aria-label="发送"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">

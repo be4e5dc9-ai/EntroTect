@@ -15,6 +15,7 @@ import type {
   AppEvent,
   ApprovalRequest,
   Message,
+  MessageAttachment,
   Op,
   ProviderConfig,
   SessionMeta,
@@ -221,7 +222,7 @@ export class SessionHost {
   async handleOp(op: Op): Promise<void> {
     switch (op.kind) {
       case "SendMessage":
-        await this.handleSendMessage(op.text);
+        await this.handleSendMessage(op.text, op.attachments);
         break;
       case "Interrupt":
         this.handleInterrupt();
@@ -443,7 +444,10 @@ export class SessionHost {
     return this.active;
   }
 
-  private async handleSendMessage(text: string): Promise<void> {
+  private async handleSendMessage(
+    text: string,
+    attachments?: MessageAttachment[],
+  ): Promise<void> {
     // 插件 chat.message 钩子:发送前改写文本;改写成空则不发送
     text = applyChatMessage(this.plugins, text);
     if (text.length === 0) return;
@@ -455,10 +459,10 @@ export class SessionHost {
       this.emit({ type: "error", message: "上一轮任务仍在运行中" });
       return;
     }
-    if (text.trim().length === 0) return;
+    if (text.trim().length === 0 && !attachments?.length) return;
 
     const accepted = this.acceptRun(run);
-    await this.executeSendMessage(text, run, accepted);
+    await this.executeSendMessage(text, run, accepted, attachments ?? []);
   }
 
   /** 在第一次 await 前固定本次 run 的配置、provider 和取消器。 */
@@ -494,6 +498,7 @@ export class SessionHost {
     text: string,
     run: ActiveRun,
     accepted: AcceptedRun,
+    attachments: MessageAttachment[] = [],
   ): Promise<void> {
     const { config, context, provider, gate, abort, runId } = accepted;
 
@@ -511,9 +516,22 @@ export class SessionHost {
     // parent/child 共用 getter,SetConfig 后每次工具调用读取最新配置。
     const getSandboxMode = () => this.config.sandboxMode ?? "full";
     try {
+      // 组装用户消息:文本 + 图片内嵌(image block) + 文件提示文本(agent 用 read 工具查看)
+      const content: Message["content"] = [];
+      if (text.length > 0) content.push({ type: "text", text });
+      for (const attachment of attachments) {
+        if (attachment.kind === "image") {
+          content.push({ type: "image", mime: attachment.mime, dataBase64: attachment.dataBase64 });
+        } else {
+          content.push({
+            type: "text",
+            text: `[用户拖入文件附件: ${attachment.name}]\n路径: ${attachment.path}\n如果需要,请先用 read 工具查看其内容后继续。`,
+          });
+        }
+      }
       const userMessage: Message = {
         role: "user",
-        content: [{ type: "text", text }],
+        content,
       };
       await this.store.appendMessage(run.meta.id, userMessage);
       this.emit({ type: "message-appended", message: userMessage });

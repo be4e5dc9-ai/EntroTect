@@ -23,6 +23,7 @@ interface AnthropicContentBlock {
   input?: Record<string, unknown>;
   tool_use_id?: string;
   content?: string;
+  source?: { type: "base64"; media_type?: string; data?: string };
 }
 
 interface AnthropicMessage {
@@ -33,8 +34,7 @@ interface AnthropicMessage {
 function toAnthropicMessages(messages: Message[]): {
   system: string;
   messages: AnthropicMessage[];
-} {
-  let system = "";
+} {  let system = "";
   const out: AnthropicMessage[] = [];
 
   for (const msg of messages) {
@@ -69,7 +69,7 @@ function toAnthropicMessages(messages: Message[]): {
       continue;
     }
 
-    // user: 文本块 + tool_result 块合并到同一条 user 消息
+    // user: 文本块 + 图片块 + tool_result 块合并到同一条 user 消息
     const parts: AnthropicContentBlock[] = [];
     const text = msg.content
       .filter((b): b is TextBlock => b.type === "text")
@@ -77,7 +77,12 @@ function toAnthropicMessages(messages: Message[]): {
       .join("\n");
     if (text) parts.push({ type: "text", text });
     for (const b of msg.content) {
-      if (b.type === "tool-result") {
+      if (b.type === "image") {
+        parts.push({
+          type: "image",
+          source: { type: "base64", media_type: b.mime, data: b.dataBase64 },
+        });
+      } else if (b.type === "tool-result") {
         parts.push({
           type: "tool_result",
           tool_use_id: b.toolCallId,

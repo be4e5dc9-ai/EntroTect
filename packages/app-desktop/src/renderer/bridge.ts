@@ -11,6 +11,7 @@ export interface EntroTectBridge {
   setTheme: (theme: "dark" | "light") => void;
   setAccentColor: (color: string) => void;
   listSkills: () => Promise<SkillInfo[]>;
+  pathOfDragFile: (file: File) => string;
 }
 
 declare global {
