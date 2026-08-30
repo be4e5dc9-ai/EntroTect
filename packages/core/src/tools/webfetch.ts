@@ -1,6 +1,7 @@
 // =====================================================================
 // webfetch:抓取网页内容并转为可读文本
 // 设计:对标 Claude Code WebFetch — 15s 超时、200KB 上限、HTML 清洗
+// Stack Exchange 问题页被 Cloudflare 反爬拦截,改走官方 API(JSON)读正文+回答。
 // =====================================================================
 
 import { z } from "zod";
@@ -65,23 +66,102 @@ function stripHtml(html: string): string {
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
     .replace(/<!--[\s\S]*?-->/g, " ");
-  // 提取正文常用标签内容，剩余标签剥离
-  text = text.replace(/<[^>]+>/g, " ");
-  // 解码常见实体
+  // 块级边界 → 换行,避免正文/代码挤成一行(SE 回答含 <p>/<pre>/<li>)
   text = text
+    .replace(/<\/(p|div|li|ul|ol|pre|h[1-6]|blockquote|tr)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n");
+  // 剩余标签剥离
+  text = text.replace(/<[^>]+>/g, " ");
+  // 解码常见 + 数字实体
+  text = text
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => {
+      const cp = parseInt(h, 16);
+      return cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : "";
+    })
+    .replace(/&#(\d+);/g, (_, d) => {
+      const cp = parseInt(d, 10);
+      return cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : "";
+    })
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#x27;/g, "'")
-    .replace(/&apos;/g, "'");
-  // 合并空白
-  text = text.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").replace(/ *\n */g, "\n").trim();
-  // 过长空白清理
-  text = text.replace(/\n{2,}/g, "\n\n");
+    .replace(/&apos;/g, "'")
+    .replace(/&ensp;/g, " ")
+    .replace(/&emsp;/g, " ");
+  // 合并空白,保留换行结构
+  text = text.replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n").trim();
   return text;
+}
+
+/* ---------------- Stack Exchange 问题页(走官方 API) ---------------- */
+const STACK_EXCHANGE_SITES: Record<string, string> = {
+  "stackoverflow.com": "stackoverflow",
+  "superuser.com": "superuser",
+  "serverfault.com": "serverfault",
+  "askubuntu.com": "askubuntu",
+  "mathoverflow.net": "mathoverflow",
+};
+
+/** 识别 Stack Exchange 问题 URL,返回 API 的 `site` 与问题 id;非问题页返回 null */
+export function matchStackExchangeQuestion(url: URL): { site: string; id: string } | null {
+  const host = url.hostname.toLowerCase().replace(/^www\./, "");
+  let site = STACK_EXCHANGE_SITES[host];
+  if (!site && host.endsWith(".stackexchange.com")) {
+    site = host.slice(0, -".stackexchange.com".length);
+  }
+  if (!site) return null;
+  const m = url.pathname.match(/^\/questions\/(\d+)/);
+  if (!m) return null;
+  return { site, id: m[1]! };
+}
+
+/** 通过 Stack Exchange API 读取问题正文 + 高赞回答(JSON,规避 Cloudflare 反爬) */
+export async function fetchStackExchangeQuestion(
+  site: string,
+  id: string,
+  maxChars: number,
+): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const base = "https://api.stackexchange.com/2.3";
+    const headers = { "User-Agent": "EntroTect/1.0 (+https://github.com/be4e5dc9-ai/EntroTect)" };
+    const [qRes, aRes] = await Promise.all([
+      fetch(`${base}/questions/${id}?site=${site}&filter=withbody`, { headers, signal: controller.signal }),
+      fetch(`${base}/questions/${id}/answers?site=${site}&order=desc&sort=votes&filter=withbody&pagesize=5`, { headers, signal: controller.signal }),
+    ]);
+    if (!qRes.ok) throw new Error(`HTTP ${qRes.status}`);
+    const qJson = (await qRes.json()) as { items?: Array<{ title?: string; body?: string }> };
+    const question = qJson.items?.[0];
+    if (!question) throw new Error("问题不存在或已删除");
+
+    let answers: Array<{ body?: string; score?: number; is_accepted?: boolean }> = [];
+    if (aRes.ok) {
+      try {
+        answers = ((await aRes.json()) as { items?: typeof answers }).items ?? [];
+      } catch {
+        answers = [];
+      }
+    }
+
+    const parts: string[] = [];
+    parts.push(`标题: ${stripHtml(question.title ?? "")}`);
+    parts.push(`\n问题正文:\n${stripHtml(question.body ?? "")}`);
+    if (answers.length > 0) {
+      parts.push(`\n回答(按投票排序,共 ${answers.length} 条):`);
+      answers.forEach((ans, i) => {
+        const tag = ans.is_accepted ? "✓ 已采纳" : `投票 ${ans.score ?? 0}`;
+        parts.push(`\n[${i + 1}] ${tag}\n${stripHtml(ans.body ?? "")}`);
+      });
+    }
+    let text = parts.join("\n");
+    if (text.length > maxChars) text = `${text.slice(0, maxChars)}\n…(已截断,原文更长)`;
+    return text;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export const webfetchTool: Tool = {
@@ -100,6 +180,13 @@ export const webfetchTool: Tool = {
       // SSRF 防护:首跳 + 每一跳重定向都必须通过私网/元数据校验。
       // redirect: "manual" 由我们手写跳转循环,逐跳 assertSafeUrl。
       let currentUrl = await assertSafeUrl(new URL(args.url));
+
+      // Stack Exchange 问题页被 Cloudflare 反爬拦截,直接改走官方 API(JSON)
+      let se = matchStackExchangeQuestion(currentUrl);
+      if (se) {
+        return `URL: ${args.url}\n\n${await fetchStackExchangeQuestion(se.site, se.id, maxChars)}`;
+      }
+
       let res: Response;
       for (let hop = 0; ; hop++) {
         res = await fetch(currentUrl.toString(), {
@@ -115,6 +202,11 @@ export const webfetchTool: Tool = {
         if (!location) break;
         if (hop >= MAX_REDIRECTS) throw new Error("重定向次数过多,已拦截");
         currentUrl = await assertSafeUrl(new URL(location, currentUrl));
+        // 短链/旧链接可能重定向到问题页,再识别一次
+        se = matchStackExchangeQuestion(currentUrl);
+        if (se) {
+          return `URL: ${args.url}\n\n${await fetchStackExchangeQuestion(se.site, se.id, maxChars)}`;
+        }
       }
       if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
       const contentType = res.headers.get("content-type") ?? "";

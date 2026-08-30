@@ -1,7 +1,8 @@
 // =====================================================================
-// websearch: 多引擎 HTML 搜索，无需 API Key
-// 主引擎: Bing(国内可直连,不依赖代理); 回退: DuckDuckGo
-// 返回标题/链接/摘要,单引擎 12s 超时。
+// websearch: 三引擎搜索，无需 API Key
+// StackOverflow(Stack Exchange API,技术/自然语言查询相关度最高,JSON)
+// + DuckDuckGo(技术相关度高;国内可能被墙/限流,短超时)
+// + Bing(国内可直连,稳定兜底,完整超时)。并行抓取、按规范化 URL 去重、相关度优先。
 // =====================================================================
 
 import { z } from "zod";
@@ -21,9 +22,11 @@ interface SearchResult {
 }
 
 function decodeEntities(s: string): string {
+  const fromCodePointSafe = (cp: number): string =>
+    cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : "";
   return s
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
-    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => fromCodePointSafe(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => fromCodePointSafe(parseInt(d, 10)))
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
@@ -119,9 +122,65 @@ function parseDdg(html: string, count: number): SearchResult[] {
   return results;
 }
 
-async function fetchHtml(url: string): Promise<string> {
+/** 规范化 URL 用于去重:剥 www、去 query/hash/末尾斜杠、host 小写 */
+function normalizeUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    u.hash = "";
+    u.search = "";
+    u.hostname = u.hostname.toLowerCase().replace(/^www\./, "");
+    u.pathname = u.pathname.replace(/\/+$/, "");
+    return u.toString();
+  } catch {
+    return url.toLowerCase();
+  }
+}
+
+/* ---------------- StackOverflow(Stack Exchange API) ----------------
+ * JSON 接口,无需 key(300 次/天/IP)。sort=relevance 对技术/自然语言查询
+ * 相关度远高于通用搜索引擎,是编码 Agent 的首选来源。
+ */
+interface StackExchangeItem {
+  title?: string;
+  link?: string;
+  tags?: string[];
+  answer_count?: number;
+}
+
+async function searchStackExchange(query: string, count: number): Promise<SearchResult[]> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12000);
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const url =
+      `https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=relevance` +
+      `&q=${encodeURIComponent(query)}&site=stackoverflow&pagesize=${count}`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": "EntroTect/1.0 (+https://github.com/be4e5dc9-ai/EntroTect)" },
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    let json: { items?: StackExchangeItem[] };
+    try {
+      json = (await res.json()) as { items?: StackExchangeItem[] };
+    } catch {
+      return []; // 非 JSON 响应(限流/错误页),视为无结果
+    }
+    const results: SearchResult[] = [];
+    for (const item of json.items ?? []) {
+      if (!item.title || !item.link) continue;
+      const tags = item.tags?.length ? item.tags.map((t) => `[${t}]`).join(" ") : "";
+      const meta = item.answer_count != null ? `${item.answer_count} 个回答` : "";
+      results.push({ title: item.title, url: item.link, snippet: [tags, meta].filter(Boolean).join(" · ") });
+    }
+    return results;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchHtml(url: string, timeoutMs: number): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
       headers: {
@@ -143,47 +202,62 @@ async function fetchHtml(url: string): Promise<string> {
 export const websearchTool: Tool = {
   name: "websearch",
   description:
-    "网络搜索（Bing 优先、DuckDuckGo 备用，无需 API Key）。输入关键词，返回标题、URL 与摘要，用于查文档/库用法/issue 前先搜索再抓取。",
+    "网络搜索（Stack Overflow + DuckDuckGo + Bing 多引擎合并去重，无需 API Key）。输入关键词，返回标题、URL 与摘要，用于查文档/库用法/issue 前先搜索再抓取。",
   inputSchema,
   isReadOnly: true,
   preview: (args) => (args as Input).query,
   async call(rawArgs: unknown, _ctx: ToolContext): Promise<string> {
     const args = inputSchema.parse(rawArgs);
     const count = args.count ?? 5;
-    const errors: string[] = [];
+    const query = encodeURIComponent(args.query);
 
-    // 引擎顺序: Bing(国内直连) → DuckDuckGo
-    const engines: Array<{ name: string; url: string; parse: (html: string, n: number) => SearchResult[] }> = [
-      {
-        name: "Bing",
-        url: `https://www.bing.com/search?q=${encodeURIComponent(args.query)}`,
-        parse: parseBing,
-      },
+    // 三引擎并行抓取。StackOverflow 技术相关度最高;DDG 次之(国内可能被墙/限流,短超时);
+    // Bing 稳定兜底,完整超时。任一引擎失败/无结果都不致命,合并时按相关度优先。
+    const engines: Array<{ name: string; run: () => Promise<SearchResult[]> }> = [
+      { name: "StackOverflow", run: () => searchStackExchange(args.query, count) },
       {
         name: "DuckDuckGo",
-        url: `https://html.duckduckgo.com/html/?q=${encodeURIComponent(args.query)}`,
-        parse: parseDdg,
+        run: () => fetchHtml(`https://html.duckduckgo.com/html/?q=${query}`, 4000).then((h) => parseDdg(h, count)),
+      },
+      {
+        name: "Bing",
+        run: () => fetchHtml(`https://www.bing.com/search?q=${query}`, 12000).then((h) => parseBing(h, count)),
       },
     ];
 
-    for (const engine of engines) {
-      try {
-        const html = await fetchHtml(engine.url);
-        const results = engine.parse(html, count);
-        if (results.length === 0) {
-          errors.push(`${engine.name}: 解析失败`);
-          continue;
+    const settled = await Promise.allSettled(engines.map((engine) => engine.run()));
+
+    // 合并:按引擎顺序(StackOverflow → DDG → Bing)优先,按规范化 URL 去重。
+    const merged: SearchResult[] = [];
+    const seen = new Set<string>();
+    const errors: string[] = [];
+    settled.forEach((result, i) => {
+      const name = engines[i]!.name;
+      if (result.status === "fulfilled") {
+        if (result.value.length === 0) {
+          errors.push(`${name}: 解析失败`);
+          return;
         }
-        const lines = results.slice(0, count).map(
-          (r, i) => `${i + 1}. ${r.title}\n   ${r.url}${r.snippet ? `\n   ${r.snippet}` : ""}`,
-        );
-        return `搜索: "${args.query}"（${engine.name}，${results.length} 条）\n\n${lines.join("\n\n")}\n\n提示：用 webfetch 抓取上述 URL 进一步阅读。`;
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        errors.push(`${engine.name}: ${msg.includes("abort") ? "超时" : msg}`);
+        for (const r of result.value) {
+          const key = normalizeUrl(r.url);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          merged.push(r);
+        }
+      } else {
+        const msg = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        errors.push(`${name}: ${msg.includes("abort") ? "超时" : msg}`);
       }
+    });
+
+    if (merged.length === 0) {
+      return `搜索失败(各引擎均未返回): ${errors.join("; ")}。请换关键词,或直接用 webfetch 访问已知 URL。`;
     }
 
-    return `搜索失败(各引擎均未返回): ${errors.join("; ")}。请换关键词,或直接用 webfetch 访问已知 URL。`;
+    const shown = merged.slice(0, count);
+    const lines = shown.map(
+      (r, i) => `${i + 1}. ${r.title}\n   ${r.url}${r.snippet ? `\n   ${r.snippet}` : ""}`,
+    );
+    return `搜索: "${args.query}"（${shown.length} 条，多引擎合并去重）\n\n${lines.join("\n\n")}\n\n提示：用 webfetch 抓取上述 URL 进一步阅读。`;
   },
 };
