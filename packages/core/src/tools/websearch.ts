@@ -22,17 +22,16 @@ interface SearchResult {
 
 function decodeEntities(s: string): string {
   return s
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)))
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#x27;/g, "'")
     .replace(/&apos;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&#8250;/g, "›")
-    .replace(/&#x203a;/g, "›")
-    .replace(/&#8250;/g, "›");
+    .replace(/&ensp;/g, " ")
+    .replace(/&emsp;/g, " ")
+    .replace(/&nbsp;/g, " ");
 }
 
 function stripTags(s: string): string {
@@ -40,9 +39,10 @@ function stripTags(s: string): string {
 }
 
 /* ---------------- Bing ----------------
- * 结构: <li class="b_algo">...<h2><a href="bing ck/a redirect">title</a>
- *       ...<cite>domain › path</cite> ... <p>snippet</p>
- * cite 的 "›" 分隔还原为真实 URL(direct link 是 ck/a 重定向,不可直接使用)。
+ * 新版结构: <li class="b_algo">...<h2><a href="直链">title</a></h2>
+ *       ...<cite>截断展示 URL</cite> ... <p>snippet</p>
+ * h2 锚点 href 已是直链(不再走 ck/a 跳转),优先采用;
+ * cite 现为截断展示串(含 "…"),仅在 href 是 Bing 跳转/缺失时回退还原。
  */
 function parseBing(html: string, count: number): SearchResult[] {
   const results: SearchResult[] = [];
@@ -50,14 +50,20 @@ function parseBing(html: string, count: number): SearchResult[] {
   let m: RegExpExecArray | null;
   while ((m = blockRe.exec(html)) !== null && results.length < count) {
     const block = m[1] ?? "";
-    const titleLink = block.match(/<h2[^>]*>[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/);
+    const titleAnchor = block.match(
+      /<h2[^>]*>[\s\S]*?<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/,
+    );
+    if (!titleAnchor) continue;
+    const title = stripTags(titleAnchor[2] ?? "");
+    if (!title) continue;
+    const href = decodeEntities(titleAnchor[1] ?? "");
     const cite = block.match(/<cite[^>]*>([\s\S]*?)<\/cite>/);
     const snippet = block.match(/<p[^>]*>([\s\S]*?)<\/p>/);
-    if (!titleLink) continue;
-    const title = stripTags(titleLink[1] ?? "");
-    if (!title) continue;
+
     let url = "";
-    if (cite) {
+    if (/^https?:\/\//i.test(href) && !href.includes("bing.com")) {
+      url = href;
+    } else if (cite) {
       // "https://example.com › blog › post" → "https://example.com/blog/post"
       const decoded = stripTags(cite[1] ?? "");
       const schemeMatch = decoded.match(/^(https?:\/\/)/i);
@@ -68,9 +74,6 @@ function parseBing(html: string, count: number): SearchResult[] {
           .replace(/\/+/g, "/");
         url = `${schemeMatch[0]}${rest}`;
       }
-    } else {
-      const direct = block.match(/<a[^>]*href="(https?:\/\/[^"]+)"/);
-      if (direct && !direct[1]!.includes("bing.com")) url = decodeEntities(direct[1]!);
     }
     if (!url || !/^https?:\/\//i.test(url)) continue;
     results.push({ title, url, snippet: snippet ? stripTags(snippet[1] ?? "") : "" });
