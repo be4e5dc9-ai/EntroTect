@@ -16,9 +16,9 @@ export interface UsageRecord {
   model: string;
 }
 
-/** 本地日期 YYYY-MM-DD */
+/** 本地日期 YYYY-MM-DD(用 localIso,避免 UTC 切片在东八区跨天错位) */
 function localDateOf(ts: string): string {
-  return ts.slice(0, 10);
+  return localIso(new Date(ts));
 }
 
 /** Date → 本地日期 YYYY-MM-DD(不用 toISOString,避免 UTC 偏移跨天) */

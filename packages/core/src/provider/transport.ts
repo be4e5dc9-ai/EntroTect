@@ -4,7 +4,7 @@
 // 失败才做有限退避重试。这样 UI 能看到真正的上游错误，而不会重复执行请求。
 // =====================================================================
 
-import { ProviderError, providerErrorFromResponse } from "./errors.js";
+import { ProviderError, providerErrorFromResponse, redactSecrets } from "./errors.js";
 
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -48,10 +48,13 @@ export async function requestWithNetworkRetry(
       if (signal?.aborted) throw error;
       if (attempt >= RETRY_MAX) {
         const message = error instanceof Error ? error.message : String(error);
+        // 网络错误分支同样脱敏:错误信息/url/body 不得回显密钥(P3-2)
+        const safeUrl = redactSecrets(url, secrets);
+        const safeMessage = redactSecrets(message, secrets);
         throw new ProviderError(
-          `请求${label}失败(网络错误,已重试 ${RETRY_MAX} 次): ${message}`,
+          `请求${label}失败(网络错误,已重试 ${RETRY_MAX} 次): ${safeMessage}`,
           null,
-          { url, body: message },
+          { url: safeUrl, body: safeMessage },
         );
       }
       await waitWithAbort(RETRY_DELAY_BASE_MS * 2 ** attempt, signal);

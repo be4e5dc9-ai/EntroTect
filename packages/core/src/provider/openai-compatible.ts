@@ -105,6 +105,9 @@ export function toOpenAiMessages(
         });
       } else if (text) {
         out.push({ role: "assistant", content: text, ...preserved });
+      } else if (options.preserveReasoning && message.reasoningContent) {
+        // 纯思考回合:仅 reasoning_content、无文本/工具调用,保留之(P3-4c)
+        out.push({ role: "assistant", content: null, ...preserved });
       }
       continue;
     }

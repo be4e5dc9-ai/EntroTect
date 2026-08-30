@@ -44,6 +44,8 @@ export interface SubagentRunnerDeps {
   approve: (request: ApprovalRequest) => Promise<ApprovalOutcome>;
   cwd: string;
   artifactDir: string;
+  /** 受保护路径(应用自身数据目录):透传给子代理的文件工具收容 */
+  protectedPaths?: readonly string[];
   /** 沿父级传入的沙箱模式或动态 getter */
   sandboxMode?: SandboxMode | (() => SandboxMode);
   maxTokens?: number;
@@ -140,6 +142,7 @@ export function createSubagentRunner(deps: SubagentRunnerDeps): SubagentRunner {
       approve: deps.approve,
       cwd: deps.cwd,
       artifactDir: deps.artifactDir,
+      protectedPaths: deps.protectedPaths,
       sandboxMode: deps.sandboxMode,
     });
     log?.("子代理完成");

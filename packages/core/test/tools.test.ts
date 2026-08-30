@@ -9,6 +9,7 @@ import { editTool } from "../src/tools/edit.js";
 import { globTool } from "../src/tools/glob.js";
 import { grepTool } from "../src/tools/grep.js";
 import { bashTool } from "../src/tools/bash.js";
+import { diagnosticsTool } from "../src/tools/diagnostics.js";
 import { truncateOutput, MAX_TOOL_OUTPUT_BYTES } from "../src/tools/output.js";
 import { zodToJsonSchema } from "../src/tools/zod-json.js";
 import { z } from "zod";
@@ -32,6 +33,11 @@ describe("read 工具", () => {
   it("文件不存在报错", async () => {
     const { ctx } = await makeCtx();
     await expect(readTool.call({ file_path: "nope.txt" }, ctx)).rejects.toThrow("文件不存在");
+  });
+
+  it("越界路径 ../ 被拦截(P0-1)", async () => {
+    const { ctx } = await makeCtx();
+    await expect(readTool.call({ file_path: "../escape.txt" }, ctx)).rejects.toThrow("已拦截");
   });
 
   it("超大文件引导窗口读", async () => {
@@ -166,6 +172,23 @@ describe("bash 工具", () => {
     const { ctx } = await makeCtx();
     const out = await bashTool.call({ command: "exit 3" }, ctx);
     expect(out).toContain("Exit code: 3");
+  });
+});
+
+describe("diagnostics 工具", () => {
+  it("无本地 tsc 时返回引导文案(不 spawn pnpm/npx)", async () => {
+    const { ctx } = await makeCtx();
+    const out = await diagnosticsTool.call({}, ctx);
+    expect(out).toContain("未找到本地 tsc");
+    expect(out).toContain("pnpm typecheck");
+  });
+
+  it("path 越界被拦截(P2-2)", async () => {
+    const { ctx, root } = await makeCtx();
+    const tscName = process.platform === "win32" ? "tsc.cmd" : "tsc";
+    await mkdir(path.join(root, "node_modules", ".bin"), { recursive: true });
+    await writeFile(path.join(root, "node_modules", ".bin", tscName), "", "utf8");
+    await expect(diagnosticsTool.call({ path: "../outside" }, ctx)).rejects.toThrow("已拦截");
   });
 });
 

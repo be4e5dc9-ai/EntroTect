@@ -6,6 +6,7 @@
 // =====================================================================
 
 import type { ApiFormat, ApiProfile, ReasoningEffort } from "@entrotect/shared";
+import { clampEffort } from "@entrotect/shared";
 
 export type AuthScheme = "bearer" | "api-key" | "x-api-key" | "x-goog-api-key" | "none";
 export type TokenField = "max_tokens" | "max_completion_tokens";
@@ -177,7 +178,9 @@ export function resolveProviderProfile(input: {
       };
     }
     case "openai": {
-      const isReasoningModel = /^(o[1-4](?:-|$)|gpt-5(?:\.|-|$))/i.test(model);
+      // 带前缀的模型 id(如 openai/gpt-5)先取末段再判(P3-4d)
+      const bareModel = model.split("/").pop() ?? model;
+      const isReasoningModel = /^(o[1-4](?:-|$)|gpt-5(?:\.|-|$))/i.test(bareModel);
       return {
         id,
         auth: "bearer",
@@ -255,6 +258,10 @@ export function buildProviderHeaders(input: {
   apiKey: string;
   includeContentType?: boolean;
 }): Record<string, string> {
+  // header 注入防护:apiKey 含 CR/LF 时直接拒绝(undici 大概率也拒,显式化)
+  if (/[\r\n]/.test(input.apiKey)) {
+    throw new Error("apiKey 含非法换行符,已拒绝(header 注入防护)");
+  }
   const headers: Record<string, string> = {};
   if (input.includeContentType) headers["Content-Type"] = "application/json";
 
@@ -295,15 +302,20 @@ export function mapReasoningEffort(
 ): "low" | "high" | "max" | undefined {
   if (!requested || requested === "off" || accepted.length === 0) return undefined;
   const candidates = accepted as readonly string[];
-  if (candidates.includes(requested)) return requested as "low" | "high" | "max";
 
-  // 优先使用配置声明的集合，再按 profile 的真实值做保守降级。
-  const declared = (supported ?? []).filter((value): value is "low" | "high" | "max" =>
-    value === "low" || value === "high" || value === "max",
-  );
-  if (declared.includes(requested as "low" | "high" | "max")) {
-    return requested as "low" | "high" | "max";
+  // 声明了真实档位:先用 shared 的 clampEffort 钳入声明集,再投影到 profile 三档
+  const declared = supported ?? [];
+  if (declared.length > 0) {
+    const clamped = clampEffort(requested, declared);
+    if (clamped === "off") return undefined;
+    // profile 只有 low/high/max 三档;medium/xhigh 投影到 high(与旧回退一致)
+    if (clamped === "medium" || clamped === "xhigh") {
+      return candidates.includes("high") ? "high" : undefined;
+    }
+    return clamped; // low / high / max
   }
+
+  // 无声明:保守降级到 profile 三档(现值回退)
   if ((requested === "medium" || requested === "xhigh") && candidates.includes("high")) {
     return "high";
   }

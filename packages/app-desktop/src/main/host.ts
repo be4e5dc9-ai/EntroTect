@@ -37,6 +37,7 @@ import {
   loadPluginsFromDir,
   compactMessages,
   shouldAutoCompact,
+  resolveInsideCwd,
   type PluginHooks,
   type Provider,
 } from "@entrotect/core";
@@ -164,6 +165,19 @@ export class SessionHost {
   private workspaceDir(): string {
     const dir = this.config.workspaceDir?.trim();
     return dir && dir.length > 0 ? dir : homedir();
+  }
+
+  /**
+   * 应用自身数据目录里的受保护路径:模型经任何文件工具都不可读写。
+   * 注意不要把整个 appDataDir 列入——sessions/{id}/artifacts 在其下,
+   * 工具输出落盘与模型回读产物是正常流程。只保护 config/plugins/usage。
+   */
+  private protectedPaths(): string[] {
+    return [
+      path.join(this.deps.appDataDir, "config.json"),
+      path.join(this.deps.appDataDir, "plugins"),
+      path.join(this.deps.appDataDir, "usage.jsonl"),
+    ];
   }
 
   /** 事件汇:发往 UI(主循环与 host 共用) */
@@ -311,10 +325,8 @@ export class SessionHost {
         break;
       case "ReadFile": {
         const cwd = this.active?.meta.cwd ?? this.workspaceDir();
-        const absolute = path.isAbsolute(op.path)
-          ? op.path
-          : path.resolve(cwd, op.path);
         try {
+          const absolute = resolveInsideCwd(cwd, op.path, this.protectedPaths());
           let content = await readFile(absolute, "utf8");
           if (Buffer.byteLength(content, "utf8") > MAX_FILE_CONTENT_BYTES) {
             content = `${truncateUtf8(content, MAX_FILE_CONTENT_BYTES)}\n…(文件过大已截断)`;
@@ -572,6 +584,7 @@ export class SessionHost {
             approve,
             cwd: run.meta.cwd,
             artifactDir: this.store.artifactDir(run.meta.id),
+            protectedPaths: this.protectedPaths(),
             sandboxMode: getSandboxMode,
             maxTokens: resolveMaxTokens(config.model),
             temperature: config.temperature,
@@ -589,6 +602,7 @@ export class SessionHost {
         approve,
         cwd: run.meta.cwd,
         artifactDir: this.store.artifactDir(run.meta.id),
+        protectedPaths: this.protectedPaths(),
         sandboxMode: getSandboxMode,
         abortSignal: abort.signal,
         onMessage: (message) => this.store.appendMessage(run.meta.id, message),

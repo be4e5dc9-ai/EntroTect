@@ -33,11 +33,21 @@ function createWindow(): void {
     },
     webPreferences: {
       preload: path.join(here, "../preload/preload.cjs"),
+      // 渲染层加固(P3-1):显式写死与当前默认一致,防未来 Electron 默认变化
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
     },
   });
 
   mainWindow.once("ready-to-show", () => mainWindow?.show());
   mainWindow.loadFile(path.join(here, "../renderer/index.html"));
+  // 渲染层加固(P3-1):禁 window.open,只允许本地 index.html 自身导航,
+  // 防聊天内链接把整窗导航到外部并把 preload 桥暴露给远程页面。
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.webContents.on("will-navigate", (e, url) => {
+    if (!url.startsWith("file://")) e.preventDefault();
+  });
   mainWindow.on("closed", () => {
     mainWindow = null;
   });

@@ -76,8 +76,13 @@ export async function loadPluginsFromDir(dir: string): Promise<Plugin[]> {
   const plugins: Plugin[] = [];
   for (const entry of entries) {
     if (!entry.endsWith(".mjs")) continue;
-    const plugin = await loadPluginFile(path.join(dir, entry));
-    if (plugin) plugins.push(plugin);
+    const filePath = path.join(dir, entry);
+    const plugin = await loadPluginFile(filePath);
+    if (plugin) {
+      plugins.push(plugin);
+      // 加载成功即在主进程日志记录(console.warn 级别,便于审计插件清单)
+      console.warn(`[plugins] 已加载插件: ${plugin.name} (${filePath})`);
+    }
   }
   return plugins;
 }

@@ -593,8 +593,8 @@ export const opSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("Interrupt") }),
   z.object({ kind: z.literal("NewSession") }),
   z.object({ kind: z.literal("NewProject"), cwd: z.string().min(1) }),
-  z.object({ kind: z.literal("ResumeSession"), sessionId: z.string() }),
-  z.object({ kind: z.literal("DeleteSession"), sessionId: z.string() }),
+  z.object({ kind: z.literal("ResumeSession"), sessionId: z.string().uuid() }),
+  z.object({ kind: z.literal("DeleteSession"), sessionId: z.string().uuid() }),
   z.object({ kind: z.literal("ListSessions") }),
   z.object({ kind: z.literal("Compact") }),
   z.object({

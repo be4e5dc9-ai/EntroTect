@@ -56,6 +56,21 @@ md.set({
   },
 });
 
+// 渲染层加固(P3-1):聊天内链接统一新窗口打开 + rel 隔离,防止整窗被导航走;
+// validateLink 只放行 http/https(显式化,默认实现已拦 javascript:)。
+const defaultLinkOpen =
+  md.renderer.rules.link_open ??
+  ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
+
+md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+  const token = tokens[idx]!;
+  token.attrSet("target", "_blank");
+  token.attrSet("rel", "noopener noreferrer");
+  return defaultLinkOpen(tokens, idx, options, env, self);
+};
+
+md.validateLink = (url: string) => /^https?:\/\//i.test(url);
+
 export function renderMarkdown(text: string): string {
   return md.render(text);
 }

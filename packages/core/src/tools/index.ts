@@ -1,4 +1,6 @@
 export * from "./types.js";
+export * from "./paths.js";
+export * from "./ssrf.js";
 export * from "./output.js";
 export * from "./registry.js";
 export * from "./zod-json.js";

@@ -40,6 +40,8 @@ export interface AgentDeps {
   approve: (request: ApprovalRequest) => Promise<ApprovalOutcome>;
   cwd: string;
   artifactDir: string;
+  /** 受保护路径(应用自身数据目录):注入工具上下文,文件工具拒绝对其读写 */
+  protectedPaths?: readonly string[];
   /** 工具运行时的沙箱模式或动态 getter;旧调用方缺省时按完全访问处理 */
   sandboxMode?: SandboxMode | (() => SandboxMode);
   /** 图片生成供应商(随 activeProvider 注入) */
@@ -76,6 +78,26 @@ function previewFor(tool: Tool | undefined, call: ToolCallBlock): string {
   } catch {
     return call.name;
   }
+}
+
+/** 用改写后的实参重算审批预览;write/edit/generate_image 显示解析后的绝对路径 */
+function previewForArgs(tool: Tool | undefined, args: unknown, cwd: string): string {
+  if (!tool) return "";
+  let text = "";
+  try {
+    text = tool.preview(args);
+  } catch {
+    return "";
+  }
+  if (tool.name === "write" || tool.name === "edit" || tool.name === "generate_image") {
+    const filePath = (args as { file_path?: unknown } | null)?.file_path;
+    if (typeof filePath === "string" && filePath.length > 0) {
+      const action =
+        tool.name === "write" ? "写入" : tool.name === "edit" ? "编辑" : "生成图片";
+      return `${action} ${path.resolve(cwd, filePath)}`;
+    }
+  }
+  return text;
 }
 
 export async function runAgent(
@@ -216,6 +238,7 @@ export async function runAgent(
     const toolContextBase = {
       cwd: deps.cwd,
       artifactDir: deps.artifactDir,
+      protectedPaths: deps.protectedPaths,
       abortSignal: deps.abortSignal,
     };
     const ordered = new Array<ContentBlock | null>(toolCalls.length).fill(null);
@@ -233,7 +256,7 @@ export async function runAgent(
     const pending: Planned[] = [];
     toolCalls.forEach((call, index) => {
       const tool = toolsByName.get(call.name);
-      const preview = previewFor(tool, call);
+      let preview = previewFor(tool, call);
       if (deps.abortSignal?.aborted) {
         ordered[index] = {
           type: "tool-result",
@@ -279,6 +302,9 @@ export async function runAgent(
       } catch {
         args = null;
       }
+      // 审批前用改写后的实参重算预览,保证"看到什么就执行什么"(P1-2);
+      // write/edit 同时把 file_path 解析为绝对路径展示(P2-3)。
+      preview = previewForArgs(tool, args, deps.cwd) || preview;
       pending.push({ call, tool, preview, args, index });
     });
 

@@ -32,6 +32,8 @@ Windows 桌面 Coding Agent。设计依据见 `agent-study/`（ClaudeCode / deep
 - 外观：对话列表背景与主区一致（平坦分隔），支持日/夜间主题与强调色自定义；日间模式为 Claude Code 同款暖黄白基调
 - 协议缝：多协议 provider（OpenAI 兼容 / Anthropic Messages / Google Gemini），OpenAI 兼容侧按**供应商 profile** 决定鉴权头、token 字段、思考参数与 `stream_options`，一次发对而非靠 400 重试猜测；支持沙箱与插件 hooks
 
+> **信任模型**：`%APPDATA%\EntroTect\plugins\` 下的 `*.mjs` 插件在**主进程**以完整 Node/Electron 权限执行——安装插件即完全信任该代码，请只放入你信任的插件。插件可改写工具入参与聊天文本，改写后的参数即为实际执行参数（审批弹窗展示的预览已对齐）。
+
 ## 结构
 
 ```

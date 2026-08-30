@@ -16,6 +16,8 @@ export interface ToolContext {
   artifactDir: string;
   /** 当前调用的沙箱模式 */
   sandboxMode: SandboxMode;
+  /** 受保护路径(应用自身数据目录):文件工具必须拒绝对其读写 */
+  protectedPaths?: readonly string[];
   abortSignal?: AbortSignal;
   /** 子代理活动日志通道:task 工具内部活动以行进日志(挂在对应工具卡片) */
   subagentLog?: (line: string) => void;

@@ -5,6 +5,7 @@
 
 import { z } from "zod";
 import type { Tool, ToolContext } from "./types.js";
+import { assertSafeUrl } from "./ssrf.js";
 
 const inputSchema = z.strictObject({
   url: z.string().url().describe("要抓取的完整 URL(https://…)"),
@@ -12,6 +13,9 @@ const inputSchema = z.strictObject({
 });
 
 type Input = z.infer<typeof inputSchema>;
+
+/** 重定向上限:超过即拦截,防跳板循环 */
+const MAX_REDIRECTS = 5;
 
 function classifyNetworkError(error: unknown): string {
   const msg = error instanceof Error ? error.message : String(error);
@@ -93,14 +97,25 @@ export const webfetchTool: Tool = {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
-      const res = await fetch(args.url, {
-        headers: {
-          "User-Agent": "EntroTect/1.0 (+https://github.com/be4e5dc9-ai/EntroTect)",
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        },
-        redirect: "follow",
-        signal: controller.signal,
-      });
+      // SSRF 防护:首跳 + 每一跳重定向都必须通过私网/元数据校验。
+      // redirect: "manual" 由我们手写跳转循环,逐跳 assertSafeUrl。
+      let currentUrl = await assertSafeUrl(new URL(args.url));
+      let res: Response;
+      for (let hop = 0; ; hop++) {
+        res = await fetch(currentUrl.toString(), {
+          headers: {
+            "User-Agent": "EntroTect/1.0 (+https://github.com/be4e5dc9-ai/EntroTect)",
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          },
+          redirect: "manual",
+          signal: controller.signal,
+        });
+        if (res.status < 300 || res.status >= 400) break;
+        const location = res.headers.get("location");
+        if (!location) break;
+        if (hop >= MAX_REDIRECTS) throw new Error("重定向次数过多,已拦截");
+        currentUrl = await assertSafeUrl(new URL(location, currentUrl));
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
       const contentType = res.headers.get("content-type") ?? "";
       const buf = await res.arrayBuffer();
@@ -120,6 +135,11 @@ export const webfetchTool: Tool = {
       if (text.length > maxChars) text = `${text.slice(0, maxChars)}\n…(已截断，原文更长)`;
       return `URL: ${args.url}\n\n${text}`;
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // SSRF 拦截/重定向超限:原样抛出,不套网络错误分类文案
+      if (message.startsWith("目标地址不可访问") || message.startsWith("重定向次数过多")) {
+        throw new Error(message);
+      }
       throw new Error(`${classifyNetworkError(error)} — URL: ${args.url}`);
     } finally {
       clearTimeout(timer);

@@ -8,6 +8,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import type { Tool, ToolContext } from "./types.js";
+import { resolveInsideCwd } from "./paths.js";
 
 const inputSchema = z.strictObject({
   prompt: z.string().min(1).describe("图像描述(必填)"),
@@ -120,7 +121,7 @@ export const imageTool: Tool = {
         const base = filePath.slice(0, filePath.length - ext.length);
         filePath = `${base}-${i + 1}${ext}`;
       }
-      const absolute = path.resolve(ctx.cwd, filePath);
+      const absolute = resolveInsideCwd(ctx.cwd, filePath, ctx.protectedPaths);
       await mkdir(path.dirname(absolute), { recursive: true });
       await writeFile(absolute, buffer);
       written.push(`${filePath}(${buffer.length} 字节)`);

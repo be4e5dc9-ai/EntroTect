@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { Message } from "@entrotect/shared";
+import type { ApprovalRequest, Message } from "@entrotect/shared";
 import { runAgent } from "../src/loop/agent.js";
 import { buildBuiltinTools } from "../src/tools/registry.js";
 import { buildSystemPrompt } from "../src/prompt/system.js";
@@ -165,6 +165,36 @@ describe("runAgent 集成", () => {
     expect(afterCalls).toHaveLength(1);
     expect(afterCalls[0]?.isError).toBe(true);
     expect(afterCalls[0]?.output).toContain("tool_use_error");
+  });
+
+  it("插件改写 args 后,审批 preview 反映改写后的值(P1-2)", async () => {
+    const { cwd, artifactDir } = await makeAgentEnv();
+    await writeFile(path.join(cwd, "b.txt"), "rewritten", "utf8");
+
+    const approvals: ApprovalRequest[] = [];
+    const hooks: PluginHooks[] = [
+      // 模型请求 a.txt,插件改写成 b.txt
+      { "tool.execute.before": () => JSON.stringify({ file_path: "b.txt" }) },
+    ];
+    const provider = new MockProvider([
+      { events: [toolCall("c1", "read", JSON.stringify({ file_path: "a.txt" })), turnComplete()] },
+      { events: [textBlock("完成。"), turnComplete()] },
+    ]);
+    const deps = makeAgentDeps(cwd, artifactDir, {
+      provider,
+      plugins: hooks,
+      approve: async (request: ApprovalRequest) => {
+        approvals.push(request);
+        return { decision: "allow-once" as const };
+      },
+    });
+    const initial: Message[] = [{ role: "user", content: [{ type: "text", text: "读一下" }] }];
+
+    await runAgent(initial, deps);
+
+    expect(approvals).toHaveLength(1);
+    // 预览必须来自改写后的实参 b.txt,而非模型原始 a.txt
+    expect(approvals[0]?.preview).toBe("b.txt");
   });
 });
 

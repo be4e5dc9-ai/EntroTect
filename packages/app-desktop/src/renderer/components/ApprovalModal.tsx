@@ -78,7 +78,7 @@ export function ApprovalModal(): React.JSX.Element | null {
             本会话总是允许
           </button>
         </div>
-        <p className="approval-hint">Esc = 拒绝 · 超时未响应将默认拒绝</p>
+        <p className="approval-hint">Esc = 拒绝 · 超时未响应将默认拒绝 · 总是允许 = 本会话内该工具全部调用免审</p>
       </div>
     </div>
   );

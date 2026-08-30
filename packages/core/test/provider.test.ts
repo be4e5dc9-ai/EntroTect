@@ -6,6 +6,8 @@ import {
 } from "../src/provider/openai-compatible.js";
 import { AnthropicProvider } from "../src/provider/anthropic.js";
 import { GoogleProvider } from "../src/provider/google.js";
+import { mapReasoningEffort } from "../src/provider/profiles.js";
+import { knownMaxTokens } from "../src/provider/contexts.js";
 import type { Message } from "@entrotect/shared";
 
 function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
@@ -627,5 +629,32 @@ describe("GoogleProvider", () => {
     expect(events.find((e) => e.type === "turn-complete")).toMatchObject({
       usage: { inputTokens: 3, outputTokens: 4 },
     });
+  });
+});
+
+describe("provider 层 P3-4", () => {
+  it("mapReasoningEffort 按声明档位钳制(声明 [low,high] 请求 max → high)", () => {
+    expect(mapReasoningEffort("max", ["low", "high"], ["low", "high", "max"])).toBe("high");
+    expect(mapReasoningEffort("high", ["low", "max"], ["low", "high", "max"])).toBe("low");
+    expect(mapReasoningEffort("medium", ["low", "high", "max"], ["low", "high", "max"])).toBe("high");
+  });
+
+  it("knownMaxTokens 去前缀(id deepseek/deepseek-v4-pro 与 deepseek-v4-pro 等值)", () => {
+    const bare = knownMaxTokens("deepseek-v4-pro");
+    expect(bare).toBeDefined();
+    expect(knownMaxTokens("deepseek/deepseek-v4-pro")).toBe(bare);
+  });
+
+  it("纯思考回合在 preserveReasoning 下被保留", () => {
+    const messages: Message[] = [
+      { role: "user", content: [{ type: "text", text: "想" }] },
+      { role: "assistant", content: [], reasoningContent: "让我想想" },
+    ];
+    const out = toOpenAiMessages(messages, { preserveReasoning: true }) as Array<Record<string, unknown>>;
+    const assistant = out.find((m) => m.role === "assistant");
+    expect(assistant).toMatchObject({ content: null, reasoning_content: "让我想想" });
+
+    const out2 = toOpenAiMessages(messages) as Array<Record<string, unknown>>;
+    expect(out2.find((m) => m.role === "assistant")).toBeUndefined();
   });
 });

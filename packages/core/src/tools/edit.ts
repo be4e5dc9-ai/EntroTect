@@ -5,10 +5,10 @@
 // =====================================================================
 
 import { readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { z } from "zod";
 import type { Tool, ToolContext } from "./types.js";
 import { isStale, recordFileState } from "./file-state.js";
+import { resolveInsideCwd } from "./paths.js";
 
 const inputSchema = z.strictObject({
   file_path: z.string().describe("文件路径(相对路径基于工作目录)"),
@@ -46,7 +46,7 @@ export const editTool: Tool = {
   },
   async call(rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const args = inputSchema.parse(rawArgs);
-    const absolute = path.resolve(ctx.cwd, args.file_path);
+    const absolute = resolveInsideCwd(ctx.cwd, args.file_path, ctx.protectedPaths);
 
     let content: string;
     try {

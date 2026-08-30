@@ -1,11 +1,16 @@
 // =====================================================================
-// diagnostics:LSP/类型检查诊断闭环（对标 Cursor 诊断）
-// 优先尝试: tsc --noEmit → eslint → 兜底全局 grep 错误模式
+// diagnostics:本地 tsc 类型检查诊断闭环（对标 Cursor 诊断）
+// 安全边界(P2-2):只调用 <cwd>/node_modules/.bin/tsc 的绝对路径,
+// 绝不 spawn pnpm/npx —— 那会免审批执行项目脚本或下载/执行任意包。
+// isReadOnly 保持 true:只读语义成立(不运行任何用户脚本)。
 // =====================================================================
 
 import { spawn } from "node:child_process";
+import { stat } from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 import type { Tool, ToolContext } from "./types.js";
+import { resolveInsideCwd } from "./paths.js";
 
 const inputSchema = z.strictObject({
   path: z.string().optional().describe("可选：聚焦到单个文件/目录（相对工作目录），不填则检查全项目"),
@@ -13,9 +18,29 @@ const inputSchema = z.strictObject({
 
 type Input = z.infer<typeof inputSchema>;
 
-function run(cmd: string, args: string[], cwd: string, timeoutMs: number): Promise<{ code: number | null; stdout: string; stderr: string }> {
+async function exists(p: string): Promise<boolean> {
+  try {
+    await stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function run(
+  cmd: string,
+  args: string[],
+  cwd: string,
+  timeoutMs: number,
+  useShell: boolean,
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, { cwd, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(cmd, args, {
+      cwd,
+      windowsHide: true,
+      shell: useShell,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let stdout = "";
     let stderr = "";
     let settled = false;
@@ -53,7 +78,7 @@ function run(cmd: string, args: string[], cwd: string, timeoutMs: number): Promi
 export const diagnosticsTool: Tool = {
   name: "diagnostics",
   description:
-    "获取项目诊断（类型检查/语法错误），用于改完代码后闭环自检。优先运行 `pnpm typecheck` / `tsc --noEmit`，失败回退 eslint。返回结构化错误列表，不改文件。",
+    "获取项目类型检查诊断，用于改完代码后闭环自检。仅调用本地 node_modules/.bin/tsc --noEmit（不运行 pnpm/npx 等项目脚本），返回结构化错误列表，不改文件。",
   inputSchema,
   isReadOnly: true,
   preview: (args) => (args as Input).path ?? "全项目诊断",
@@ -61,26 +86,32 @@ export const diagnosticsTool: Tool = {
     const args = inputSchema.parse(rawArgs);
     const cwd = ctx.cwd;
     const target = args.path ? ` (${args.path})` : "";
-    // 1) pnpm typecheck（若存在）
-    const pnpm = await run("pnpm", ["--filter", "@entrotect/app-desktop", "typecheck"], cwd, 25000);
-    const pnpmOut = `${pnpm.stdout}\n${pnpm.stderr}`.trim();
-    if (pnpm.code === 0 && !pnpmOut.toLowerCase().includes("error")) {
-      // 成功无错
-      if (!pnpmOut || pnpmOut.length < 20) return `✓ 无诊断错误${target}（typecheck 通过）`;
+
+    // 仅本地 tsc:绝对路径定位,绝不 spawn pnpm/npx(免审批间接命令执行)。
+    // Windows 下 .cmd 需 shell 包装;args 均为固定 flag + 已收容的绝对路径。
+    const tsc = path.join(
+      cwd,
+      "node_modules",
+      ".bin",
+      process.platform === "win32" ? "tsc.cmd" : "tsc",
+    );
+    if (!(await exists(tsc))) {
+      return `未找到本地 tsc(${tsc})。请用 bash 运行项目自带检查命令（如 pnpm typecheck）。`;
     }
-    if (pnpmOut && pnpmOut.length > 30 && !pnpmOut.includes("ERR_PNPM_NO_IMPLICITLY_INSTALLED_PEERS")) {
-      const clipped = pnpmOut.slice(0, 8000);
-      if (clipped.toLowerCase().includes("error")) return `诊断${target}（pnpm typecheck）：\n${clipped}`;
+
+    const tscArgs = ["--noEmit", "--pretty", "false"];
+    if (args.path) {
+      tscArgs.push(resolveInsideCwd(cwd, args.path, ctx.protectedPaths));
     }
-    // 2) tsc --noEmit
-    const tsc = await run("npx", ["tsc", "--noEmit", "--pretty", "false", ...(args.path ? [args.path] : [])], cwd, 25000);
-    const tscOut = `${tsc.stdout}\n${tsc.stderr}`.trim();
-    if (tscOut) {
-      const clipped = tscOut.slice(0, 8000);
-      if (clipped.toLowerCase().includes("error") || tsc.code !== 0) return `诊断${target}（tsc）：\n${clipped}`;
+    const result = await run(tsc, tscArgs, cwd, 25000, process.platform === "win32");
+    const out = `${result.stdout}\n${result.stderr}`.trim();
+    if (out) {
+      const clipped = out.slice(0, 8000);
+      if (clipped.toLowerCase().includes("error") || result.code !== 0) {
+        return `诊断${target}（tsc）：\n${clipped}`;
+      }
     }
-    if (tsc.code === 0) return `✓ 无诊断错误${target}（tsc 通过）`;
-    // 3) 兜底
-    return `诊断${target}：未发现配置化的 typecheck，tsc 输出为空。请用 bash 运行项目自带检查命令（如 pnpm test / pnpm typecheck）。`;
+    if (result.code === 0) return `✓ 无诊断错误${target}（tsc 通过）`;
+    return `诊断${target}：tsc 输出为空。请用 bash 运行项目自带检查命令（如 pnpm test / pnpm typecheck）。`;
   },
 };

@@ -6,6 +6,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import type { Tool, ToolContext } from "./types.js";
+import { resolveInsideCwd } from "./paths.js";
 
 const MAX_RESULTS = 500;
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "out", ".venv", "__pycache__"]);
@@ -103,7 +104,7 @@ export const grepTool: Tool = {
       throw new Error(`无效正则: ${error instanceof Error ? error.message : String(error)}`);
     }
 
-    const root = args.path ? path.resolve(ctx.cwd, args.path) : ctx.cwd;
+    const root = args.path ? resolveInsideCwd(ctx.cwd, args.path, ctx.protectedPaths) : ctx.cwd;
     const info = await stat(root).catch(() => null);
     if (!info) throw new Error(`路径不存在: ${args.path ?? "."}`);
 

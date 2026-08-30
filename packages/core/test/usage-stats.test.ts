@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { aggregateUsageStats, type UsageRecord } from "../src/session/usage-stats.js";
 
+// 固定时区,保证本地日期归桶的断言跨机器一致(P2-1)
+process.env.TZ = "Asia/Shanghai";
+
 function rec(ts: string, input: number, output: number, model = "deepseek-chat"): UsageRecord {
   return { ts, inputTokens: input, outputTokens: output, sessionId: "s1", model };
 }
@@ -93,5 +96,13 @@ describe("aggregateUsageStats", () => {
   it("allMessages 覆盖消息数(会话遍历近真值)", () => {
     const stats = aggregateUsageStats([rec(day(0), 10, 0)], { allMessages: 206 });
     expect(stats.all.messages).toBe(206);
+  });
+
+  it("东八区凌晨跨天:UTC 16:30 归入本地次日(P2-1)", () => {
+    // 2026-08-29T16:30Z = 东八区 2026-08-30 00:30,须归入 08-30 而非 08-29
+    const stats = aggregateUsageStats([rec("2026-08-29T16:30:00.000Z", 10, 0)]);
+    expect(stats.daily).toHaveLength(1);
+    expect(stats.daily[0]!.date).toBe("2026-08-30");
+    expect(stats.all.activeDays).toBe(1);
   });
 });

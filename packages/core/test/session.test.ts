@@ -3,6 +3,7 @@ import { mkdtemp, readFile, writeFile, appendFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { SessionStore } from "../src/session/store.js";
+import { opSchema } from "@entrotect/shared";
 import type { Message } from "@entrotect/shared";
 
 async function makeStore(): Promise<SessionStore> {
@@ -66,7 +67,17 @@ describe("SessionStore", () => {
 
   it("load 不存在的会话抛错", async () => {
     const store = await makeStore();
-    await expect(store.load("nonexistent")).rejects.toThrow("会话不存在");
+    await expect(store.load("00000000-0000-0000-0000-000000000000")).rejects.toThrow(
+      "会话不存在",
+    );
+  });
+
+  it("非法 sessionId 被拒(路径穿越纵深防御,P1-3)", async () => {
+    const store = await makeStore();
+    await expect(store.deleteSession("..")).rejects.toThrow("非法会话 id");
+    await expect(store.deleteSession("../../x")).rejects.toThrow("非法会话 id");
+    await expect(store.load("..")).rejects.toThrow("非法会话 id");
+    expect(() => store.sessionDir("../..")).toThrow("非法会话 id");
   });
 
   it("落盘文件为合法 JSONL", async () => {
@@ -77,5 +88,20 @@ describe("SessionStore", () => {
     const lines = raw.trim().split("\n");
     expect(lines).toHaveLength(2);
     for (const line of lines) expect(() => JSON.parse(line)).not.toThrow();
+  });
+});
+
+describe("opSchema 会话 id 校验(P1-3)", () => {
+  it("拒绝非 UUID 的 DeleteSession/ResumeSession", () => {
+    for (const sessionId of ["..", "../x", "not-a-uuid", ""]) {
+      expect(opSchema.safeParse({ kind: "DeleteSession", sessionId }).success).toBe(false);
+      expect(opSchema.safeParse({ kind: "ResumeSession", sessionId }).success).toBe(false);
+    }
+  });
+
+  it("接受合法 UUID", () => {
+    const id = "00000000-0000-4000-8000-000000000000";
+    expect(opSchema.safeParse({ kind: "DeleteSession", sessionId: id }).success).toBe(true);
+    expect(opSchema.safeParse({ kind: "ResumeSession", sessionId: id }).success).toBe(true);
   });
 });

@@ -4,8 +4,9 @@
 // codex 以 DangerFullAccess 占位;我们做"受限模式 = 危险命令模式拦截"
 // (full = 不拦截,restricted = 命中模式即拒绝执行)。
 //
-// 模块级模式状态 + setter:host 加载配置后调用 setSandboxMode 注入,
-// 使 policy 不依赖 config.ts(避免循环依赖,也便于测试注入)。
+// 沙箱模式来源:真实闸门走 loop/agent.ts 的 deps.sandboxMode getter →
+// ctx.sandboxMode → bash.ts 判断。本模块只提供纯函数 analyzeCommand,
+// 不持有模块级模式状态(避免与真实闸门两套来源并存、误改)。
 // =====================================================================
 
 /** 沙箱模式:full = 完全访问(不拦截);restricted = 受限(拦截危险命令) */
@@ -100,7 +101,7 @@ export interface CommandVerdict {
 
 /**
  * 分析命令是否命中危险模式表。
- * 与当前沙箱模式无关(纯函数):是否生效由调用方结合 getSandboxMode 决定。
+ * 与当前沙箱模式无关(纯函数):是否生效由调用方结合 ctx.sandboxMode 决定。
  */
 export function analyzeCommand(command: string): CommandVerdict {
   for (const { pattern, reason } of DANGEROUS_PATTERNS) {
@@ -109,20 +110,4 @@ export function analyzeCommand(command: string): CommandVerdict {
     }
   }
   return { blocked: false };
-}
-
-// ---------------------------------------------------------------------
-// 模块级模式状态:host 注入配置的唯一切口(setSandboxMode)
-// ---------------------------------------------------------------------
-
-let currentMode: SandboxMode = "full";
-
-/** host 侧注入沙箱模式(加载 config 后调用一次;测试直接调用) */
-export function setSandboxMode(mode: SandboxMode): void {
-  currentMode = mode;
-}
-
-/** 读取当前沙箱模式(bash 工具 call 开头用它决定是否拦截) */
-export function getSandboxMode(): SandboxMode {
-  return currentMode;
 }

@@ -4,10 +4,10 @@
 // =====================================================================
 
 import { readFile, stat } from "node:fs/promises";
-import path from "node:path";
 import { z } from "zod";
 import type { Tool, ToolContext } from "./types.js";
 import { recordFileState } from "./file-state.js";
+import { resolveInsideCwd } from "./paths.js";
 
 /** 单次可读上限 256KB,超出引导用 offset/limit 窗口读 */
 const MAX_READ_BYTES = 256 * 1024;
@@ -29,7 +29,7 @@ export const readTool: Tool = {
   preview: (args) => (args as Input).file_path,
   async call(rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const args = inputSchema.parse(rawArgs);
-    const absolute = path.resolve(ctx.cwd, args.file_path);
+    const absolute = resolveInsideCwd(ctx.cwd, args.file_path, ctx.protectedPaths);
 
     let info;
     try {

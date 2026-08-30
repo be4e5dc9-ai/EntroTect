@@ -704,3 +704,42 @@ describe("renderer store: subagent-part 流", () => {
     expect(chatAfterParts!.some((m) => m.role === "assistant")).toBe(true);
   });
 });
+
+describe("renderer store: P3-3 小修", () => {
+  it("error 事件不清 busy(运行中收非致命 error 保持忙碌态)", () => {
+    useStore.setState({ busy: true });
+    applyEvent({ type: "error", message: "上一轮任务仍在运行中" });
+    expect(useStore.getState().busy).toBe(true);
+    expect(useStore.getState().error).toBe("上一轮任务仍在运行中");
+  });
+
+  it("跨换行流式文本收口后无重复字符", () => {
+    useStore.setState({
+      messages: [
+        {
+          key: 1,
+          role: "assistant",
+          blocks: [
+            { kind: "text", text: "line1\n" },
+            { kind: "text", text: "line2" },
+          ],
+          streaming: true,
+          reasoning: "",
+        },
+      ],
+    });
+    applyEvent({ type: "assistant-block", block: { type: "text", text: "line1\nline2" } });
+    expect(useStore.getState().messages[0]!.blocks).toEqual([
+      { kind: "text", text: "line1\nline2" },
+    ]);
+  });
+
+  it("切换会话后 invalidatedRunIds 清空", () => {
+    useStore.setState({ invalidatedRunIds: ["old-run"] });
+    applyEvent({
+      type: "session-meta",
+      meta: { id: "s2", createdAt: "x", title: "t", model: "m", cwd: "cwd" },
+    });
+    expect(useStore.getState().invalidatedRunIds).toEqual([]);
+  });
+});

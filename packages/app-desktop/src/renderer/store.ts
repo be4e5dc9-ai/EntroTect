@@ -144,7 +144,6 @@ interface UiState {
   activeRunId: string | null;
   usageUpdatesBlocked: boolean;
   usageBlockedRunId: string | null;
-  usageGeneration: number;
   invalidatedRunIds: string[];
   /** 各供应商的模型缓存(models-listed 事件写入,key = 供应商 id) */
   modelsByProvider: ModelsByProvider;
@@ -186,7 +185,6 @@ export const useStore = create<UiState>()(() => ({
   activeRunId: null,
   usageUpdatesBlocked: false,
   usageBlockedRunId: null,
-  usageGeneration: 0,
   invalidatedRunIds: [],
   modelsByProvider: {},
   contextWindowsByProvider: {},
@@ -270,6 +268,27 @@ let deltaBuffer = "";
 let reasoningBuffer = "";
 let rafId: number | null = null;
 
+/** 缓冲水位线:窗口隐藏时 rAF 停摆,超限直接同步冲刷,防无界增长(P3-3b) */
+const DELTA_BUFFER_MAX = 32 * 1024;
+
+function applyDeltaFlush(textChunk: string, reasoningChunk: string): void {
+  if (!textChunk && !reasoningChunk) return;
+  useStore.setState((state) => {
+    const messages = state.messages.map((message, index) =>
+      index === state.messages.length - 1 && message.role === "assistant"
+        ? {
+            ...message,
+            blocks: textChunk ? appendText(message.blocks, textChunk) : message.blocks,
+            reasoning: reasoningChunk
+              ? message.reasoning + reasoningChunk
+              : message.reasoning,
+          }
+        : message,
+    );
+    return { messages };
+  });
+}
+
 function flushDeltas(): void {
   if (rafId !== null) return;
   rafId = requestAnimationFrame(() => {
@@ -278,22 +297,25 @@ function flushDeltas(): void {
     const reasoningChunk = reasoningBuffer;
     deltaBuffer = "";
     reasoningBuffer = "";
-    if (!textChunk && !reasoningChunk) return;
-    useStore.setState((state) => {
-      const messages = state.messages.map((message, index) =>
-        index === state.messages.length - 1 && message.role === "assistant"
-          ? {
-              ...message,
-              blocks: textChunk ? appendText(message.blocks, textChunk) : message.blocks,
-              reasoning: reasoningChunk
-                ? message.reasoning + reasoningChunk
-                : message.reasoning,
-            }
-          : message,
-      );
-      return { messages };
-    });
+    applyDeltaFlush(textChunk, reasoningChunk);
   });
+}
+
+/** 追加 delta 后统一入口:超水位线走同步冲刷(绕过 rAF),否则 rAF 合帧 */
+function enqueueDeltaFlush(): void {
+  if (deltaBuffer.length + reasoningBuffer.length >= DELTA_BUFFER_MAX) {
+    const textChunk = deltaBuffer;
+    const reasoningChunk = reasoningBuffer;
+    deltaBuffer = "";
+    reasoningBuffer = "";
+    if (rafId !== null) {
+      if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+    applyDeltaFlush(textChunk, reasoningChunk);
+    return;
+  }
+  flushDeltas();
 }
 
 function appendText(blocks: UiAnyBlock[], text: string): UiAnyBlock[] {
@@ -357,26 +379,32 @@ function clearSubagentDeltaBuffers(): void {
   }
 }
 
-/** 更新对话流最后一条 assistant 消息(不存在则原样返回) */
+/** 更新对话流最后一条 assistant 消息;无末尾 assistant 时补一条空消息再写(P3-3g) */
 function updateSubagentLastAssistant(
   messages: UiMessage[],
   update: (message: UiMessage) => UiMessage,
 ): UiMessage[] {
-  return messages.map((message, index) =>
-    index === messages.length - 1 && message.role === "assistant"
-      ? update(message)
-      : message,
-  );
+  const last = messages[messages.length - 1];
+  if (last && last.role === "assistant") {
+    return messages.map((message, index) =>
+      index === messages.length - 1 ? update(message) : message,
+    );
+  }
+  const assistant: UiMessage = {
+    key: nextKey++,
+    role: "assistant",
+    blocks: [],
+    streaming: true,
+    reasoning: "",
+  };
+  return [...messages, update(assistant)];
 }
 
-/** 文本块收口:deltas 构建的文本与定稿对齐,缺失时补块 */
+/** 文本块收口:移除末尾连续的所有 text 块,追加单个定稿块(跨换行分块不重复) */
 function finalizeText(blocks: UiAnyBlock[], finalText: string): UiAnyBlock[] {
-  const last = blocks[blocks.length - 1];
-  if (last && last.kind === "text") {
-    if (last.text === finalText) return blocks;
-    return [...blocks.slice(0, -1), { ...last, text: finalText }];
-  }
-  return [...blocks, { kind: "text", text: finalText }];
+  let end = blocks.length;
+  while (end > 0 && blocks[end - 1]?.kind === "text") end -= 1;
+  return [...blocks.slice(0, end), { kind: "text", text: finalText }];
 }
 
 // ---------- 小工具 ----------
@@ -689,7 +717,7 @@ function applySubagentPart(toolCallId: string, part: SubagentPart): void {
 // ---------- 事件归约 ----------
 function invalidateUsage(state: UiState): Pick<
   UiState,
-  "usage" | "usageUpdatesBlocked" | "usageBlockedRunId" | "usageGeneration" | "invalidatedRunIds"
+  "usage" | "usageUpdatesBlocked" | "usageBlockedRunId" | "invalidatedRunIds"
 > {
   const invalidatedRunIds =
     state.activeRunId === null || state.invalidatedRunIds.includes(state.activeRunId)
@@ -699,7 +727,6 @@ function invalidateUsage(state: UiState): Pick<
     usage: null,
     usageUpdatesBlocked: true,
     usageBlockedRunId: state.activeRunId,
-    usageGeneration: state.usageGeneration + 1,
     invalidatedRunIds,
   };
 }
@@ -748,19 +775,24 @@ export function applyEvent(event: AppEvent): void {
       reasoningBuffer = "";
       clearSubagentDeltaBuffers();
       useStore.setState((state) => {
-        const sessionChanged =
-          state.currentSession?.id !== event.meta.id ||
-          state.currentSession?.model !== event.meta.model;
+        // 仅会话 id 变化才整屏重置;同会话换标题/换模型不丢消息(P1-1)
+        const sessionChanged = state.currentSession?.id !== event.meta.id;
         return {
           currentSession: event.meta,
-          messages: [],
-          busy: false,
-          ...(sessionChanged ? invalidateUsage(state) : { usage: state.usage }),
-          approval: null,
-          detailTabs: [],
-          activeDetailId: null,
-          fileContents: {},
-          subagentChats: {},
+          ...(sessionChanged
+            ? {
+                messages: [],
+                busy: false,
+                approval: null,
+                detailTabs: [],
+                activeDetailId: null,
+                fileContents: {},
+                subagentChats: {},
+              }
+            : {}),
+          ...(sessionChanged
+            ? { ...invalidateUsage(state), invalidatedRunIds: [] }
+            : { usage: state.usage }),
         };
       });
       break;
@@ -770,13 +802,17 @@ export function applyEvent(event: AppEvent): void {
         const current = state.currentSession;
         const stillExists = current && event.sessions.some((s) => s.id === current.id);
         if (current && !stillExists) {
-          // 当前对话已被删除:清空视图
+          // 当前对话已被删除:清空视图(含详情栏标签与子代理对话,与 P1-1 对称)
           return {
             sessions: event.sessions,
             currentSession: null,
             messages: [],
             busy: false,
             approval: null,
+            detailTabs: [],
+            activeDetailId: null,
+            fileContents: {},
+            subagentChats: {},
           };
         }
         return { sessions: event.sessions };
@@ -932,11 +968,11 @@ export function applyEvent(event: AppEvent): void {
     }
     case "assistant-delta":
       deltaBuffer += event.text;
-      flushDeltas();
+      enqueueDeltaFlush();
       break;
     case "assistant-reasoning-delta":
       reasoningBuffer += event.text;
-      flushDeltas();
+      enqueueDeltaFlush();
       break;
     case "subagent-activity":
       appendSubagentLog(event.toolCallId, event.text);
@@ -952,6 +988,11 @@ export function applyEvent(event: AppEvent): void {
       });
       break;
     case "file-content":
+      if (event.content === null) {
+        // 读取失败:不缓存 null(下次 openFileTab 会重新发 ReadFile),仅 toast 提示(P3-3f)
+        pushToast("error", event.error ?? "文件读取失败");
+        break;
+      }
       useStore.setState((state) => ({
         fileContents: { ...state.fileContents, [event.path]: event.content },
       }));
@@ -1084,7 +1125,9 @@ export function applyEvent(event: AppEvent): void {
     case "error":
       deltaBuffer = "";
       reasoningBuffer = "";
-      useStore.setState({ error: event.message, busy: false });
+      // 不移除 busy:运行中的非致命 error(如"上一轮任务仍在运行中")不应误关忙碌态
+      // (回合收口由 turn-completed 恒发保证,P3-3a)
+      useStore.setState({ error: event.message });
       pushToast("error", event.message);
       break;
     case "config":

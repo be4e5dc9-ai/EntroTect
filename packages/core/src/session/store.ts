@@ -19,6 +19,9 @@ import {
   type SessionMeta,
 } from "@entrotect/shared";
 
+/** 会话 id 必须是 v4 UUID(由 randomUUID 生成);防路径穿越(纵深防御) */
+const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export interface LoadedSession {
   meta: SessionMeta;
   messages: Message[];
@@ -41,6 +44,10 @@ export class SessionStore {
   }
 
   sessionDir(sessionId: string): string {
+    // 纵深防御:任何调用方(含绕过 op 校验的)都必须传合法 UUID,防路径穿越
+    if (!SESSION_ID_RE.test(sessionId)) {
+      throw new Error(`非法会话 id: ${sessionId}`);
+    }
     return path.join(this.rootDir, sessionId);
   }
 
