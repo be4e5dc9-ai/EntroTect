@@ -1,7 +1,7 @@
-{
+﻿{
   "name": "@entrotect/app-desktop",
-  "version": "0.7.3",
-  "description": "EntroTect - Windows 濡楀矂娼?Coding Agent",
+  "version": "0.7.4",
+  "description": "EntroTect - Windows 婵℃鐭傚?Coding Agent",
   "author": "EntroTect",
   "type": "module",
   "main": "dist/main/main.cjs",
@@ -73,3 +73,4 @@
     }
   }
 }
+
