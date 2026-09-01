@@ -46,7 +46,7 @@ export interface AgentDeps {
   sandboxMode?: SandboxMode | (() => SandboxMode);
   /** 图片生成供应商(随 activeProvider 注入) */
   imageProvider?: { baseUrl: string; apiKey: string; model?: string; apiFormat?: string };
-  /** 轮次上限,防无限循环烧钱(照抄 ClaudeCode maxTurns) */
+  /** @deprecated 保留向后兼容,实际不再使用 */
   maxTurns?: number;
   abortSignal?: AbortSignal;
   /**
@@ -66,7 +66,6 @@ export interface AgentRunResult {
   interrupted: boolean;
 }
 
-const DEFAULT_MAX_TURNS = 25;
 const ABORT_RESULT = "[工具调用被取消] 用户中断了操作";
 
 type ToolCallBlock = Extract<ContentBlock, { type: "tool-call" }>;
@@ -107,7 +106,6 @@ export async function runAgent(
   const history: Message[] = [...initialMessages];
   const toolsByName = new Map(deps.tools.map((tool) => [tool.name, tool]));
   const pluginHooks = deps.plugins ?? [];
-  const maxTurns = deps.maxTurns ?? DEFAULT_MAX_TURNS;
   const getSandboxMode = (): SandboxMode => {
     const source = deps.sandboxMode;
     return typeof source === "function" ? source() : source ?? "full";
@@ -115,7 +113,8 @@ export async function runAgent(
   let lastUsage: TokenUsage | null = null;
   let lastText: string | null = null;
 
-  for (let turn = 0; turn < maxTurns; turn++) {
+  // 无轮次上限:自动压缩(context compaction)负责控制上下文增长,不需要额外的轮次硬顶
+  while (true) {
     if (deps.abortSignal?.aborted) {
       return {
         messages: history,
@@ -451,14 +450,4 @@ export async function runAgent(
     await deps.onMessage?.(toolResultMessage);
     deps.emit({ type: "turn-completed", usage: lastUsage });
   }
-
-  // 轮次耗尽
-  deps.emit({ type: "error", message: `达到轮次上限(${maxTurns}),已停止` });
-  return {
-    messages: history,
-    finalText: lastText,
-    usage: lastUsage,
-    error: `达到轮次上限(${maxTurns})`,
-    interrupted: false,
-  };
 }

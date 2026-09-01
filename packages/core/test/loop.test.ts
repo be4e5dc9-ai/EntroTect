@@ -201,20 +201,20 @@ describe("runAgent 主循环", () => {
     expect(persisted[1]?.content[0]).toMatchObject({ type: "tool-result", toolCallId: "p1" });
   });
 
-  it("轮次上限耗尽即停止", async () => {
+  it("多个工具调用轮次正确执行", async () => {
     const { cwd, artifactDir } = await makeEnv();
     const provider = new MockProvider([
       { events: [toolCall("r1", "glob", JSON.stringify({ pattern: "*" })), turnComplete()] },
       { events: [toolCall("r2", "glob", JSON.stringify({ pattern: "*" })), turnComplete()] },
       { events: [toolCall("r3", "glob", JSON.stringify({ pattern: "*" })), turnComplete()] },
     ]);
-    const { deps } = makeDeps(cwd, artifactDir, { provider, maxTurns: 2 });
+    const { deps } = makeDeps(cwd, artifactDir, { provider });
 
     const result = await runAgent(
       [{ role: "user", content: [{ type: "text", text: "loop" }] }],
       deps,
     );
-    expect(result.error).toContain("轮次上限");
+    expect(result.error).toBeNull();
   });
 
   it("write 成功 → file-changed 事件(相对路径,action=written)", async () => {
