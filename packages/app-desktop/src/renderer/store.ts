@@ -881,11 +881,9 @@ export function applyEvent(event: AppEvent): void {
           const toolBlock = findToolBlock(result.toolCallId);
           updateToolState(result.toolCallId, {
             state: result.isError ? "failed" : "completed",
-            summary: result.isError
-              ? result.content.slice(0, 200)
-              : toolBlock?.name === "task" || toolBlock?.name === "todowrite"
-                ? result.content
-                : undefined,
+            // 会话重放不会重新收到实时 tool-state 事件，直接用已持久化的
+            // tool-result 恢复详情，保证 read/glob/bash 等普通工具也能展开。
+            summary: result.content,
           });
           // 重放也能看到历史产出文件:write/edit 成功 → 卡片后插文件块
           if (

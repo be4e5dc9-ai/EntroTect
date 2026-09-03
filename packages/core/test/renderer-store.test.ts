@@ -705,6 +705,49 @@ describe("renderer store: subagent-part 流", () => {
   });
 });
 
+describe("renderer store: 工具结果详情", () => {
+  it("恢复会话时将普通工具的持久化结果回填到展开详情", () => {
+    feedOne({
+      type: "message-appended",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            id: "read_old",
+            name: "read",
+            arguments: JSON.stringify({ file_path: "note.txt" }),
+          },
+        ],
+      },
+    });
+    feedOne({
+      type: "message-appended",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "read_old",
+            name: "read",
+            isError: false,
+            content: "note.txt 的历史内容",
+          },
+        ],
+      },
+    });
+
+    const toolBlock = useStore
+      .getState()
+      .messages.flatMap((message) => message.blocks)
+      .find((block) => block.kind === "tool-call" && block.id === "read_old");
+    expect(toolBlock).toMatchObject({
+      state: "completed",
+      summary: "note.txt 的历史内容",
+    });
+  });
+});
+
 describe("renderer store: P3-3 小修", () => {
   it("error 事件不清 busy(运行中收非致命 error 保持忙碌态)", () => {
     useStore.setState({ busy: true });

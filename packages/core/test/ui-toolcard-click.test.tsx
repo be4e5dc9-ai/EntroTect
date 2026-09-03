@@ -59,6 +59,24 @@ afterEach(() => {
 });
 
 describe("ToolCard 子代理卡点击联动", () => {
+  it("点击普通工具卡可展开并显示结果内容", () => {
+    const block: UiToolBlock = {
+      kind: "tool-call",
+      id: "call-read-1",
+      name: "read",
+      preview: "note.txt",
+      state: "completed",
+      summary: "hello from note.txt",
+    };
+
+    render(<ToolCard block={block} />);
+    const button = screen.getByRole("button", { name: /read/i });
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("hello from note.txt").closest(".tool-card-body")?.classList.contains("open")).toBe(true);
+  });
+
   it("点击 task 卡的头部调用 openDetail", () => {
     const block: UiToolBlock = {
       kind: "tool-call",

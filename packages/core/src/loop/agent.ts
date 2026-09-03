@@ -413,10 +413,9 @@ export async function runAgent(
             toolCallId: item.call.id,
             state: "completed",
             preview: item.preview,
-            summary:
-              item.call.name === "task" || item.call.name === "todowrite"
-                ? truncated.content
-                : (truncated.spilledTo ?? undefined),
+            // 工具卡片的展开区需要完整结果。truncateOutput 已负责将超大输出
+            // 换成安全的截断预览并落盘，因此这里可以统一交给 UI 展示。
+            summary: truncated.content,
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);

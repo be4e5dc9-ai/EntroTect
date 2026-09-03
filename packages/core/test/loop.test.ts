@@ -68,6 +68,11 @@ describe("runAgent 主循环", () => {
       "executing",
       "completed",
     ]);
+    expect(toolStates[1]).toMatchObject({
+      type: "tool-state",
+      state: "completed",
+      summary: expect.stringContaining("hello entrotect"),
+    });
   });
 
   it("未知工具 fail-closed:is_error 回喂,循环继续", async () => {
