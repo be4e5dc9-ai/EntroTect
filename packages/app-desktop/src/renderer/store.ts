@@ -476,14 +476,21 @@ function parseToolArgs(arguments_: string): unknown {
 /** 工具卡片预览:task/todowrite 从 args 取描述,其余用工具名 */
 function previewOf(call: { name: string; arguments?: string }): string {
   const args = parseToolArgs(call.arguments ?? "");
-  if (call.name === "task" || call.name === "todowrite") {
-    const prompt = (args as { prompt?: unknown; tasks?: unknown } | null)?.prompt;
+  if (call.name === "task") {
+    const prompt = (args as { prompt?: unknown } | null)?.prompt;
     const text =
       typeof prompt === "string" && prompt.length > 0
         ? prompt
         : (args as { tasks?: Array<{ description?: string }> } | null)?.tasks?.[0]?.description;
     if (typeof text === "string" && text.length > 0) {
       return text.length > 60 ? `${text.slice(0, 60)}…` : text;
+    }
+  }
+  if (call.name === "todowrite") {
+    const todos = (args as { todos?: Array<{ content?: unknown; status?: unknown }> } | null)?.todos;
+    const active = todos?.find((todo) => todo.status === "in_progress") ?? todos?.[0];
+    if (typeof active?.content === "string" && active.content.length > 0) {
+      return active.content.length > 60 ? `${active.content.slice(0, 60)}…` : active.content;
     }
   }
   return call.name;

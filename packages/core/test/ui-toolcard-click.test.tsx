@@ -9,6 +9,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 
 import { useStore, openSubagentTab } from "../../app-desktop/src/renderer/store.js";
 import { ToolCard } from "../../app-desktop/src/renderer/components/ToolCard.js";
+import { TodoCard } from "../../app-desktop/src/renderer/components/TodoCard.js";
 import type { AppConfig, UiToolBlock } from "../../app-desktop/src/renderer/store.js";
 import type { AppConfig as SharedConfig } from "@entrotect/shared";
 
@@ -93,5 +94,34 @@ describe("ToolCard 子代理卡点击联动", () => {
     const state = useStore.getState();
     expect(state.detailTabs.some((t) => t.id === "subagent-call-task-9")).toBe(true);
     expect(state.activeDetailId).toBe("subagent-call-task-9");
+  });
+});
+
+describe("TodoCard 任务计划板", () => {
+  it("默认展示结构化进度、状态和优先级", () => {
+    const block: UiToolBlock = {
+      kind: "tool-call",
+      id: "call-todo-1",
+      name: "todowrite",
+      preview: "测试网络延时",
+      state: "completed",
+      args: {
+        todos: [
+          { content: "准备测试环境", status: "completed", priority: "medium" },
+          { content: "测试网络延时", status: "in_progress", priority: "high" },
+          { content: "整理测试结果", status: "pending", priority: "low" },
+        ],
+      },
+    };
+
+    render(<TodoCard block={block} />);
+
+    expect(screen.getByRole("region", { name: "任务进度，已完成 1 项，共 3 项" })).toBeTruthy();
+    expect(screen.getByText("正在执行第 2 步")).toBeTruthy();
+    expect(screen.getByText("测试网络延时")).toBeTruthy();
+    expect(screen.getByText("进行中")).toBeTruthy();
+    expect(screen.getByText("高优先")).toBeTruthy();
+    expect(screen.getByText("整理测试结果")).toBeTruthy();
+    expect(screen.getByText("低优先")).toBeTruthy();
   });
 });

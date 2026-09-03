@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { useStore, openSubagentTab, type UiMessage } from "../store";
 import { renderMarkdown } from "../markdown";
 import { ToolCard } from "./ToolCard";
+import { TodoCard } from "./TodoCard";
 import { FileCard } from "./FileCard";
 import { ClarificationCard } from "./ClarificationCard";
 import { UsageOverview } from "./UsageOverview";
@@ -124,15 +125,19 @@ export function Message({ message }: { message: UiMessage }): React.JSX.Element 
               />
             </div>
           ) : (
-            <ToolCard
-              key={block.id}
-              block={block}
-              onOpenDetail={
-                block.name === "task"
-                  ? () => openSubagentTab(block.id)
-                  : undefined
-              }
-            />
+            block.name === "todowrite" ? (
+              <TodoCard key={block.id} block={block} />
+            ) : (
+              <ToolCard
+                key={block.id}
+                block={block}
+                onOpenDetail={
+                  block.name === "task"
+                    ? () => openSubagentTab(block.id)
+                    : undefined
+                }
+              />
+            )
           ),
         )}
         {message.blocks.length === 0 && message.streaming && (

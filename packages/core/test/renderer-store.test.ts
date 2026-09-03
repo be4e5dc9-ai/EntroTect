@@ -706,6 +706,34 @@ describe("renderer store: subagent-part 流", () => {
 });
 
 describe("renderer store: 工具结果详情", () => {
+  it("todowrite 预览取当前进行中的任务，不再重复显示工具名", () => {
+    feedOne({
+      type: "message-appended",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            id: "todo_old",
+            name: "todowrite",
+            arguments: JSON.stringify({
+              todos: [
+                { content: "第一步", status: "completed", priority: "medium" },
+                { content: "当前测试网络", status: "in_progress", priority: "high" },
+              ],
+            }),
+          },
+        ],
+      },
+    });
+
+    const toolBlock = useStore
+      .getState()
+      .messages.flatMap((message) => message.blocks)
+      .find((block) => block.kind === "tool-call" && block.id === "todo_old");
+    expect(toolBlock).toMatchObject({ preview: "当前测试网络" });
+  });
+
   it("恢复会话时将普通工具的持久化结果回填到展开详情", () => {
     feedOne({
       type: "message-appended",
