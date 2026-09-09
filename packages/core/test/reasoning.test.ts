@@ -13,7 +13,7 @@ describe("reasoning canonical 校验与预设", () => {
     expect(isReasoningEffort("low")).toBe(true);
     expect(isReasoningEffort("medium")).toBe(true);
     expect(isReasoningEffort("off")).toBe(true);
-    expect(isReasoningEffort("ultra")).toBe(false);
+    expect(isReasoningEffort("ultra")).toBe(true);
     expect(isReasoningEffort("")).toBe(false);
   });
 
@@ -99,7 +99,7 @@ describe("getSupportedEffortsForModel", () => {
       activeProviderId: "deepseek",
     };
     const supported = getSupportedEffortsForModel(config, "deepseek", "deepseek-chat");
-    expect(supported).toEqual(["low", "max"]);
+    expect(supported).toEqual(["low", "max", "ultra"]);
   });
 
   it("无声明时回退到 preset", () => {
@@ -122,6 +122,7 @@ describe("getSupportedEffortsForModel", () => {
       "low",
       "high",
       "max",
+      "ultra",
     ]);
   });
 
@@ -137,7 +138,7 @@ describe("getSupportedEffortsForModel", () => {
           baseUrl: "https://example.test/v1",
           apiKey: "",
           models: ["my-model"],
-          // @ts-expect-error 故意插入非法值测试过滤
+          // ultra 是 UI 编排档，不能冒充模型原生声明。
           modelReasoningLevels: { "my-model": ["low", "ultra", "high"] },
         },
       ],
@@ -170,6 +171,7 @@ describe("getSupportedEffortsForModel", () => {
       "high",
       "xhigh",
       "max",
+      "ultra",
     ]);
   });
 
@@ -225,6 +227,11 @@ describe("clampEffort rank-based", () => {
 
   it("空 supported 返回原请求", () => {
     expect(clampEffort("high", [])).toBe("high");
+  });
+
+  it("ultra 在 UI 支持时保留，进入原生供应商集合时回落 max", () => {
+    expect(clampEffort("ultra", ["low", "max", "ultra"])).toBe("ultra");
+    expect(clampEffort("ultra", ["low", "high", "max"])).toBe("max");
   });
 });
 

@@ -83,6 +83,44 @@ afterEach(() => {
 });
 
 describe("App 首条消息与子代理点击", () => {
+  it("Todo 显示在输入框上方的独立计划区，不混入对话流", async () => {
+    render(<App />);
+    feed({
+      type: "message-appended",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            id: "todo-1",
+            name: "todowrite",
+            arguments: JSON.stringify({
+              todos: [
+                { content: "重构计划展示", status: "in_progress", priority: "high" },
+                { content: "验证对话流", status: "pending", priority: "medium" },
+              ],
+            }),
+          },
+        ],
+      },
+    });
+    feed({
+      type: "message-appended",
+      message: {
+        role: "user",
+        content: [
+          { type: "tool-result", toolCallId: "todo-1", name: "todowrite", isError: false, content: "ok" },
+        ],
+      },
+    });
+
+    const dock = await screen.findByRole("complementary", { name: "当前任务计划" });
+    expect(dock.textContent).toContain("重构计划展示");
+    expect(document.querySelector(".message-list")?.textContent).not.toContain("重构计划展示");
+    const composer = document.querySelector(".composer");
+    expect(dock.compareDocumentPosition(composer!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("首条用户消息渲染 You 标签与文本", async () => {
     render(<App />);
     await waitFor(() => expect(screen.getByText(/早上好|中午好|下午好|晚上好|夜深了/)).toBeDefined());

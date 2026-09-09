@@ -227,6 +227,14 @@ export function SettingsPage(): React.JSX.Element | null {
     }
   };
 
+  const setReasoningControlStyle = (reasoningControlStyle: "slider" | "menu") => {
+    setForm((f) => (f ? { ...f, reasoningControlStyle } : f));
+    const current = useStore.getState().config;
+    if (current) {
+      bridge().send({ kind: "SetConfig", config: { ...current, reasoningControlStyle } });
+    }
+  };
+
   const toggleSandbox = () => {
     const next = (form.sandboxMode ?? "full") === "restricted" ? "full" : "restricted";
     setForm((f) => (f ? { ...f, sandboxMode: next } : f));
@@ -575,6 +583,35 @@ export function SettingsPage(): React.JSX.Element | null {
                   >
                     <span className="switch-knob" />
                   </button>
+                </div>
+
+                <div className="field field-inline">
+                  <div className="field-inline-text">
+                    <span className="field-inline-title">思考强度控件</span>
+                    <span className="field-inline-desc">
+                      滑块可快速切换档位；经典菜单保留旧版逐项选择方式
+                    </span>
+                  </div>
+                  <div className="settings-choice" role="radiogroup" aria-label="思考强度控件">
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={(form.reasoningControlStyle ?? "slider") === "slider"}
+                      className={(form.reasoningControlStyle ?? "slider") === "slider" ? "active" : ""}
+                      onClick={() => setReasoningControlStyle("slider")}
+                    >
+                      滑块
+                    </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={form.reasoningControlStyle === "menu"}
+                      className={form.reasoningControlStyle === "menu" ? "active" : ""}
+                      onClick={() => setReasoningControlStyle("menu")}
+                    >
+                      经典菜单
+                    </button>
+                  </div>
                 </div>
 
                 <div className="field field-inline">

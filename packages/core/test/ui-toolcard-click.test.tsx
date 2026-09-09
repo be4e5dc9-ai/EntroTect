@@ -10,6 +10,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { useStore, openSubagentTab } from "../../app-desktop/src/renderer/store.js";
 import { ToolCard } from "../../app-desktop/src/renderer/components/ToolCard.js";
 import { TodoCard } from "../../app-desktop/src/renderer/components/TodoCard.js";
+import { ReasoningSlider } from "../../app-desktop/src/renderer/components/ReasoningSlider.js";
 import type { AppConfig, UiToolBlock } from "../../app-desktop/src/renderer/store.js";
 import type { AppConfig as SharedConfig } from "@entrotect/shared";
 
@@ -123,5 +124,52 @@ describe("TodoCard 任务计划板", () => {
     expect(screen.getByText("高优先")).toBeTruthy();
     expect(screen.getByText("整理测试结果")).toBeTruthy();
     expect(screen.getByText("低优先")).toBeTruthy();
+  });
+
+  it("在独立计划区可折叠，不伪装成工具输出", () => {
+    const block: UiToolBlock = {
+      kind: "tool-call",
+      id: "call-todo-2",
+      name: "todowrite",
+      preview: "完成界面",
+      state: "completed",
+      args: {
+        todos: [
+          { content: "完成界面", status: "in_progress", priority: "medium" },
+          { content: "运行验证", status: "pending", priority: "medium" },
+        ],
+      },
+    };
+
+    render(<TodoCard block={block} collapsible />);
+    const toggle = screen.getByRole("button", { name: /\u4efb\u52a1\u8fdb\u5ea6/ });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("完成界面")).toBeNull();
+  });
+});
+
+describe("ReasoningSlider 思考强度", () => {
+  it("通过离散滑块选择 ultra，并可恢复模型默认值", () => {
+    const onSelect = vi.fn();
+    render(
+      <ReasoningSlider
+        value="high"
+        efforts={["low", "high", "max", "ultra"]}
+        defaultValue="high"
+        model="deepseek-chat"
+        onSelect={onSelect}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "思考强度：深入" }));
+    expect(screen.getByRole("dialog", { name: "调整思考强度" })).toBeTruthy();
+    fireEvent.change(screen.getByRole("slider", { name: "思考强度" }), {
+      target: { value: "3" },
+    });
+    expect(onSelect).toHaveBeenCalledWith("ultra");
+    fireEvent.click(screen.getByRole("button", { name: "恢复默认强度：深入" }));
+    expect(onSelect).toHaveBeenLastCalledWith("high");
   });
 });

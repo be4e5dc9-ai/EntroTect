@@ -89,7 +89,8 @@ export interface SessionMeta {
 // =====================================================================
 
 /** 单条供应商配置:baseUrl/apiKey 决定模型来源,models 为缓存列表 */
-export type ReasoningEffort = "off" | "low" | "medium" | "high" | "xhigh" | "max";
+export type ReasoningEffort = "off" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+export type ReasoningControlStyle = "slider" | "menu";
 
 /** 模型请求协议。openai 表示 Chat Completions 兼容协议。 */
 export type ApiFormat = "openai" | "anthropic" | "google";
@@ -150,8 +151,10 @@ export interface AppConfig {
   activeProviderId?: string;
   /** 会话工作目录(空 = 用户主目录) */
   workspaceDir?: string;
-  /** 思考强度(OpenAI 兼容 reasoning_effort;off = 不发) */
+  /** 思考强度；ultra 使用模型 max 并启用主动子代理编排。 */
   reasoningEffort?: ReasoningEffort;
+  /** 输入区思考强度控件：默认滑块，menu 保留旧版菜单。 */
+  reasoningControlStyle?: ReasoningControlStyle;
   /** 权限模式:full = 全部自动放行;write = 写操作需批准;ask = 每个工具调用都需批准 */
   permissionMode?: PermissionMode;
   /** 沙箱模式;restricted 拦截危险命令 */
@@ -347,6 +350,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   activeProviderId: "deepseek",
   workspaceDir: "",
   reasoningEffort: "high",
+  reasoningControlStyle: "slider",
   permissionMode: "write",
   sandboxMode: "full",
   showReasoning: false,
@@ -547,7 +551,7 @@ export const sessionMetaSchema = z.object({
   cwd: z.string(),
 });
 
-export const reasoningEffortSchema = z.enum(["off", "low", "medium", "high", "xhigh", "max"]);
+export const reasoningEffortSchema = z.enum(["off", "low", "medium", "high", "xhigh", "max", "ultra"]);
 
 export const providerConfigSchema = z.object({
   id: z.string().min(1),
@@ -589,6 +593,7 @@ export const appConfigSchema = z.object({
   workspaceDir: z.string().optional(),
   // 允许未知字符串，加载时由 sanitizeReasoningEffort 过滤
   reasoningEffort: z.string().optional(),
+  reasoningControlStyle: z.enum(["slider", "menu"]).optional(),
   permissionMode: z.enum(["full", "write", "ask"]).optional(),
   sandboxMode: z.enum(["full", "restricted"]).optional(),
   showReasoning: z.boolean().optional(),

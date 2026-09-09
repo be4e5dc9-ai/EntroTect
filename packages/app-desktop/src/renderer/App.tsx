@@ -14,6 +14,7 @@ import { ApprovalModal } from "./components/ApprovalModal";
 import { SettingsPage } from "./components/SettingsPage";
 import { Toasts } from "./components/Toasts";
 import { DetailPanel } from "./components/DetailPanel";
+import { TodoDock } from "./components/TodoDock";
 
 const DEFAULT_SIDEBAR_WIDTH = 248;
 const DEFAULT_DETAIL_WIDTH = 420;
@@ -159,6 +160,7 @@ export function App(): React.JSX.Element {
             <div className="chat-scroll">
               <MessageList />
             </div>
+            <TodoDock />
             <Composer />
           </main>
         )}

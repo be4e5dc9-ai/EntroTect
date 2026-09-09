@@ -21,6 +21,7 @@ import {
   EFFORT_RANK,
   getPresetDefault,
   getPresetEfforts,
+  isNativeReasoningEffort,
   isReasoningEffort,
 } from "@entrotect/shared";
 
@@ -57,7 +58,7 @@ function sanitizeAndFillReasoningLevels(providers: ProviderConfig[]): void {
     // 已声明的 levels：过滤未知值并按 canonical 排序
     for (const model of Object.keys(levels)) {
       const raw = levels[model] ?? [];
-      const filtered = raw.filter(isReasoningEffort);
+      const filtered = raw.filter(isNativeReasoningEffort);
       // 过滤后可能为空（布尔 thinking 模型）
       const sorted = filtered.slice().sort((a, b) => EFFORT_RANK[a] - EFFORT_RANK[b]);
       levels[model] = sorted;
@@ -74,7 +75,7 @@ function sanitizeAndFillReasoningLevels(providers: ProviderConfig[]): void {
     for (const model of Object.keys({ ...defaults })) {
       const def = defaults[model];
       const supported = levels[model];
-      if (!def || !isReasoningEffort(def)) {
+      if (!def || !isNativeReasoningEffort(def)) {
         delete defaults[model];
         continue;
       }
@@ -154,6 +155,8 @@ export async function loadConfig(appDataDir: string): Promise<AppConfig> {
       sanitizeReasoningEffort(fromFile.reasoningEffort) ??
       sanitizeReasoningEffort(DEFAULT_CONFIG.reasoningEffort) ??
       DEFAULT_REASONING_EFFORT,
+    reasoningControlStyle:
+      fromFile.reasoningControlStyle ?? DEFAULT_CONFIG.reasoningControlStyle ?? "slider",
     permissionMode: fromFile.permissionMode ?? DEFAULT_CONFIG.permissionMode,
     sandboxMode: fromFile.sandboxMode ?? DEFAULT_CONFIG.sandboxMode,
     showReasoning: fromFile.showReasoning ?? DEFAULT_CONFIG.showReasoning,

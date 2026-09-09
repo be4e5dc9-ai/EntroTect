@@ -3,6 +3,7 @@
 // 参考 cc switch PR #6228/#6123/Qwen Code 设计
 //  canonical 顺序 low(20) < medium(30) < high(40) < xhigh(60) < max(70)
 //  off 单独秩 0，仅对支持 none/off 的模型展示
+//  ultra(80) 是 EntroTect 编排档位：模型侧映射为 max，并启用主动子代理策略。
 // =====================================================================
 
 import type { AppConfig, ReasoningEffort } from "./protocol.js";
@@ -10,7 +11,7 @@ import type { AppConfig, ReasoningEffort } from "./protocol.js";
 export type { ReasoningEffort };
 
 export const CANONICAL_EFFORTS: ReasoningEffort[] = ["low", "medium", "high", "xhigh", "max"];
-export const ALL_EFFORTS: ReasoningEffort[] = ["off", "low", "medium", "high", "xhigh", "max"];
+export const ALL_EFFORTS: ReasoningEffort[] = ["off", "low", "medium", "high", "xhigh", "max", "ultra"];
 export const LEGACY_EFFORTS: ReasoningEffort[] = ["low", "high", "xhigh", "max"];
 export const GENERIC_FALLBACK_EFFORTS: ReasoningEffort[] = ["low", "medium", "high", "xhigh", "max"];
 
@@ -21,6 +22,7 @@ export const EFFORT_RANK: Record<ReasoningEffort, number> = {
   high: 40,
   xhigh: 60,
   max: 70,
+  ultra: 80,
 };
 
 export const EFFORT_LABELS: Record<ReasoningEffort, string> = {
@@ -30,6 +32,7 @@ export const EFFORT_LABELS: Record<ReasoningEffort, string> = {
   high: "高 · high",
   xhigh: "极高 · xhigh",
   max: "最大 · max",
+  ultra: "超强 · ultra",
 };
 
 export const DEFAULT_REASONING_EFFORT: ReasoningEffort = "high";
@@ -88,7 +91,12 @@ export function normalizeEffort(value: string | undefined | null): ReasoningEffo
 }
 
 export function filterValidEfforts(efforts: string[]): ReasoningEffort[] {
-  return efforts.filter(isReasoningEffort);
+  return efforts.filter(isNativeReasoningEffort);
+}
+
+/** ultra 是 harness 编排能力，不属于供应商声明的模型原生档位。 */
+export function isNativeReasoningEffort(value: string): value is ReasoningEffort {
+  return value !== "ultra" && isReasoningEffort(value);
 }
 
 export function sortEfforts(efforts: ReasoningEffort[]): ReasoningEffort[] {
@@ -114,18 +122,25 @@ export function getSupportedEffortsForModel(
   providerId: string | undefined,
   model: string | undefined,
 ): ReasoningEffort[] {
-  if (!model) return [...GENERIC_FALLBACK_EFFORTS];
+  if (!model) return withUltra([...GENERIC_FALLBACK_EFFORTS]);
   const provider =
     config?.providers?.find((p) => p.id === providerId) ??
     config?.providers?.[0];
   const declared = provider?.modelReasoningLevels?.[model];
   if (declared !== undefined) {
     const filtered = filterValidEfforts(declared);
-    return sortEfforts(filtered);
+    return withUltra(sortEfforts(filtered));
   }
   const preset = getPresetEfforts(model);
-  if (preset !== undefined) return sortEfforts(preset);
-  return [...GENERIC_FALLBACK_EFFORTS];
+  if (preset !== undefined) return withUltra(sortEfforts(preset));
+  return withUltra([...GENERIC_FALLBACK_EFFORTS]);
+}
+
+/** 只有模型原生支持 max 时才提供 ultra，避免伪造模型能力。 */
+function withUltra(efforts: ReasoningEffort[]): ReasoningEffort[] {
+  return efforts.includes("max") && !efforts.includes("ultra")
+    ? [...efforts, "ultra"]
+    : efforts;
 }
 
 export function defaultForModel(
@@ -139,12 +154,12 @@ export function defaultForModel(
     config?.providers?.find((p) => p.id === providerId) ??
     config?.providers?.[0];
   const declaredDefault = model ? provider?.modelReasoningDefaults?.[model] : undefined;
-  if (declaredDefault && isReasoningEffort(declaredDefault) && supported.includes(declaredDefault)) {
+  if (declaredDefault && isNativeReasoningEffort(declaredDefault) && supported.includes(declaredDefault)) {
     return declaredDefault;
   }
   const presetDefault = model ? getPresetDefault(model) : undefined;
   if (presetDefault && supported.includes(presetDefault)) return presetDefault;
-  const withoutOff = supported.filter((e) => e !== "off");
+  const withoutOff = supported.filter((e) => e !== "off" && e !== "ultra");
   const pool = withoutOff.length > 0 ? withoutOff : supported;
   const sorted = sortEfforts(pool);
   return sorted[sorted.length - 1] as ReasoningEffort;
@@ -163,6 +178,7 @@ export function clampEffort(
     const sorted = sortEfforts(withoutOff.length > 0 ? withoutOff : supported);
     return sorted[0] as ReasoningEffort;
   }
+  if (requested === "ultra" && supported.includes("max")) return "max";
   const withoutOff = supported.filter((e) => e !== "off");
   const pool = withoutOff.length > 0 ? withoutOff : supported;
   const sorted = sortEfforts(pool);

@@ -4,21 +4,25 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { loadConfig, saveConfig } from "../src/config.js";
 import { PROVIDER_PRESETS } from "../src/provider/presets.js";
-import type { AppConfig } from "@entrotect/shared";describe("config 持久化回环", () => {
-  it("showReasoning / reasoningEffort / permissionMode 落盘后可完整读回(回归:曾丢失)", async () => {
+import type { AppConfig } from "@entrotect/shared";
+
+describe("config 持久化回环", () => {
+  it("showReasoning / ultra / 控件样式 / permissionMode 落盘后可完整读回", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "entrotect-config-"));
     const config: AppConfig = {
       baseUrl: "https://example.test/v1",
       apiKey: "k",
       model: "m",
       showReasoning: true,
-      reasoningEffort: "max",
+      reasoningEffort: "ultra",
+      reasoningControlStyle: "menu",
       permissionMode: "ask",
     };
     await saveConfig(dir, config);
     const loaded = await loadConfig(dir);
     expect(loaded.showReasoning).toBe(true);
-    expect(loaded.reasoningEffort).toBe("max");
+    expect(loaded.reasoningEffort).toBe("ultra");
+    expect(loaded.reasoningControlStyle).toBe("menu");
     expect(loaded.permissionMode).toBe("ask");
   });
 
@@ -45,6 +49,7 @@ import type { AppConfig } from "@entrotect/shared";describe("config 持久化回
     const loaded = await loadConfig(dir);
     expect(loaded.showReasoning).toBe(false);
     expect(loaded.reasoningEffort).toBe("high");
+    expect(loaded.reasoningControlStyle).toBe("slider");
     expect(loaded.permissionMode).toBe("write");
   });
 });
@@ -170,7 +175,7 @@ describe("per-model reasoning levels 持久化与预设", () => {
     expect(p?.modelReasoningDefaults?.["deepseek-chat"]).toBe("high");
   });
 
-  it("未知 effort 值直接丢弃", async () => {
+  it("ultra 作为编排档不写入模型原生档位", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "entrotect-config-"));
     // 直接写文件以绕过 zod 校验，模拟旧文件含非法值
     const raw = JSON.stringify({
@@ -184,7 +189,6 @@ describe("per-model reasoning levels 持久化与预设", () => {
           baseUrl: "https://example.test/v1",
           apiKey: "",
           models: ["my-model"],
-          // @ts-expect-error 非法值
           modelReasoningLevels: { "my-model": ["low", "ultra", "high"] },
           modelReasoningDefaults: { "my-model": "ultra" },
         },
@@ -197,7 +201,7 @@ describe("per-model reasoning levels 持久化与预设", () => {
     const loaded = await loadConfig(dir);
     const p = loaded.providers?.find((x) => x.id === "custom");
     expect(p?.modelReasoningLevels?.["my-model"]).toEqual(["low", "high"]);
-    // default 非法值被丢弃，回退到最高档 high
+    // 原生 default 不接受编排档，回退到最高原生档 high。
     expect(p?.modelReasoningDefaults?.["my-model"]).toBe("high");
   });
 

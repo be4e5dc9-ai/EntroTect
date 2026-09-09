@@ -8,7 +8,6 @@ import { useEffect, useRef, useState } from "react";
 import { useStore, openSubagentTab, type UiMessage } from "../store";
 import { renderMarkdown } from "../markdown";
 import { ToolCard } from "./ToolCard";
-import { TodoCard } from "./TodoCard";
 import { FileCard } from "./FileCard";
 import { ClarificationCard } from "./ClarificationCard";
 import { UsageOverview } from "./UsageOverview";
@@ -101,11 +100,22 @@ export function Message({ message }: { message: UiMessage }): React.JSX.Element 
     );
   }
 
+  const visibleBlocks = message.blocks.filter(
+    (block) => !(block.kind === "tool-call" && block.name === "todowrite"),
+  );
+  if (
+    visibleBlocks.length === 0 &&
+    !(showReasoning && message.reasoning) &&
+    !(message.streaming && message.blocks.length === 0)
+  ) {
+    return <></>;
+  }
+
   return (
     <div className="msg msg-assistant">
       <div className="msg-assistant-content">
         {showReasoning && <ReasoningSection text={message.reasoning} streaming={message.streaming} />}
-        {message.blocks.map((block, index) =>
+        {visibleBlocks.map((block, index) =>
           block.kind === "text" ? (
             <div key={`t${index}`} className="msg-text-block">
               <div
@@ -125,22 +135,18 @@ export function Message({ message }: { message: UiMessage }): React.JSX.Element 
               />
             </div>
           ) : (
-            block.name === "todowrite" ? (
-              <TodoCard key={block.id} block={block} />
-            ) : (
-              <ToolCard
-                key={block.id}
-                block={block}
-                onOpenDetail={
-                  block.name === "task"
-                    ? () => openSubagentTab(block.id)
-                    : undefined
-                }
-              />
-            )
+            <ToolCard
+              key={block.id}
+              block={block}
+              onOpenDetail={
+                block.name === "task"
+                  ? () => openSubagentTab(block.id)
+                  : undefined
+              }
+            />
           ),
         )}
-        {message.blocks.length === 0 && message.streaming && (
+        {visibleBlocks.length === 0 && message.streaming && (
           <div className="thinking" aria-label="思考中">
             <span /><span /><span />
           </div>

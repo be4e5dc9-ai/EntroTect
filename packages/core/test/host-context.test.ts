@@ -57,6 +57,36 @@ function fakeWindow(events: AppEvent[]): BrowserWindow {
 }
 
 describe("SessionHost run context", () => {
+  it("Ultra 向模型发送 max，同时注入主动子代理编排策略", async () => {
+    const appDataDir = await mkdtemp(path.join(tmpdir(), "entrotect-host-ultra-"));
+    const events: AppEvent[] = [];
+    const calls: Array<Record<string, unknown>> = [];
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return streamResponse();
+    }) as typeof fetch;
+
+    try {
+      const host = new SessionHost({
+        appDataDir,
+        getWindow: () => fakeWindow(events),
+      });
+      await host.init();
+      const config = configFor("deepseek", "https://api.deepseek.com/v1", "deepseek-chat");
+      config.reasoningEffort = "ultra";
+      await host.handleOp({ kind: "SetConfig", config });
+      await host.handleOp({ kind: "NewSession" });
+      await host.handleOp({ kind: "SendMessage", text: "调研并实现" });
+
+      expect(calls[0]?.reasoning_effort).toBe("max");
+      const serialized = JSON.stringify(calls[0]?.messages);
+      expect(serialized).toContain("<ultra_mode>");
+      expect(serialized).toContain("至少调用一次 task");
+    } finally {
+      await rm(appDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
   it("captures SendMessage config before SetConfig and orders config before its turn", async () => {
     const appDataDir = await mkdtemp(path.join(tmpdir(), "entrotect-host-context-"));
     const events: AppEvent[] = [];
@@ -115,7 +145,7 @@ describe("SessionHost run context", () => {
       // catalog 未知模型不发送 max_tokens,避免猜错上限
       expect(calls[0]?.body).not.toHaveProperty("max_tokens");
     } finally {
-      await rm(appDataDir, { recursive: true, force: true });
+      await rm(appDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });

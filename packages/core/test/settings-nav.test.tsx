@@ -343,6 +343,20 @@ describe("settings-nav Task2: Provider Detail Table", () => {
 });
 
 describe("settings-nav Task3: General Pane + Actions", () => {
+  it("默认使用滑块，可立即切换回经典菜单", async () => {
+    const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
+    localStorage.setItem("entrotect-settings-primary", "general");
+    render(<SettingsPage />);
+
+    expect(screen.getByRole("radio", { name: "滑块" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("radio", { name: "经典菜单" }));
+    const sendMock = window.entrotect!.send as ReturnType<typeof vi.fn>;
+    expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "SetConfig",
+      config: expect.objectContaining({ reasoningControlStyle: "menu" }),
+    }));
+  });
+
   it("moves general fields to detail when primary=general, provider detail keeps fetch/modelsUrl/apiFormat", async () => {
     const { SettingsPage } = await import("../../app-desktop/src/renderer/components/SettingsPage.js");
     localStorage.setItem("entrotect-settings-primary", "general");

@@ -1,7 +1,7 @@
 // =====================================================================
 // 输入区:Enter 发送 / Shift+Enter 换行;忙碌态显示停止按钮。
-// 底栏:左侧权限模式,右侧模型 + 思考强度(low/high/xhigh/max)。
-// 三个选择器均为 PopoverMenu(cmdk 式悬浮面板,见 PopoverMenu.tsx)。
+// 底栏:左侧权限模式,右侧模型 + 思考强度。
+// 思考强度默认为离散滑块，可在设置切回经典 PopoverMenu。
 // =====================================================================
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -10,6 +10,7 @@ import {
   DEFAULT_REASONING_EFFORT,
   EFFORT_LABELS,
   clampEffort,
+  defaultForModel,
   getSupportedEffortsForModel,
   isReasoningEffort,
   isSkillInSlash,
@@ -18,6 +19,7 @@ import { fetchSkills, useStore, contextWindowForModel } from "../store";
 import { bridge } from "../bridge";
 import { PopoverMenu, type MenuOption } from "./PopoverMenu";
 import { ContextUsagePopover } from "./ContextUsagePopover";
+import { ReasoningSlider } from "./ReasoningSlider";
 
 const PERMISSION_OPTIONS: Array<MenuOption<NonNullable<AppConfig["permissionMode"]>>> = [
   { value: "full", label: "完全访问权限" },
@@ -228,6 +230,11 @@ export function Composer(): React.JSX.Element {
     if (supportedEfforts.includes(currentEffort)) return currentEffort;
     return clampEffort(currentEffort, supportedEfforts);
   }, [currentEffort, supportedEfforts, isBooleanThinking]);
+  const defaultEffort = useMemo(
+    () => defaultForModel(config ?? null, activeProviderId, config?.model),
+    [config, activeProviderId],
+  );
+  const reasoningControlStyle = config?.reasoningControlStyle ?? "slider";
 
   // 当前值不在子集则自动钳制并写回（避免发送非法值），并在 UI 提示被 clamp
   useEffect(() => {
@@ -462,7 +469,7 @@ export function Composer(): React.JSX.Element {
             ariaLabel="模型"
             align="right"
           />
-          {!isBooleanThinking && effortOptions.length > 0 && (
+          {!isBooleanThinking && effortOptions.length > 0 && reasoningControlStyle === "menu" && (
             <PopoverMenu
               value={clampedEffort}
               options={effortOptions}
@@ -474,6 +481,18 @@ export function Composer(): React.JSX.Element {
               icon={boltIcon}
               ariaLabel="思考强度"
               align="right"
+            />
+          )}
+          {!isBooleanThinking && supportedEfforts.length > 0 && reasoningControlStyle === "slider" && (
+            <ReasoningSlider
+              value={clampedEffort}
+              efforts={supportedEfforts}
+              defaultValue={defaultEffort}
+              model={config?.model ?? ""}
+              onSelect={(value) => {
+                setClampedHint(null);
+                updateConfig({ reasoningEffort: value });
+              }}
             />
           )}
           {isBooleanThinking && (

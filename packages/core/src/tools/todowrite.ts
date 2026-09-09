@@ -1,6 +1,6 @@
 // =====================================================================
 // todowrite:任务清单计划板（对标 opencode TodoWrite / Codex update_plan）
-// 整表快照 last-write-wins，渲染到 ToolCard 的 Plan 视图
+// 整表快照 last-write-wins，由输入区上方的独立 TodoDock 渲染。
 // =====================================================================
 
 import { z } from "zod";
@@ -28,9 +28,10 @@ export function getTodos(cwd: string): z.infer<typeof todoSchema>[] {
 export const todowriteTool: Tool = {
   name: "todowrite",
   description:
-    "维护任务清单计划板（整表快照）。用于拆解复杂/多阶段任务为 3-7 步可见计划：首次调用写入 pending 列表；每完成一步再次调用将对应项标 completed、下一步标 in_progress（同时仅一个 in_progress）。替代口头复述计划，UI 会直接渲染清单。",
+    "维护当前任务的结构化计划（整表快照）。仅在工作包含至少 3 个独立步骤、多个工作流，或用户明确要求计划时使用；单一修改、普通问答和少量工具调用不要使用。保持 3–7 个以结果为导向的条目，同时最多一个 in_progress，完成验证后再标 completed。界面会在对话外独立展示计划，无需在回复中重复。",
   inputSchema,
-  isReadOnly: false,
+  // 只改会话内计划状态，不读写用户文件，无需弹出写入审批。
+  isReadOnly: true,
   preview: (args) => {
     const { todos } = args as Input;
     const doing = todos.find((t) => t.status === "in_progress")?.content ?? todos[0]?.content ?? "";
@@ -43,13 +44,10 @@ export const todowriteTool: Tool = {
     const inProgress = args.todos.filter((t) => t.status === "in_progress").length;
     if (inProgress > 1) throw new Error("同时只能有一个 in_progress 任务，请将其他标为 pending/completed");
     store.set(ctx.cwd, args.todos);
-    const lines = args.todos
-      .map((t, i) => {
-        const icon = t.status === "completed" ? "✓" : t.status === "in_progress" ? "●" : t.status === "cancelled" ? "✗" : "○";
-        const prio = t.priority === "high" ? "!" : t.priority === "low" ? "·" : " ";
-        return `${i + 1}. [${icon}]${prio} ${t.content} (${t.status})`;
-      })
-      .join("\n");
-    return `计划已更新（${args.todos.length} 项）：\n${lines}`;
+    const settled = args.todos.filter(
+      (todo) => todo.status === "completed" || todo.status === "cancelled",
+    ).length;
+    const active = args.todos.find((todo) => todo.status === "in_progress")?.content;
+    return `计划已同步：${settled}/${args.todos.length} 已处理${active ? `，当前：${active}` : ""}。`;
   },
 };

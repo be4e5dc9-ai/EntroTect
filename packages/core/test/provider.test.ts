@@ -658,6 +658,7 @@ describe("provider 层 P3-4", () => {
     expect(mapReasoningEffort("max", ["low", "high"], ["low", "high", "max"])).toBe("high");
     expect(mapReasoningEffort("high", ["low", "max"], ["low", "high", "max"])).toBe("low");
     expect(mapReasoningEffort("medium", ["low", "high", "max"], ["low", "high", "max"])).toBe("high");
+    expect(mapReasoningEffort("ultra", ["low", "high", "max"], ["low", "high", "max"])).toBe("max");
   });
 
   it("knownMaxTokens 去前缀(id deepseek/deepseek-v4-pro 与 deepseek-v4-pro 等值)", () => {

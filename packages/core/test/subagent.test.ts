@@ -238,8 +238,9 @@ describe("task 工具与子代理", () => {
     expect(subBase.receivedHistory).toHaveLength(2);
     expect(JSON.stringify(subBase.receivedHistory[1])).toContain("hello subagent");
 
-    // 防递归:子代理工具池没有 task
+    // 防递归与计划噪声：子代理工具池没有 task / todowrite。
     expect(subToolPools[0]).not.toContain("task");
+    expect(subToolPools[0]).not.toContain("todowrite");
     // persona 追加生效
     expect(subToolPools).toBeDefined();
 

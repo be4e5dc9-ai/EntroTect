@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { UiToolBlock } from "../store";
 import { ToolCard } from "./ToolCard";
 
@@ -85,7 +86,14 @@ function progressCaption(block: UiToolBlock, todos: TodoItem[]): string {
   return "等待下一步";
 }
 
-export function TodoCard({ block }: { block: UiToolBlock }): React.JSX.Element {
+export function TodoCard({
+  block,
+  collapsible = false,
+}: {
+  block: UiToolBlock;
+  collapsible?: boolean;
+}): React.JSX.Element {
+  const [open, setOpen] = useState(true);
   const todos = todosFromArgs(block.args);
   if (todos.length === 0 || block.state === "failed" || block.state === "denied") {
     return <ToolCard block={block} />;
@@ -99,7 +107,13 @@ export function TodoCard({ block }: { block: UiToolBlock }): React.JSX.Element {
 
   return (
     <section className="todo-card" aria-label={`任务进度，已完成 ${completed} 项，共 ${todos.length} 项`}>
-      <header className="todo-card-head">
+      <button
+        type="button"
+        className={`todo-card-head${collapsible ? " is-collapsible" : ""}`}
+        onClick={collapsible ? () => setOpen((value) => !value) : undefined}
+        aria-expanded={collapsible ? open : undefined}
+        disabled={!collapsible}
+      >
         <span className="todo-card-symbol" aria-hidden="true">
           <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
             <path d="M3 4h1.5m2.5 0h5M3 7.5h1.5m2.5 0h5M3 11h1.5m2.5 0h5" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
@@ -113,32 +127,41 @@ export function TodoCard({ block }: { block: UiToolBlock }): React.JSX.Element {
           <strong>{completed}</strong>
           <span> / {todos.length}</span>
         </span>
-      </header>
+        {collapsible && (
+          <svg className={`todo-dock-chevron${open ? " open" : ""}`} width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M3 4.5 6 7.5l3-3" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </button>
 
-      <div className="todo-progress-track" aria-hidden="true">
-        <span style={{ width: `${progress}%` }} />
-      </div>
+      {(!collapsible || open) && (
+        <div className="todo-card-body">
+          <div className="todo-progress-track" aria-hidden="true">
+            <span style={{ width: `${progress}%` }} />
+          </div>
 
-      <ol className="todo-list">
-        {todos.map((todo, index) => (
-          <li className={`todo-item todo-${todo.status}`} key={`${index}-${todo.content}`}>
-            <span className="todo-rail">
-              <TodoMarker status={todo.status} step={index + 1} />
-            </span>
-            <span className="todo-item-main">
-              <span className="todo-item-content">{todo.content}</span>
-              <span className="todo-item-meta">
-                <span className="todo-status">{STATUS_LABEL[todo.status]}</span>
-                {todo.priority !== "medium" && (
-                  <span className={`todo-priority priority-${todo.priority}`}>
-                    {todo.priority === "high" ? "高优先" : "低优先"}
+          <ol className="todo-list">
+            {todos.map((todo, index) => (
+              <li className={`todo-item todo-${todo.status}`} key={`${index}-${todo.content}`}>
+                <span className="todo-rail">
+                  <TodoMarker status={todo.status} step={index + 1} />
+                </span>
+                <span className="todo-item-main">
+                  <span className="todo-item-content">{todo.content}</span>
+                  <span className="todo-item-meta">
+                    <span className="todo-status">{STATUS_LABEL[todo.status]}</span>
+                    {todo.priority !== "medium" && (
+                      <span className={`todo-priority priority-${todo.priority}`}>
+                        {todo.priority === "high" ? "高优先" : "低优先"}
+                      </span>
+                    )}
                   </span>
-                )}
-              </span>
-            </span>
-          </li>
-        ))}
-      </ol>
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
     </section>
   );
 }

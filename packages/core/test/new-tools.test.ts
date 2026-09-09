@@ -29,7 +29,7 @@ describe("新工具注册表", () => {
 });
 
 describe("todowrite 计划板", () => {
-  it("整表快照写入并返回清单", async () => {
+  it("整表快照写入并返回紧凑进度", async () => {
     const output = await todowriteTool.call(
       {
         todos: [
@@ -40,9 +40,9 @@ describe("todowrite 计划板", () => {
       },
       { cwd: "E:\\Test", artifactDir: "E:\\Test" },
     );
-    expect(output).toContain("计划已更新（3 项）");
-    expect(output).toContain("✓");
-    expect(output).toContain("●");
+    expect(output).toContain("计划已同步：1/3 已处理");
+    expect(output).toContain("当前：实现 websearch 工具");
+    expect(todowriteTool.isReadOnly).toBe(true);
   });
 
   it("同时多个 in_progress 拒绝", async () => {

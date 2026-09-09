@@ -15,12 +15,11 @@ export const COMPACT_RATIO = 0.7;
 /** 低于此消息数不压缩(小会话无意义) */
 export const COMPACT_MIN_MESSAGES = 8;
 
-export const COMPACT_SYSTEM_PROMPT = `你是上下文压缩器。把下面的对话历史压缩成一份简洁的中文摘要，只保留：
-1) 任务目标与用户关键要求；
-2) 已完成事项与最终产物（文件路径、改动结论）；
-3) 关键决策、约束与未决问题；
-4) 尚未完成的事项与明确的下一步。
-不要展开细节，不要编造历史中没有的内容。直接输出摘要正文。`;
+export const COMPACT_SYSTEM_PROMPT = `把对话压缩成可直接继续工作的事实摘要。保留：
+- 用户当前目标、明确偏好与仍有效的约束；
+- 已完成改动、关键文件/命令、验证结果和重要决策；
+- 最新计划状态、失败过的方法、未决风险和下一步。
+以最新状态覆盖已过时状态，保留必须逐字准确的路径、标识符和命令。省略寒暄、重复叙述、原始工具日志与已失效计划。不要推测或补写不存在的事实，直接输出摘要。`;
 
 /** 粗估 tokens:中文约 1.5 字符/token,英文约 4 字符/token,取 2.5 折中 */
 export function estimateTokens(messages: Message[]): number {

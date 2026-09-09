@@ -141,29 +141,40 @@ describe("clarification: 选择题格式规则", () => {
   });
 });
 
-describe("system prompt 结构化澄清规则", () => {
-  it("STATIC_IDENTITY 包含任务要求的澄清文案", () => {
+describe("system prompt harness 策略", () => {
+  it("默认提示词鼓励自主推进，且不滥用 Todo", () => {
     const prompt = buildSystemPrompt({
       cwd: "E:\\Test",
       model: "mock",
       platform: "win32",
       date: "2026-08-25",
     });
-    // 必须包含的核心概念
-    expect(prompt).toContain("缺少关键参数");
-    expect(prompt).toContain("存在歧义");
-    expect(prompt).toContain("多种合理实现路径");
-    expect(prompt).toContain("结构化选择题");
-    expect(prompt).toContain("选项");
-    expect(prompt).toContain("说明");
-    expect(prompt).toContain("推荐");
-    expect(prompt).toContain("放权");
-    // 四个放权示例需以斜杠形式或各自出现
-    expect(prompt).toContain("你决定");
-    expect(prompt).toContain("随便");
-    expect(prompt).toContain("全权交给你");
-    expect(prompt).toContain("直接做不要问");
-    // 标记提示
-    expect(prompt).toContain("【需澄清】");
+    expect(prompt).toContain("合理且可逆的假设");
+    expect(prompt).toContain("只有缺失信息会实质改变结果");
+    expect(prompt).toContain("至少 3 个独立步骤");
+    expect(prompt).toContain("普通问答");
+    expect(prompt).not.toContain("结构化选择题");
+    expect(prompt).not.toContain("【需澄清】");
+  });
+
+  it("ultra 追加 max 推理与主动子代理编排指令", () => {
+    const regular = buildSystemPrompt({
+      cwd: "E:\\Test",
+      model: "mock",
+      platform: "win32",
+      date: "2026-08-25",
+      reasoningEffort: "max",
+    });
+    const ultra = buildSystemPrompt({
+      cwd: "E:\\Test",
+      model: "mock",
+      platform: "win32",
+      date: "2026-08-25",
+      reasoningEffort: "ultra",
+    });
+    expect(regular).not.toContain("<ultra_mode>");
+    expect(ultra).toContain("<ultra_mode>");
+    expect(ultra).toContain("至少调用一次 task");
+    expect(ultra).toContain("max");
   });
 });

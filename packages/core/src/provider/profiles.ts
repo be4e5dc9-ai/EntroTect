@@ -301,6 +301,8 @@ export function mapReasoningEffort(
   accepted: readonly ("low" | "high" | "max")[],
 ): "low" | "high" | "max" | undefined {
   if (!requested || requested === "off" || accepted.length === 0) return undefined;
+  // ultra 是 harness 编排档位；供应商只看到其模型侧等价 max。
+  if (requested === "ultra") return accepted.includes("max") ? "max" : accepted[accepted.length - 1];
   const candidates = accepted as readonly string[];
 
   // 声明了真实档位:先用 shared 的 clampEffort 钳入声明集,再投影到 profile 三档
@@ -311,6 +313,9 @@ export function mapReasoningEffort(
     // profile 只有 low/high/max 三档;medium/xhigh 投影到 high(与旧回退一致)
     if (clamped === "medium" || clamped === "xhigh") {
       return candidates.includes("high") ? "high" : undefined;
+    }
+    if (clamped === "ultra") {
+      return candidates.includes("max") ? "max" : accepted[accepted.length - 1];
     }
     return clamped; // low / high / max
   }
@@ -332,4 +337,3 @@ export function appendEndpoint(baseUrl: string, endpoint: string): string {
   if (base.toLowerCase().endsWith(normalizedEndpoint.toLowerCase())) return base;
   return `${base}${normalizedEndpoint}`;
 }
-

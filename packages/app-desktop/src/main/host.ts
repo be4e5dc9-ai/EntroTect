@@ -562,11 +562,18 @@ export class SessionHost {
       }
 
       // 主循环与子代理共用的装配:同源提示词 / 审批 / 事件 / 工作目录
-      const systemPrompt = buildSystemPrompt({
+      const promptEnv = {
         cwd: run.meta.cwd,
         model: config.model,
         platform: process.platform,
         date: new Date().toISOString().slice(0, 10),
+        reasoningEffort: config.reasoningEffort,
+      } as const;
+      const systemPrompt = buildSystemPrompt(promptEnv);
+      // 子代理工具池没有 task，不向它传递 Ultra 的主代理委派指令。
+      const subagentSystemPrompt = buildSystemPrompt({
+        ...promptEnv,
+        reasoningEffort: config.reasoningEffort === "ultra" ? "max" : config.reasoningEffort,
       });
       const approve = async (request: ApprovalRequest) => {
         // 仅在真正需要用户裁决时才上报弹窗;
@@ -587,10 +594,14 @@ export class SessionHost {
         : undefined;
       // 推理强度按模型真实档位钳制（声明集或 preset）
       const supported = getSupportedEffortsForModel(config, context.providerId, config.model);
+      // ultra 是 harness 编排模式，供应商请求仍使用模型原生 max。
+      const requestedEffort =
+        config.reasoningEffort === "ultra" ? "max" : config.reasoningEffort;
+      const nativeSupported = supported.filter((effort) => effort !== "ultra");
       const effectiveEffort =
-        config.reasoningEffort && supported.length > 0
-          ? clampEffort(config.reasoningEffort, supported)
-          : config.reasoningEffort;
+        requestedEffort && nativeSupported.length > 0
+          ? clampEffort(requestedEffort, nativeSupported)
+          : requestedEffort;
       const result = await runAgent(messages, {
         provider,
         // 注入子代理运行器 → task 工具可用;子代理工具池无 task,防递归
@@ -598,7 +609,7 @@ export class SessionHost {
           taskRunner: createSubagentRunner({
             provider,
             tools: buildBuiltinTools({ imageProvider }),
-            systemPrompt,
+            systemPrompt: subagentSystemPrompt,
             approve,
             cwd: run.meta.cwd,
             artifactDir: this.store.artifactDir(run.meta.id),

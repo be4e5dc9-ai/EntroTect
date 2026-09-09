@@ -28,7 +28,7 @@ export interface GenerateOptions {
   /** 输出上限;缺省时由 provider 按模型默认处理 */
   maxTokens?: number;
   temperature?: number;
-  /** OpenAI 兼容 reasoning_effort(DeepSeek: low / high / xhigh / max;"off" = 不发送) */
+  /** 思考强度；ultra 是 harness 编排档，到 provider 层会映射为 max。 */
   reasoningEffort?: ReasoningEffort;
 }
 
