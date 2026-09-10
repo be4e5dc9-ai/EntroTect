@@ -19,11 +19,14 @@ import type {
   Op,
   ProviderConfig,
   SessionMeta,
+  SessionControls,
   TurnContext,
 } from "@entrotect/shared";
 import {
   buildBuiltinTools,
   buildSystemPrompt,
+  createGoalTool,
+  toolsForSession,
   createProvider,
   createSubagentRunner,
   listModelsForProvider,
@@ -42,7 +45,7 @@ import {
   type PluginHooks,
   type Provider,
 } from "@entrotect/core";
-import { clampEffort, getSupportedEffortsForModel } from "@entrotect/shared";
+import { clampEffort, getSupportedEffortsForModel, parseSlashCommand, SLASH_HELP, type SlashCommand } from "@entrotect/shared";
 
 export interface HostDeps {
   appDataDir: string;
@@ -63,6 +66,7 @@ interface AcceptedRun {
   provider: Provider;
   gate: SessionPermissionGate;
   abort: AbortController;
+  controls: SessionControls;
 }
 
 /** ReadFile 应答的内容上限:超过则截断并在尾部加一行提示 */
@@ -243,29 +247,37 @@ export class SessionHost {
         this.emit({ type: "sessions-listed", sessions: await this.store.list() });
         break;
       case "Compact": {
-        if (!this.active) {
+        const run = this.active;
+        if (!run) {
           this.emit({ type: "error", message: "当前没有活动会话,无法压缩" });
           break;
         }
-        if (this.active.running) {
+        if (run.running) {
           this.emit({ type: "error", message: "会话正在运行中,请先停止再压缩" });
           break;
         }
-        const loaded = await this.store.load(this.active.meta.id);
-        if (loaded.messages.length < 2) {
-          this.emit({ type: "error", message: "会话内容太少,无需压缩" });
-          break;
-        }
+        // Compaction is a session write too: hold the same run lock as a message/command.
+        const accepted = this.acceptRun(run);
         try {
+          const loaded = await this.store.load(run.meta.id);
+          if (loaded.messages.length < 2) {
+            this.emit({ type: "error", message: "会话内容太少,无需压缩" });
+            break;
+          }
           const { compacted, summary } = await compactMessages(
-            this.provider,
+            accepted.provider,
             loaded.messages,
+            accepted.abort.signal,
           );
-          await this.store.replaceMessages(this.active.meta.id, compacted);
-          this.emit({ type: "session-compacted", summary });
+          if (accepted.abort.signal.aborted) break;
+          await this.store.replaceMessages(run.meta.id, compacted);
+          if (this.active === run) this.emit({ type: "session-compacted", summary });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          this.emit({ type: "error", message });
+          if (!accepted.abort.signal.aborted) this.emit({ type: "error", message });
+        } finally {
+          run.running = false;
+          this.emit({ type: "turn-completed", usage: null, runId: accepted.runId, ...accepted.context });
         }
         break;
       }
@@ -448,9 +460,86 @@ export class SessionHost {
     text: string,
     attachments?: MessageAttachment[],
   ): Promise<void> {
+    const command = parseSlashCommand(text);
+    if (command) {
+      await this.handleSlashCommand(command, attachments ?? []);
+      return;
+    }
+    await this.sendPrompt(text, attachments);
+  }
+
+  private async saveControls(run: ActiveRun, controls: SessionControls): Promise<void> {
+    await this.store.appendControls(run.meta.id, controls);
+    run.meta = { ...run.meta, controls };
+    this.emit({ type: "session-controls", sessionId: run.meta.id, controls });
+  }
+
+  private async handleSlashCommand(command: SlashCommand, attachments: MessageAttachment[]): Promise<void> {
+    const run = this.active;
+    if (!run) {
+      this.emit({ type: "error", message: "请先新建一个会话再使用命令。" });
+      return;
+    }
+    const reply = (message: string) => this.emit({ type: "command-result", sessionId: run.meta.id, message });
+    if (run.running) {
+      reply("任务正在运行，请先停止再使用命令。");
+      return;
+    }
+    if (command.kind === "invalid") { reply(command.message); return; }
+    const hasPrompt = (command.kind === "plan" && !!command.prompt) || (command.kind === "goal" && command.action === "set");
+    if (attachments.length && !hasPrompt) {
+      reply("此命令不发送附件。请填写 /plan 任务内容或 /goal 目标内容，或先移除附件。");
+      return;
+    }
+    if (command.kind === "help") { reply(SLASH_HELP); return; }
+    if (command.kind === "compact") { await this.handleOp({ kind: "Compact" }); return; }
+    const current: SessionControls = run.meta.controls ?? { mode: "default", goal: null };
+    let next = current;
+    let prompt = "";
+    if (command.kind === "plan") {
+      if (command.action !== "status") next = { ...current, mode: command.action === "on" ? "plan" : "default" };
+      prompt = command.prompt;
+    } else {
+      if (command.action === "status") {
+        reply(current.goal
+          ? `目标${{ active: "进行中", completed: "已完成", blocked: "受阻" }[current.goal.status]}：${current.goal.objective}${current.goal.summary ? `\n${current.goal.summary}` : ""}`
+          : "尚未设置目标。输入 /goal 目标内容 开始。");
+        return;
+      }
+      if (command.action === "set") {
+        next = { ...current, goal: { objective: command.objective, status: "active" } };
+        prompt = command.objective;
+      } else if (command.action === "clear") {
+        next = { ...current, goal: null };
+      } else {
+        if (!current.goal) { reply("尚未设置目标。输入 /goal 目标内容 开始。"); return; }
+        next = { ...current, goal: { objective: current.goal.objective, status: command.action === "done" ? "completed" : "active" } };
+        if (command.action === "resume") prompt = `继续推进当前目标：${current.goal.objective}`;
+      }
+    }
+    // Lock before persistence so a second command/message cannot race this state change.
+    run.running = true;
+    try {
+      if (next !== current) await this.saveControls(run, next);
+    } finally {
+      run.running = false;
+    }
+    if (this.active !== run) return;
+    if (command.kind === "plan") {
+      if (command.action === "status") reply(next.mode === "plan" ? "当前为仅规划模式 · 不修改项目；/plan off 退出。" : "当前为默认模式，可正常执行任务；/plan 开启仅规划模式。");
+      else reply(next.mode === "plan" ? "仅规划模式已开启 · 不修改项目；/plan off 退出。" : "已退出规划模式，后续任务可正常执行。");
+    }
+    else reply(next.goal ? `目标${next.goal.status === "completed" ? "已完成" : "已设置"}：${next.goal.objective}` : "已清除会话目标。");
+    if (prompt) await this.sendPrompt(prompt, attachments);
+  }
+
+  private async sendPrompt(
+    text: string,
+    attachments?: MessageAttachment[],
+  ): Promise<void> {
     // 插件 chat.message 钩子:发送前改写文本;改写成空则不发送
     text = applyChatMessage(this.plugins, text);
-    if (text.length === 0) return;
+    if (text.length === 0 && !attachments?.length) return;
 
     let run = this.active;
     if (!run) run = await this.ensureSession();
@@ -488,6 +577,7 @@ export class SessionHost {
       provider: this.makeProvider(config),
       gate: run.gate,
       abort: run.abort,
+      controls: structuredClone(run.meta.controls ?? { mode: "default", goal: null }),
     };
     // registration 必须先于所有异步持久化和首个 turn-started。
     this.emit({ type: "run-registered", runId: accepted.runId, ...context });
@@ -500,7 +590,7 @@ export class SessionHost {
     accepted: AcceptedRun,
     attachments: MessageAttachment[] = [],
   ): Promise<void> {
-    const { config, context, provider, gate, abort, runId } = accepted;
+    const { config, context, provider, gate, abort, runId, controls } = accepted;
 
     const emitRunEvent = (event: AppEvent): void => {
       if (event.type === "turn-started" || event.type === "turn-completed") {
@@ -568,11 +658,14 @@ export class SessionHost {
         platform: process.platform,
         date: new Date().toISOString().slice(0, 10),
         reasoningEffort: config.reasoningEffort,
+        controls,
       } as const;
       const systemPrompt = buildSystemPrompt(promptEnv);
       // 子代理工具池没有 task，不向它传递 Ultra 的主代理委派指令。
       const subagentSystemPrompt = buildSystemPrompt({
         ...promptEnv,
+        // Goal ownership stays with the main agent; children cannot complete the parent goal.
+        controls: { ...controls, goal: null },
         reasoningEffort: config.reasoningEffort === "ultra" ? "max" : config.reasoningEffort,
       });
       const approve = async (request: ApprovalRequest) => {
@@ -605,10 +698,10 @@ export class SessionHost {
       const result = await runAgent(messages, {
         provider,
         // 注入子代理运行器 → task 工具可用;子代理工具池无 task,防递归
-        tools: buildBuiltinTools({
+        tools: toolsForSession([...buildBuiltinTools({
           taskRunner: createSubagentRunner({
             provider,
-            tools: buildBuiltinTools({ imageProvider }),
+            tools: toolsForSession(buildBuiltinTools({ imageProvider }), controls),
             systemPrompt: subagentSystemPrompt,
             approve,
             cwd: run.meta.cwd,
@@ -621,7 +714,10 @@ export class SessionHost {
             abortSignal: abort.signal,
           }),
           imageProvider,
-        }),
+        }), ...(controls.goal && controls.goal.status !== "completed" ? [createGoalTool(async (status, summary) => {
+          if (abort.signal.aborted) throw new Error("操作已取消");
+          await this.saveControls(run, { ...controls, goal: { objective: controls.goal!.objective, status, summary } });
+        })] : [])], controls),
         imageProvider,
         systemPrompt,
         maxTokens: resolveMaxTokens(config.model),

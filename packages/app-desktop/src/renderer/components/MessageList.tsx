@@ -70,6 +70,20 @@ function ReasoningSection({ text, streaming }: { text: string; streaming: boolea
   );
 }
 
+function PlanBlock({ text }: { text: string }): React.JSX.Element {
+  return (
+    <section className="plan-block" aria-label="实施计划">
+      <div className="plan-block-head">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <path d="M3 2.5h8M3 7h8M3 11.5h5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+        <span>实施计划</span>
+      </div>
+      <div className="markdown plan-block-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
+    </section>
+  );
+}
+
 /** 单条消息渲染(导出供子代理对话页复用) */
 export function Message({ message }: { message: UiMessage }): React.JSX.Element {
   const showReasoning = useStore((s) => s.config?.showReasoning ?? false);
@@ -124,6 +138,8 @@ export function Message({ message }: { message: UiMessage }): React.JSX.Element 
               />
               <ClarificationCard text={block.text} />
             </div>
+          ) : block.kind === "plan" ? (
+            <PlanBlock key={`p${index}`} text={block.text} />
           ) : block.kind === "file" ? (
             <FileCard key={`f${index}`} block={block} />
           ) : block.kind === "image" ? (

@@ -76,12 +76,19 @@ export interface TurnContext {
   model: string;
 }
 
+export interface SessionControls {
+  mode: "default" | "plan";
+  goal: { objective: string; status: "active" | "completed" | "blocked"; summary?: string } | null;
+}
+
 export interface SessionMeta {
   id: string;
   createdAt: string;
   title: string;
   model: string;
   cwd: string;
+  /** 会话级控制，不受上下文压缩影响；旧会话缺省为普通模式、无目标。 */
+  controls?: SessionControls;
 }
 
 // =====================================================================
@@ -437,6 +444,8 @@ export type SubagentPart =
 
 export type AppEvent =
   | { type: "session-meta"; meta: SessionMeta }
+  | { type: "session-controls"; sessionId: string; controls: SessionControls }
+  | { type: "command-result"; sessionId: string; message: string }
   | { type: "sessions-listed"; sessions: SessionMeta[] }
   | { type: "session-compacted"; summary: string }
   | {
@@ -543,12 +552,22 @@ export const messageSchema = z.object({
   reasoningContent: z.string().optional(),
 });
 
+export const sessionControlsSchema = z.object({
+  mode: z.enum(["default", "plan"]),
+  goal: z.object({
+    objective: z.string().min(1),
+    status: z.enum(["active", "completed", "blocked"]),
+    summary: z.string().optional(),
+  }).nullable(),
+});
+
 export const sessionMetaSchema = z.object({
   id: z.string(),
   createdAt: z.string(),
   title: z.string(),
   model: z.string(),
   cwd: z.string(),
+  controls: sessionControlsSchema.optional(),
 });
 
 export const reasoningEffortSchema = z.enum(["off", "low", "medium", "high", "xhigh", "max", "ultra"]);
@@ -689,6 +708,8 @@ export const subagentPartSchema = z.discriminatedUnion("kind", [
 ]);
 
 export const appEventSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("session-controls"), sessionId: z.string(), controls: sessionControlsSchema }),
+  z.object({ type: z.literal("command-result"), sessionId: z.string(), message: z.string() }),
   z.object({ type: z.literal("session-meta"), meta: sessionMetaSchema }),  z.object({ type: z.literal("sessions-listed"), sessions: z.array(sessionMetaSchema) }),
   z.object({ type: z.literal("session-compacted"), summary: z.string() }),
   z.object({

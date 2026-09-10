@@ -11,3 +11,5 @@ export * from "./glob.js";
 export * from "./grep.js";
 export * from "./bash.js";
 export * from "./file-state.js";
+export * from "./goal.js";
+export * from "./plan.js";

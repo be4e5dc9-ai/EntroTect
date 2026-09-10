@@ -4,7 +4,7 @@
 // 思考强度默认为离散滑块，可在设置切回经典 PopoverMenu。
 // =====================================================================
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { AppConfig, MessageAttachment, ReasoningEffort } from "@entrotect/shared";
 import {
   DEFAULT_REASONING_EFFORT,
@@ -14,6 +14,8 @@ import {
   getSupportedEffortsForModel,
   isReasoningEffort,
   isSkillInSlash,
+  SLASH_COMMANDS,
+  parseSlashCommand,
 } from "@entrotect/shared";
 import { fetchSkills, useStore, contextWindowForModel } from "../store";
 import { bridge } from "../bridge";
@@ -46,7 +48,10 @@ const boltIcon = (
 
 export function Composer(): React.JSX.Element {
   const busy = useStore((s) => s.busy);
-  const hasSession = useStore((s) => s.currentSession !== null);
+  const session = useStore((s) => s.currentSession);
+  const hasSession = session !== null;
+  const controls = session?.controls;
+  const commandNotice = useStore((s) => s.commandNotice);
   const config = useStore((s) => s.config);
   const usage = useStore((s) => s.usage);
   const modelsByProvider = useStore((s) => s.modelsByProvider);
@@ -57,6 +62,7 @@ export function Composer(): React.JSX.Element {
   const composerRef = useRef<HTMLDivElement>(null);
   const [slashCursor, setSlashCursor] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState(false);
+  const slashId = useId();
   const [clampedHint, setClampedHint] = useState<string | null>(null);
   /** 拖入的附件(图片 Base64 / 文件路径) */
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
@@ -84,35 +90,36 @@ export function Composer(): React.JSX.Element {
   }, [text]);
 
   const slashQuery = text.startsWith("/") ? text.slice(1).split(/\s/)[0]?.toLowerCase() ?? "" : "";
-  const hasSlashSpace = text.startsWith("/") && text.slice(1).includes(" ");
+  const hasSlashSpace = text.startsWith("/") && /\s/.test(text.slice(1));
   // 按设置页开关过滤:启用且斜杠可见才进补全面板
   const slashSkills = useMemo(
     () => skills.filter((s) => isSkillInSlash(config, s.path)),
     [skills, config],
   );
-  const filteredSkills = useMemo(() => {
+  const slashItems = useMemo(() => {
     if (!text.startsWith("/") || hasSlashSpace) return [];
-    if (!slashQuery) return slashSkills;
-    return slashSkills.filter(
-      (s) =>
-        s.name.toLowerCase().includes(slashQuery) ||
-        s.description.toLowerCase().includes(slashQuery),
-    );
+    const builtins = SLASH_COMMANDS.map((command) => ({ ...command, key: command.name, source: "内置", detail: command.usage }));
+    const items = [...builtins, ...slashSkills
+      .filter((skill) => !SLASH_COMMANDS.some((command) => command.name === skill.name.toLowerCase()))
+      .map((skill) => ({ ...skill, key: skill.path, detail: skill.path }))];
+    return items.filter((item) => item.name.toLowerCase().includes(slashQuery) || item.description.toLowerCase().includes(slashQuery));
   }, [text, hasSlashSpace, slashQuery, slashSkills]);
 
-  // 内置指令:/compact 匹配则显示在斜杠面板顶部
-  const compactMatches = "compact".startsWith(slashQuery);
   const showSlash =
     text.startsWith("/") &&
     !hasSlashSpace &&
     !slashDismissed &&
     !busy &&
-    hasSession &&
-    (filteredSkills.length > 0 || compactMatches);
+    hasSession;
+  const commandHint = hasSlashSpace ? SLASH_COMMANDS.find((command) => command.name === slashQuery)?.usage : undefined;
 
   useEffect(() => {
     setSlashCursor(0);
-  }, [slashQuery, filteredSkills.length]);
+  }, [slashQuery, slashItems.length]);
+
+  useEffect(() => {
+    if (showSlash) document.getElementById(`${slashId}-${slashCursor}`)?.scrollIntoView?.({ block: "nearest" });
+  }, [showSlash, slashId, slashCursor]);
 
   const selectSlash = (name: string) => {
     const next = `/${name} `;
@@ -131,15 +138,17 @@ export function Composer(): React.JSX.Element {
 
   const send = () => {
     const value = text.trim();
-    if ((!value && attachments.length === 0) || busy) return;
-    // 内置指令:/compact 手动压缩当前会话上下文
-    if (value === "/compact" && attachments.length === 0) {
-      bridge().send({ kind: "Compact" });
-      setText("");
-      setSlashDismissed(false);
-      if (ref.current) ref.current.style.height = "auto";
+    if ((!value && attachments.length === 0) || busy || !hasSession) return;
+    const command = parseSlashCommand(value);
+    if (command?.kind === "invalid") {
+      useStore.setState({ commandNotice: command.message });
       return;
     }
+    if (command && attachments.length && !((command.kind === "plan" && command.prompt) || (command.kind === "goal" && command.action === "set"))) {
+      useStore.setState({ commandNotice: "此命令不发送附件。请填写任务内容或先移除附件。" });
+      return;
+    }
+    useStore.setState({ commandNotice: null });
     bridge().send({ kind: "SendMessage", text: value, attachments });
     setText("");
     setAttachments([]);
@@ -284,6 +293,38 @@ export function Composer(): React.JSX.Element {
         if (files.length > 0) addFilesFromDrag(files);
       }}
     >
+      {(controls?.mode === "plan" || controls?.goal) && (
+        <div className="composer-session-controls" aria-label="会话模式与目标">
+          {controls.mode === "plan" && (
+            <div className="composer-control-row">
+              <span className="composer-control-label">Plan</span>
+              <span className="composer-control-text">仅规划 · 不修改项目</span>
+              <div className="composer-control-actions"><button type="button" disabled={busy} onClick={() => bridge().send({ kind: "SendMessage", text: "/plan off" })}>退出规划</button></div>
+            </div>
+          )}
+          {controls.goal && (
+            <div className={`composer-control-row goal-${controls.goal.status}`}>
+              <span className="composer-control-label">Goal</span>
+              <span className="composer-control-text" title={controls.goal.objective}>
+                <span className="composer-goal-state">{{ active: "进行中", completed: "已完成", blocked: "受阻" }[controls.goal.status]}</span>
+                {controls.goal.objective}
+                {controls.goal.summary && <small>{controls.goal.summary}</small>}
+              </span>
+              <div className="composer-control-actions">{controls.goal.status === "active"
+                ? <button type="button" disabled={busy} onClick={() => bridge().send({ kind: "SendMessage", text: "/goal done" })}>标记完成</button>
+                : <button type="button" disabled={busy} onClick={() => bridge().send({ kind: "SendMessage", text: "/goal resume" })}>继续目标</button>}
+              <button type="button" disabled={busy} aria-label="清除目标" onClick={() => bridge().send({ kind: "SendMessage", text: "/goal clear" })}>×</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {commandNotice && (
+        <div className="composer-command-notice" role="status">
+          <span>{commandNotice}</span>
+          <button type="button" aria-label="关闭命令提示" onClick={() => useStore.setState({ commandNotice: null })}>×</button>
+        </div>
+      )}
       {dragging && <div className="composer-drop-mask">拖到这里添加附件</div>}
       {attachments.length > 0 && (
         <div className="composer-attachments">
@@ -323,29 +364,17 @@ export function Composer(): React.JSX.Element {
       )}
       <div className="composer-box" style={{ position: "relative" }}>
         {showSlash && (
-          <div className="slash-panel" role="listbox" aria-label="技能指令">
-            <div className="menu-heading">Skills · 以 / 触发</div>
-            {compactMatches && (
+          <div className="slash-panel" id={slashId} role="listbox" aria-label="斜杠命令">
+            <div className="menu-heading">命令与 Skills <span className="slash-key-hint">↑↓ 选择 · Tab 补全 · Esc 关闭</span></div>
+            {slashItems.length === 0 && <div className="slash-empty">没有匹配项；仍可直接发送文本。</div>}
+            {slashItems.map((skill, index) => (
               <button
-                type="button"
-                role="option"
-                className="slash-item"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                }}
-                onClick={() => selectSlash("compact")}
-              >
-                <span className="slash-item-name">/compact</span>
-                <span className="slash-item-desc">压缩当前会话上下文</span>
-                <span className="slash-item-source">内置</span>
-              </button>
-            )}
-            {filteredSkills.map((skill, index) => (
-              <button
-                key={skill.path}
+                key={skill.key}
+                id={`${slashId}-${index}`}
                 type="button"
                 role="option"
                 aria-selected={index === slashCursor}
+                tabIndex={-1}
                 className={`slash-item${index === slashCursor ? " cursor" : ""}`}
                 onMouseEnter={() => setSlashCursor(index)}
                 onMouseDown={(e) => {
@@ -358,7 +387,7 @@ export function Composer(): React.JSX.Element {
                 <span className="slash-item-desc" title={skill.description}>
                   {skill.description || skill.source}
                 </span>
-                <span className="slash-item-source" title={skill.path}>
+                <span className="slash-item-source" title={skill.detail}>
                   {skill.source}
                 </span>
               </button>
@@ -368,7 +397,11 @@ export function Composer(): React.JSX.Element {
         <textarea
           ref={ref}
           className="composer-input"
-          placeholder={hasSession ? "输入任务,Enter 发送 · / 触发 Skills" : "先新建一个会话…"}
+          placeholder={hasSession ? (controls?.mode === "plan" ? "描述要规划的任务 · /plan off 退出" : "输入任务,Enter 发送 · / 查看命令与 Skills") : "先新建一个会话…"}
+          aria-label="任务输入"
+          aria-controls={showSlash ? slashId : undefined}
+          aria-autocomplete="list"
+          aria-activedescendant={showSlash && slashItems[slashCursor] ? `${slashId}-${slashCursor}` : undefined}
           value={text}
           disabled={!hasSession}
           rows={1}
@@ -378,15 +411,16 @@ export function Composer(): React.JSX.Element {
             autosize();
           }}
           onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
             if (showSlash) {
-              if (e.key === "ArrowDown") {
+              if (e.key === "ArrowDown" && slashItems.length) {
                 e.preventDefault();
-                setSlashCursor((i) => (i + 1) % filteredSkills.length);
+                setSlashCursor((i) => (i + 1) % slashItems.length);
                 return;
               }
-              if (e.key === "ArrowUp") {
+              if (e.key === "ArrowUp" && slashItems.length) {
                 e.preventDefault();
-                setSlashCursor((i) => (i - 1 + filteredSkills.length) % filteredSkills.length);
+                setSlashCursor((i) => (i - 1 + slashItems.length) % slashItems.length);
                 return;
               }
               if (e.key === "Escape") {
@@ -394,15 +428,14 @@ export function Composer(): React.JSX.Element {
                 setSlashDismissed(true);
                 return;
               }
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              if (e.key === "Enter" && !e.shiftKey && slashItems.length) {
                 e.preventDefault();
-                const current = filteredSkills[slashCursor];
+                const current = slashItems[slashCursor];
                 if (current) selectSlash(current.name);
-                else if (compactMatches) selectSlash("compact");
                 return;
               }
-              if (e.key === "Tab" && !e.nativeEvent.isComposing) {
-                const current = filteredSkills[slashCursor];
+              if (e.key === "Tab" && !e.shiftKey) {
+                const current = slashItems[slashCursor];
                 if (current) {
                   e.preventDefault();
                   selectSlash(current.name);
@@ -446,6 +479,7 @@ export function Composer(): React.JSX.Element {
           </button>
         )}
       </div>
+      {commandHint && <div className="composer-command-hint">{commandHint}</div>}
 
       <div className="composer-bar">
         <div className="composer-bar-left">

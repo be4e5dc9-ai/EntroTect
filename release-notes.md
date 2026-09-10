@@ -1,25 +1,27 @@
-## EntroTect 0.4.4
+## EntroTect 0.7.10
 
-### provider 层整体重构（修复 Mimo 400）
+### Plan 与 Goal 协作模式
 
-**根因**：小米官方文档确认 —— Mimo 在思考模式下进行多轮工具调用时，历史 assistant 消息的 `reasoning_content` 必须回传，缺失会被 400 拒绝。此前 0.4.1–0.4.3 的「收到 400 就降级重试」补丁只改可选参数，无法修复消息体缺失。
+- 新增 `/plan`、`/goal`、`/compact`、`/help` 内置命令，并与本地 Skills 统一显示在斜杠补全面板中。
+- Plan 是可持久化的会话协作模式：先探索、必要时澄清，再交付可直接实施的完整方案。
+- Plan 允许读取、搜索、网页调研、只读子代理、测试、构建与静态检查；工具层拒绝文件修改、写入型 Shell、安装、Git 变更、发布及后台进程。
+- 完整的 `<proposed_plan>` 回复会渲染成独立“实施计划”卡片，不再作为普通工具或裸文本混在对话流中。
+- Goal 可跨回合、会话恢复和上下文压缩保存，支持状态查看、完成、清除与继续推进。
 
-**重构内容**：
+### Harness 与交互改进
 
-- 请求体改由**供应商 profile** 决定（鉴权头 / `max_tokens` vs `max_completion_tokens` / thinking 参数 / `stream_options` / temperature），一次发对，删除 400 猜测式降级
-- `reasoning_content` **双向保留**：流中累积 → 存入 assistant 消息（跨会话持久化）→ 按 profile 回传
-- `systemPrompt` 首次真正下发（此前三个 provider 都未使用，等于系统提示词从未生效）
-- 空 `tools: []` 字段整体省略（严格网关会对空数组 400）
-- 修复 Anthropic 适配器致命 BUG：SSE `event:` 行解析丢失导致内容全空；补 thinking_delta / system 注入
-- 修复 Google 适配器：systemInstruction 注入、工具结果按工具名配对
-- 统一错误处理：上游错误正文 + 脱敏 URL 直达 UI；仅网络错误做指数退避重试
-- Mimo 思考档位按官方文档改为布尔开关（仅 enabled/disabled，无分档），输入框底栏布尔 thinking 模型支持 开/关 切换（小米建议在频繁工具调用时关闭 thinking）
+- 收紧 Todo 使用条件，Plan 模式不再用 Todo 代替正式方案。
+- 优化主代理、Ultra 子代理编排及持续目标提示词，减少不必要限制并强化验证闭环。
+- 斜杠面板支持统一键盘游标、Tab/Enter 补全、Esc 关闭、命令用法提示和窄窗口适配。
+- Plan/Goal 状态独立显示在输入框上方，不污染对话记录。
 
-**测试**：core 24 文件 / 272 用例全绿（+12）。
+### 验证
 
-**注意**：升级前的旧会话历史缺少 `reasoning_content`，使用 Mimo 等严格供应商时建议升级后新建会话。
+- Core 全量测试 430 项通过。
+- Shared、Core 与 Desktop 完整构建、TypeScript 检查通过。
+- 使用 Electron 实际渲染验证计划卡片、斜杠补全、日夜主题及窄窗口布局。
 
 ### 资产
 
-- `EntroTect-Setup-0.4.4.exe` — Windows 安装包（免管理员权限）
-- `SHA256SUMS.txt` — 安装包校验和
+- `EntroTect-Setup-0.7.10.exe` — Windows x64 安装包。
+- `SHA256SUMS.txt` — 安装包 SHA-256 校验和。

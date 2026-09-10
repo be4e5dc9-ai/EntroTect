@@ -764,6 +764,63 @@
 }
 
 /* ---------- 斜杠指令面板(复用 PopoverMenu 样式与弹簧入场) ---------- */
+.composer-session-controls {
+  max-height: min(200px, 25vh);
+  overflow-y: auto;
+  margin: 0 2px 10px;
+  padding: 4px 0 4px 12px;
+  border-left: 2px solid var(--accent);
+}
+.composer-control-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.composer-control-label {
+  flex: 0 0 34px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent-strong);
+}
+.composer-control-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.composer-control-actions { display: flex; flex-shrink: 0; align-items: center; gap: 4px; }
+.composer-control-text small { display: block; margin-top: 4px; color: var(--text-tertiary); }
+.composer-goal-state { margin-right: 8px; color: var(--text-tertiary); font-size: 11px; }
+.goal-completed .composer-goal-state { color: var(--success); }
+.goal-blocked .composer-goal-state { color: var(--warning); }
+.composer-control-row button, .composer-command-notice button {
+  flex-shrink: 0;
+  padding: 3px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.composer-control-row button:hover, .composer-command-notice button:hover { background: var(--surface-hover); color: var(--text); }
+.composer-control-row button:focus-visible, .composer-command-notice button:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.composer-command-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.composer-command-notice > span { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.composer-command-hint { padding: 6px 12px 0; color: var(--text-tertiary); font: 11px var(--font-mono); }
+.slash-key-hint { float: right; font-size: 10px; font-weight: 400; color: var(--text-tertiary); }
+.slash-empty { padding: 12px 10px; color: var(--text-tertiary); font-size: 12px; }
 .slash-panel {
   position: absolute;
   bottom: calc(100% + 8px);
@@ -835,6 +892,9 @@
   text-overflow: ellipsis;
 }
 @media (max-width: 560px) {
+  .slash-key-hint { display: none; }
+  .composer-control-row { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 6px; }
+  .composer-control-actions { grid-column: 2; justify-self: end; }
   .slash-item-desc {
     display: none;
   }
@@ -1096,6 +1156,26 @@
 .msg-text-block {
   min-width: 0;
 }
+.plan-block {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+}
+.plan-block-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--accent-strong);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.plan-block-body { padding: 15px 17px 17px; }
 
 /* 流式光标:最后一帧后跟闪烁插入符 */
 .msg-assistant-content .markdown {

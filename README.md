@@ -23,7 +23,7 @@ Windows 桌面 Coding Agent。设计依据见 `agent-study/`（ClaudeCode / deep
 - **并行工具调用**：同一轮内的互不依赖工具并发执行（审批仍逐个弹窗），结果按原始顺序回喂
 - 结构化需求澄清：当输入缺少关键参数、存在歧义或多条合理路径时，自动以带说明的选择题请用户确认；用户回复“你决定/随便/直接做”等放权短语则跳过澄清直接执行
 - 内置工具：`read` / `write` / `edit` / `glob` / `grep` / `bash`(PowerShell) / `webfetch`(网页抓取) / `websearch`(DuckDuckGo 搜索) / `todowrite`(任务计划板) / `diagnostics`(tsc 类型检查闭环) / `bash_output` + `kill_shell`(后台长任务,dev server 可常驻轮询) / `task`(子代理) / `generate_image`
-- Skills 与斜杠命令：输入框以 `/` 触发本地 skills 自动补全；设置 → Skills 可对每个 skill 单独开关“使用”与“斜杠显示”；扫描 `~/.agents/skills`、`~/.claude/skills`、`~/.config/opencode/skills` 与项目 `tools/`
+- Skills 与斜杠命令：输入框以 `/` 触发内置命令与本地 Skills 的统一补全，支持 ↑↓、Tab、Enter 和 Esc；设置 → Skills 可对每个 skill 单独开关“使用”与“斜杠显示”；扫描 `~/.agents/skills`、`~/.claude/skills`、`~/.config/opencode/skills` 与项目 `tools/`
 - 权限闸门:输入框底栏三模式——完全访问权限(自动放行)/ 修改需批准(只读免审,写操作审批)/ 全部请求均需批准;审批超时默认拒绝
 - 思考强度:输入框底栏选择 低·low / 高·high / 极高·xhigh / 最大·max；设置里可开关“显示模型思考过程”
 - 上下文管理：底栏右侧圆环显示已用占比；**自动压缩**——占用超 70% 时把早期对话压成摘要（设置 → 通用可开关），输入 `/compact` 可随时手动压缩
@@ -33,6 +33,26 @@ Windows 桌面 Coding Agent。设计依据见 `agent-study/`（ClaudeCode / deep
 - 协议缝：多协议 provider（OpenAI 兼容 / Anthropic Messages / Google Gemini），OpenAI 兼容侧按**供应商 profile** 决定鉴权头、token 字段、思考参数与 `stream_options`，一次发对而非靠 400 重试猜测；支持沙箱与插件 hooks
 
 > **信任模型**：`%APPDATA%\EntroTect\plugins\` 下的 `*.mjs` 插件在**主进程**以完整 Node/Electron 权限执行——安装插件即完全信任该代码，请只放入你信任的插件。插件可改写工具入参与聊天文本，改写后的参数即为实际执行参数（审批弹窗展示的预览已对齐）。
+
+## 斜杠命令
+
+| 命令 | 行为 |
+|---|---|
+| `/plan` 或 `/plan on` | 开启当前会话的仅规划模式，不调用模型；后续输入用于调研与方案设计 |
+| `/plan 任务内容` | 开启仅规划模式并立即调研该任务；可以携带附件 |
+| `/plan off` / `/plan status` | 退出规划模式 / 查看当前模式 |
+| `/goal 目标内容` | 设置当前会话的持续目标并开始推进；可以携带附件 |
+| `/goal` / `/goal status` | 查看目标及状态，不调用模型 |
+| `/goal done` / `/goal clear` | 手动标记完成 / 清除目标，不调用模型 |
+| `/goal resume` | 重新激活并继续推进已有目标 |
+| `/compact` | 手动压缩当前会话上下文 |
+| `/help` | 查看命令帮助，不调用模型 |
+
+规划模式和目标显示在输入框上方，并随会话保存，重启、切换会话和压缩上下文不会丢失。规划模式允许读取、搜索、网页调研、只读子代理，以及不改动仓库受跟踪文件的测试、构建和静态检查；工具层拒绝文件编辑、写入型 Shell、后台进程、安装、Git 变更和 Todo。完整方案以独立计划块展示。退出规划后按原有权限设置执行，不自动开始实现。
+
+目标在后续回合持续提供给模型；模型可通过 `update_goal` 报告已验证的完成结果或需要用户处理的阻塞。`/goal` 不创建后台定时任务，也不扩大操作授权。规划模式中设置目标只会调研和设计，不会实施或自动标记目标完成。目标恰好是 `done` 等保留词时，可使用 `/goal set done`。
+
+内置命令名优先于同名 Skill；其他 `/skill-name` 仍保持原有发送行为。Tab/Enter 在补全列表里先填入命令，填写内容后 Enter 发送；Shift+Enter 换行，Esc 关闭补全。
 
 ## 结构
 

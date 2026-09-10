@@ -2,10 +2,11 @@
 // 会话存储:JSONL append-only 事件流
 // 设计依据:codex/08 rollout + ClaudeCode/08 JSONL。行格式:
 //   { ordinal, ts, kind, ... }
-// kind ∈ meta | title | message
+// kind ∈ meta | title | message | controls
 //  - meta:   首行,会话元信息(id/createdAt/model/cwd)
 //  - title:  标题可追加(最后一次生效),保持 append-only 不重写首行
 //  - message: 完整 Message(含 tool_result),按序重建历史
+//  - controls: 会话规划模式与目标(最后一次生效，压缩时保留)
 // 加载容忍 torn tail:最后一行损坏则忽略之。
 // =====================================================================
 
@@ -15,6 +16,8 @@ import path from "node:path";
 import {
   messageSchema,
   sessionMetaSchema,
+  sessionControlsSchema,
+  type SessionControls,
   type Message,
   type SessionMeta,
 } from "@entrotect/shared";
@@ -30,10 +33,11 @@ export interface LoadedSession {
 interface Line {
   ordinal: number;
   ts: string;
-  kind: "meta" | "title" | "message";
+  kind: "meta" | "title" | "message" | "controls";
   meta?: SessionMeta;
   title?: string;
   message?: Message;
+  controls?: SessionControls;
 }
 
 export class SessionStore {
@@ -84,6 +88,13 @@ export class SessionStore {
     ]);
   }
 
+  async appendControls(sessionId: string, controls: SessionControls): Promise<void> {
+    await this.appendLines(sessionId, [{
+      ordinal: this.nextOrdinal(), ts: new Date().toISOString(), kind: "controls",
+      controls: sessionControlsSchema.parse(controls),
+    }]);
+  }
+
   /**
    * 压缩后整体替换消息流:保留 meta 首行与最后一条 title,
    * 用新消息列表重写 transcript(compaction 语义 = 历史被摘要取代)。
@@ -93,10 +104,12 @@ export class SessionStore {
     const metaLine = lines.find((line) => line.kind === "meta");
     const titleLines = lines.filter((line) => line.kind === "title");
     const lastTitle = titleLines.length > 0 ? titleLines[titleLines.length - 1] : undefined;
+    const lastControls = lines.filter((line) => line.kind === "controls").at(-1);
     if (!metaLine) throw new Error(`会话 ${sessionId} 无 meta 行,无法重写`);
     const rebuilt: Line[] = [
       metaLine,
       ...(lastTitle ? [lastTitle] : []),
+      ...(lastControls ? [lastControls] : []),
       ...messages.map((message) => ({
         ordinal: this.nextOrdinal(),
         ts: new Date().toISOString(),
@@ -115,14 +128,16 @@ export class SessionStore {
     const lines = await this.readLines(sessionId);
     let meta: SessionMeta | null = null;
     let title: string | undefined;
+    let controls: SessionControls | undefined;
     const messages: Message[] = [];
     for (const line of lines) {
       if (line.kind === "meta" && line.meta) meta = line.meta;
       if (line.kind === "title" && line.title) title = line.title;
+      if (line.kind === "controls" && line.controls) controls = line.controls;
       if (line.kind === "message" && line.message) messages.push(line.message);
     }
     if (!meta) throw new Error(`会话 ${sessionId} 无 meta 行,可能已损坏`);
-    return { meta: { ...meta, title: title ?? meta.title }, messages };
+    return { meta: { ...meta, title: title ?? meta.title, ...(controls ? { controls } : {}) }, messages };
   }
 
   /** 删除会话(对话)及其产物 */
@@ -179,6 +194,7 @@ export class SessionStore {
         if (line.kind === "meta" && line.meta) {
           line.meta = sessionMetaSchema.parse(line.meta);
         }
+        if (line.kind === "controls") line.controls = sessionControlsSchema.parse(line.controls);
         lines.push(line);
       } catch {
         // torn tail:容忍损坏行(最后一行截断等),跳过

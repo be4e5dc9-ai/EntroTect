@@ -26,6 +26,11 @@ export interface UiBlock {
   text: string;
 }
 
+export interface UiPlanBlock {
+  kind: "plan";
+  text: string;
+}
+
 /** 用户内嵌图片附件(Base64):消息流中以缩略图呈现 */
 export interface UiImageBlock {
   kind: "image";
@@ -53,7 +58,7 @@ export interface UiFileBlock {
   action: "written" | "edited";
 }
 
-export type UiAnyBlock = UiBlock | UiToolBlock | UiFileBlock | UiImageBlock;
+export type UiAnyBlock = UiBlock | UiPlanBlock | UiToolBlock | UiFileBlock | UiImageBlock;
 
 /**
  * 右侧详情栏标签页:浏览器式多标签。
@@ -143,6 +148,7 @@ export function contextWindowForModel(
 interface UiState {
   sessions: SessionMeta[];
   currentSession: SessionMeta | null;
+  commandNotice: string | null;
   messages: UiMessage[];
   busy: boolean;
   usage: TokenUsage | null;
@@ -185,6 +191,7 @@ interface UiState {
 export const useStore = create<UiState>()(() => ({
   sessions: [],
   currentSession: null,
+  commandNotice: null,
   messages: [],
   busy: false,
   usage: null,
@@ -333,6 +340,13 @@ function appendText(blocks: UiAnyBlock[], text: string): UiAnyBlock[] {
   return [...blocks, { kind: "text", text }];
 }
 
+/** 完整的 Plan mode 定稿从传输文本提升为独立 UI 产物。 */
+export function uiBlockForAssistantText(text: string): UiBlock | UiPlanBlock {
+  const match = /^\s*<proposed_plan>\s*\n?([\s\S]*?)\n?\s*<\/proposed_plan>\s*$/i.exec(text);
+  if (!match) return { kind: "text", text };
+  return { kind: "plan", text: match[1]!.trim() };
+}
+
 // ---------- 子代理对话页:per-key 的 rAF 流式缓冲 ----------
 const subagentDeltaBuffers: Record<string, string> = {};
 const subagentRafIds: Record<string, number | null> = {};
@@ -411,7 +425,7 @@ function updateSubagentLastAssistant(
 function finalizeText(blocks: UiAnyBlock[], finalText: string): UiAnyBlock[] {
   let end = blocks.length;
   while (end > 0 && blocks[end - 1]?.kind === "text") end -= 1;
-  return [...blocks.slice(0, end), { kind: "text", text: finalText }];
+  return [...blocks.slice(0, end), uiBlockForAssistantText(finalText)];
 }
 
 // ---------- 小工具 ----------
@@ -783,6 +797,18 @@ function hasCurrentTurnContext(state: UiState, event: RunContextEvent): boolean 
 
 export function applyEvent(event: AppEvent): void {
   switch (event.type) {
+    case "command-result":
+      if (useStore.getState().currentSession?.id === event.sessionId) {
+        useStore.setState({ commandNotice: event.message });
+      }
+      break;
+    case "session-controls":
+      useStore.setState((state) => ({
+        ...(state.currentSession?.id === event.sessionId
+          ? { currentSession: { ...state.currentSession, controls: event.controls } } : {}),
+        sessions: state.sessions.map((meta) => meta.id === event.sessionId ? { ...meta, controls: event.controls } : meta),
+      }));
+      break;
     case "session-meta": {
       flushDeltas();
       deltaBuffer = "";
@@ -793,6 +819,7 @@ export function applyEvent(event: AppEvent): void {
         const sessionChanged = state.currentSession?.id !== event.meta.id;
         return {
           currentSession: event.meta,
+          ...(sessionChanged ? { commandNotice: null } : {}),
           ...(sessionChanged
             ? {
                 messages: [],
@@ -820,6 +847,7 @@ export function applyEvent(event: AppEvent): void {
           return {
             sessions: event.sessions,
             currentSession: null,
+            commandNotice: null,
             messages: [],
             busy: false,
             approval: null,
@@ -967,7 +995,7 @@ export function applyEvent(event: AppEvent): void {
             key: nextKey++,
             role: "assistant",
             blocks: [
-              ...textBlocks.map((b) => ({ kind: "text" as const, text: b.text })),
+              ...textBlocks.map((b) => uiBlockForAssistantText(b.text)),
               ...toolCalls.map((b) => ({
                 kind: "tool-call" as const,
                 id: b.id,
