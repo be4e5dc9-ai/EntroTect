@@ -46,13 +46,22 @@ export function ReasoningSlider({
   onSelect,
 }: ReasoningSliderProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
+  const [localValue, setLocalValue] = useState(value);
+  const [dragging, setDragging] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const index = Math.max(0, efforts.indexOf(value));
+  const rangeRef = useRef<HTMLInputElement>(null);
+  useEffect(() => setLocalValue(value), [value]);
+  const index = Math.max(0, efforts.indexOf(localValue));
   const selected = efforts[index] ?? value;
-  const fill = efforts.length <= 1 ? 100 : (index / (efforts.length - 1)) * 100;
+  const position = efforts.length <= 1 ? 0 : index / (efforts.length - 1);
+  const select = (next: ReasoningEffort) => {
+    setLocalValue(next);
+    onSelect(next);
+  };
 
   useEffect(() => {
     if (!open) return;
+    rangeRef.current?.focus({ preventScroll: true });
     const onPointerDown = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
@@ -88,7 +97,7 @@ export function ReasoningSlider({
             <span className="reasoning-slider-mark"><SparkIcon /></span>
             <span className="reasoning-slider-copy">
               <span className="reasoning-slider-level">
-                <strong>{SHORT_LABEL[selected]}</strong>
+                <strong key={selected}>{SHORT_LABEL[selected]}</strong>
                 <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true">
                   <path d="m3 1.5 2.5 2.5L3 6.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
@@ -98,7 +107,7 @@ export function ReasoningSlider({
             <button
               type="button"
               className="reasoning-slider-reset"
-              onClick={() => onSelect(defaultValue)}
+              onClick={() => select(defaultValue)}
               aria-label={`恢复默认强度：${SHORT_LABEL[defaultValue]}`}
               title="恢复模型默认强度"
             >
@@ -109,10 +118,14 @@ export function ReasoningSlider({
           </div>
 
           <div
-            className="reasoning-range-wrap"
-            style={{ "--reasoning-fill": `${fill}%` } as CSSProperties}
+            className={`reasoning-range-wrap${dragging ? " is-dragging" : ""}`}
+            style={{ "--reasoning-position": position } as CSSProperties}
           >
+            <div className="reasoning-range-track" aria-hidden="true">
+              <div className="reasoning-range-fill" />
+            </div>
             <input
+              ref={rangeRef}
               className="reasoning-range"
               type="range"
               min={0}
@@ -121,8 +134,13 @@ export function ReasoningSlider({
               value={index}
               onChange={(event) => {
                 const next = efforts[Number(event.target.value)];
-                if (next) onSelect(next);
+                if (next) select(next);
               }}
+              onPointerDown={() => setDragging(true)}
+              onPointerUp={() => setDragging(false)}
+              onPointerCancel={() => setDragging(false)}
+              onLostPointerCapture={() => setDragging(false)}
+              onBlur={() => setDragging(false)}
               aria-label="思考强度"
               aria-valuetext={`${SHORT_LABEL[selected]}：${DESCRIPTION[selected]}`}
             />
@@ -133,6 +151,9 @@ export function ReasoningSlider({
                   className={`${effortIndex <= index ? "is-filled" : ""}${effortIndex === index ? " is-current" : ""}`}
                 />
               ))}
+            </div>
+            <div className="reasoning-range-thumb-lane" aria-hidden="true">
+              <span className="reasoning-range-thumb" />
             </div>
           </div>
 
