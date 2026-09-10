@@ -87,7 +87,12 @@ export function ReasoningSlider({
           <div className="reasoning-slider-head">
             <span className="reasoning-slider-mark"><SparkIcon /></span>
             <span className="reasoning-slider-copy">
-              <strong>{SHORT_LABEL[selected]}</strong>
+              <span className="reasoning-slider-level">
+                <strong>{SHORT_LABEL[selected]}</strong>
+                <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true">
+                  <path d="m3 1.5 2.5 2.5L3 6.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
               <span>{model || "当前模型"}</span>
             </span>
             <button
@@ -131,10 +136,6 @@ export function ReasoningSlider({
             </div>
           </div>
 
-          <div className="reasoning-slider-foot">
-            <span>{DESCRIPTION[selected]}</span>
-            <code>{selected}</code>
-          </div>
         </div>
       )}
     </div>
