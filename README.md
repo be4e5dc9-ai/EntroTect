@@ -1,112 +1,206 @@
 # EntroTect
 
-Windows 桌面 Coding Agent。设计依据见 `agent-study/`（ClaudeCode / deepseek-harness / opencode / codex 四大开源 Agent 源码学习笔记）。
+在 Windows 本地工作区中，连接你选择的模型，完成从代码理解到修改验证的开发任务。
 
-## 安装
+[下载安装](https://github.com/be4e5dc9-ai/EntroTect/releases/latest) · [版本记录](./release-notes.md) · [反馈问题](https://github.com/be4e5dc9-ai/EntroTect/issues) · [架构研究](./agent-study/README.md)
 
-从 [**GitHub Releases**](https://github.com/be4e5dc9-ai/EntroTect/releases/latest) 下载最新 `EntroTect-Setup-x.y.z.exe`，双击安装（免管理员权限），安装后从桌面快捷方式或开始菜单启动。同目录 `SHA256SUMS.txt` 可校验安装包完整性。
+## 项目定位
 
-首次使用：打开侧栏底部 **设置**，填入：
+EntroTect 是一个面向 Windows 的独立桌面编码 Agent。你选择模型服务、指定工作目录并描述任务，Agent 通过读取文件、搜索代码、修改文件和运行命令推进工作，在同一个界面中呈现回复、工具结果、任务进度和文件产物。
 
-| 字段 | 示例 |
-|---|---|
-| API Base URL | `https://api.deepseek.com/v1` |
-| API Key | `sk-…` |
-| 模型 | `deepseek-chat` |
-| 工作目录 | 工具执行的基准目录（留空 = 用户主目录） |
+项目的重点是 **Agent harness**：把模型推理与本地工具、权限审批、上下文管理、子代理和会话状态连接起来。模型负责理解和决策，EntroTect 负责执行调用、回传结果与维护工作现场，让模型能够根据实际代码和运行结果继续行动。
 
-配置保存在 `%APPDATA%\EntroTect\config.json`，也可用环境变量覆盖：`ENTROTECT_BASE_URL` / `ENTROTECT_API_KEY` / `ENTROTECT_MODEL`。
+当前主要面向个人开发者的本地项目工作：修复问题、实现功能、重构代码、梳理仓库、制定实施方案，以及开发过程中需要的资料调研、脚本执行和文件处理。模型服务由用户自行配置，应用不附带模型权重或 API 额度；实际效果取决于所选模型的工具调用能力、上下文容量和项目环境。
 
-## 功能
+本文对应桌面端 **0.7.10** 的代码能力。发布版本和安装包以 GitHub Releases 为准。
 
-- Agent 主循环：流式对话 → 工具调用 → 本地执行 → 结果回喂，直至无工具调用；支持子代理 `task` 委派
-- **并行工具调用**：同一轮内的互不依赖工具并发执行（审批仍逐个弹窗），结果按原始顺序回喂
-- 结构化需求澄清：当输入缺少关键参数、存在歧义或多条合理路径时，自动以带说明的选择题请用户确认；用户回复“你决定/随便/直接做”等放权短语则跳过澄清直接执行
-- 内置工具：`read` / `write` / `edit` / `glob` / `grep` / `bash`(PowerShell) / `webfetch`(网页抓取) / `websearch`(DuckDuckGo 搜索) / `todowrite`(任务计划板) / `diagnostics`(tsc 类型检查闭环) / `bash_output` + `kill_shell`(后台长任务,dev server 可常驻轮询) / `task`(子代理) / `generate_image`
-- Skills 与斜杠命令：输入框以 `/` 触发内置命令与本地 Skills 的统一补全，支持 ↑↓、Tab、Enter 和 Esc；设置 → Skills 可对每个 skill 单独开关“使用”与“斜杠显示”；扫描 `~/.agents/skills`、`~/.claude/skills`、`~/.config/opencode/skills` 与项目 `tools/`
-- 权限闸门:输入框底栏三模式——完全访问权限(自动放行)/ 修改需批准(只读免审,写操作审批)/ 全部请求均需批准;审批超时默认拒绝
-- 思考强度:输入框底栏选择 低·low / 高·high / 极高·xhigh / 最大·max；设置里可开关“显示模型思考过程”
-- 上下文管理：底栏右侧圆环显示已用占比；**自动压缩**——占用超 70% 时把早期对话压成摘要（设置 → 通用可开关），输入 `/compact` 可随时手动压缩
-- 会话持久化：JSONL append-only 存于 `%APPDATA%\EntroTect\sessions\`，重启可续
-- 输出治理：工具输出超 50KB 自动落盘换预览，防上下文爆炸
-- 外观：对话列表背景与主区一致（平坦分隔），支持日/夜间主题与强调色自定义；日间模式为 Claude Code 同款暖黄白基调
-- 协议缝：多协议 provider（OpenAI 兼容 / Anthropic Messages / Google Gemini），OpenAI 兼容侧按**供应商 profile** 决定鉴权头、token 字段、思考参数与 `stream_options`，一次发对而非靠 400 重试猜测；支持沙箱与插件 hooks
+## 当前能做什么
 
-> **信任模型**：`%APPDATA%\EntroTect\plugins\` 下的 `*.mjs` 插件在**主进程**以完整 Node/Electron 权限执行——安装插件即完全信任该代码，请只放入你信任的插件。插件可改写工具入参与聊天文本，改写后的参数即为实际执行参数（审批弹窗展示的预览已对齐）。
+### 在项目中执行开发任务
+
+- **理解代码**：读取文件，按路径或内容搜索，结合现有实现定位问题和影响范围。
+- **修改与验证**：写入文件、精确替换内容，运行项目的测试、构建和检查命令；内置诊断工具可调用项目本地的 `tsc --noEmit`。
+- **持续工具调用**：执行结果会回传给模型，供其判断下一步；支持互不依赖的工具调用并行执行，也可手动停止当前任务。
+- **长时间命令**：支持后台 Shell 任务、增量读取输出和终止进程。Windows 下，名为 `bash` 的工具实际使用 PowerShell。
+
+Git、打包和发布等工作可通过本机已安装的命令行工具完成，使用本机的开发环境、登录状态和所选权限模式。
+
+### 调研、规划与协作
+
+- **网页调研**：搜索网页、抓取指定页面，为实现方案和技术判断补充资料。
+- **Plan 模式**：先探索代码、澄清关键决策，再交付包含实现方式与验收标准的方案。
+- **Goal 持续目标**：把目标和状态保存在当前会话中，后续回合继续围绕目标工作。
+- **Todo 进度面板**：集中展示多步骤任务的待办、进行中和已完成状态。
+- **子代理**：将边界清楚的代码探索、独立修改或验证任务交给子代理，查看其活动与对话，由主代理汇总结果。
+- **结构化澄清**：将模型按约定格式提出的问题渲染成选项卡，便于确认会实质影响结果的选择。
+
+### 查看过程与产物
+
+对话界面支持 Markdown、代码高亮、可折叠的模型思考内容，以及可展开的工具调用结果。文件内容和子代理对话可在详情面板中查看；正式实施计划与 Todo 也有各自的展示位置。
+
+输入框支持拖入文件和图片。普通文件作为本地路径提供给 Agent；不超过 8 MB 的图片作为视觉输入发送给支持图片的模型。内置图片生成工具可调用兼容 `/images/generations` 的服务并将结果保存到工作目录，需使用支持该接口的供应商和图片模型。
+
+界面提供日间与夜间主题、预设及自定义强调色，并适配减少动态效果偏好。用量概览展示会话、消息、Token 和活跃记录；上下文面板展示当前占用情况。
+
+## 安装与开始使用
+
+当前提供 **Windows x64** 安装包。
+
+1. 从 [GitHub Releases](https://github.com/be4e5dc9-ai/EntroTect/releases/latest) 下载 `EntroTect-Setup-x.y.z.exe`，运行安装程序。同一版本中的 `SHA256SUMS.txt` 可用于校验文件。
+2. 启动应用，在「设置 → 供应商」中选择预设或添加供应商，填写 Base URL、API Key 和 API Format。
+3. 拉取模型列表或手动添加模型 ID，将供应商设为当前使用，并在对话中选择模型。
+4. 新建任务时选择项目目录；也可在「设置 → 通用」中指定默认工作目录。未设置目录时使用用户主目录。
+5. 选择权限模式和思考强度，发送任务。
+
+例如：
+
+```text
+检查当前项目登录失败的原因，修复问题并运行相关测试。
+```
+
+先形成方案：
+
+```text
+/plan 为当前项目设计一个可取消、可重试的文件上传流程
+```
+
+设置一个需要多轮推进的目标：
+
+```text
+/goal 完成设置页重构，保留现有配置兼容性，并通过测试和构建
+```
+
+安装程序支持静默安装。在安装包所在目录执行，将文件名替换为实际版本：
+
+```powershell
+Start-Process -FilePath .\EntroTect-Setup-x.y.z.exe -ArgumentList "/S" -WindowStyle Hidden -Wait
+```
+
+## 模型接入与思考强度
+
+应用内置三种协议适配：OpenAI 兼容 Chat Completions、Anthropic Messages 和 Google Gemini。供应商设置支持自定义地址与协议、拉取或手动维护模型列表，以及为模型配置上下文窗口、思考档位和默认档位。
+
+现有预设包括 DeepSeek、OpenAI、Anthropic、Google、Moonshot、Zhipu AI、Qwen、MiniMax、Mimo、OpenRouter 和本地 Ollama。预设用于简化配置；具体模型是否可用，以及工具调用、视觉和思考参数是否兼容，仍由实际服务端决定。
+
+默认使用离散滑块调整思考强度，在「设置 → 通用 → 思考强度控件」中可切换为经典菜单。应用按模型配置与预设显示可用档位，部分模型仅支持思考开关，部分支持 `low`、`medium`、`high`、`xhigh`、`max` 等分档。
+
+**Ultra 是 EntroTect 的子代理编排档位。** 当模型的可用档位包含 `max` 时，界面增加 `ultra`：模型侧以 `max` 为基准进行协议适配，同时提示主代理在主要实现前主动委派代码探索、方案复核或独立验证。子代理使用同一模型服务、独立的任务上下文和受控工具集，当前仅支持一层委派。
+
+Ultra 的额外能力来自子代理协作；是否有效取决于任务拆分和模型执行情况，并会增加模型调用与 Token 消耗。
+
+## Plan、Goal 与 Todo
+
+三者承担不同职责，可以按任务需要组合使用：
+
+| 机制 | 解决的问题 | 界面与行为 |
+|---|---|---|
+| Plan | 先决定怎么做 | 持久化的规划模式，完整方案呈现为独立「实施计划」卡片 |
+| Goal | 持续记住要达成什么 | 会话目标及进行中、受阻、已完成状态，显示在输入框上方 |
+| Todo | 跟踪当前工作做到哪一步 | 独立进度面板，由 Agent 更新条目状态 |
+
+### Plan：探索与设计
+
+Plan 模式允许读取、搜索、网页调研、只读子代理，以及不修改仓库受跟踪文件的测试、构建和检查。工具层会移除文件编辑、图片生成和 Todo 等实施工具，并对 Shell 命令进行检查，拒绝写入、安装、Git 变更、发布、后台进程和无法识别为非变更的命令。
+
+规划状态会随会话保存。即使在对话中说「开始实现」，也仍处于规划模式；使用 `/plan off` 退出后，再发送实施请求。退出模式本身只切换状态，不自动执行方案。
+
+### Goal：跨回合保持目标
+
+目标和状态随会话恢复、重启及上下文压缩保留，并继续提供给模型。模型可报告完成或阻塞，用户也可手动完成、清除或恢复目标。
+
+Goal 在会话执行期间推进工作，不会创建定时任务、在应用关闭后运行或自动唤醒。它也不改变权限设置。在 Plan 模式下设置 Goal，当前工作仍限于调研与方案设计。
+
+### Todo：呈现执行进度
+
+Todo 在独立面板中展示，不作为普通工具卡片穿插在对话流里。默认提示词引导 Agent 仅在确有多步骤追踪需要或用户明确要求时使用；简单问答、直接修改通常无需创建。Plan 模式禁用 Todo，正式实施方案由计划卡片承载。
 
 ## 斜杠命令
 
-| 命令 | 行为 |
+| 命令 | 用途 |
 |---|---|
-| `/plan` 或 `/plan on` | 开启当前会话的仅规划模式，不调用模型；后续输入用于调研与方案设计 |
-| `/plan 任务内容` | 开启仅规划模式并立即调研该任务；可以携带附件 |
-| `/plan off` / `/plan status` | 退出规划模式 / 查看当前模式 |
-| `/goal 目标内容` | 设置当前会话的持续目标并开始推进；可以携带附件 |
-| `/goal` / `/goal status` | 查看目标及状态，不调用模型 |
-| `/goal done` / `/goal clear` | 手动标记完成 / 清除目标，不调用模型 |
+| `/plan`、`/plan on` | 开启规划模式 |
+| `/plan <任务内容>` | 开启规划模式并立即调研该任务 |
+| `/plan off`、`/plan status` | 退出规划模式、查看当前模式 |
+| `/goal <目标内容>` | 设置持续目标并开始推进 |
+| `/goal`、`/goal status` | 查看目标与状态 |
+| `/goal done`、`/goal clear` | 手动标记完成、清除目标 |
 | `/goal resume` | 重新激活并继续推进已有目标 |
 | `/compact` | 手动压缩当前会话上下文 |
-| `/help` | 查看命令帮助，不调用模型 |
+| `/help` | 查看内置命令帮助 |
 
-规划模式和目标显示在输入框上方，并随会话保存，重启、切换会话和压缩上下文不会丢失。规划模式允许读取、搜索、网页调研、只读子代理，以及不改动仓库受跟踪文件的测试、构建和静态检查；工具层拒绝文件编辑、写入型 Shell、后台进程、安装、Git 变更和 Todo。完整方案以独立计划块展示。退出规划后按原有权限设置执行，不自动开始实现。
+`/plan <任务内容>` 和 `/goal <目标内容>` 可以携带附件。仅切换模式、查询状态或手动修改目标状态的命令不调用模型。目标内容与 `done` 等保留词重名时，可用 `/goal set <目标内容>` 明确设置。
 
-目标在后续回合持续提供给模型；模型可通过 `update_goal` 报告已验证的完成结果或需要用户处理的阻塞。`/goal` 不创建后台定时任务，也不扩大操作授权。规划模式中设置目标只会调研和设计，不会实施或自动标记目标完成。目标恰好是 `done` 等保留词时，可使用 `/goal set done`。
+输入 `/` 打开补全面板，使用 ↑↓ 选择、Tab 或 Enter 填入命令；填写内容后 Enter 发送，Shift+Enter 换行，Esc 关闭面板。内置命令与本地 Skills 共用补全入口，内置命令名优先。
 
-内置命令名优先于同名 Skill；其他 `/skill-name` 仍保持原有发送行为。Tab/Enter 在补全列表里先填入命令，填写内容后 Enter 发送；Shift+Enter 换行，Esc 关闭补全。
+## 权限与本地数据
 
-## 结构
+工具执行提供三种审批模式，默认为「修改需批准」：
 
-```
-agent-study/   学习材料(四大开源 Agent 架构笔记)
-tools/         Python 构建期工具链(venv 隔离)
-  motion/      动效烘焙:弹簧 ODE 解算 → packages/shared/tokens/motion.{css,json}
-  assets/      图标与安装包视觉资源(Pillow)
-  release/     发布管线:剥注释构建 + NSIS 安装包 + SHA256 (+ auto-release.ps1 一键发布)
-  smoke/       无头冒烟测试驱动
+- **修改需批准**：只读工具自动放行，文件修改和普通 Shell 等操作需要审批。
+- **全部请求均需批准**：包括只读工具在内的调用都进入审批流程。
+- **完全访问权限**：工具调用自动放行。
+
+审批可选择允许一次、在当前会话中始终允许该工具，或拒绝；等待超时默认拒绝。设置中还可启用「拦截危险命令」，对命中的命令模式拒绝执行。这是应用层命令检查，不提供容器、虚拟机或操作系统级的进程隔离；工作目录是执行基准，也不是 Shell 的文件系统隔离边界。
+
+应用配置与会话保存在本机，主要位置如下：
+
+| 路径 | 内容 |
+|---|---|
+| `%APPDATA%\EntroTect\config.json` | 供应商、API Key、模型与通用设置；当前以 JSON 明文保存 |
+| `%APPDATA%\EntroTect\sessions\<会话 ID>\transcript.jsonl` | 会话消息、工具结果、规划模式与目标状态 |
+| `%APPDATA%\EntroTect\sessions\<会话 ID>\artifacts\` | 超限工具输出等会话产物 |
+| `%APPDATA%\EntroTect\usage.jsonl` | 用量记录 |
+| `%APPDATA%\EntroTect\plugins\` | 本地扩展插件 |
+
+「本地」指应用、工具执行与上述数据存储的位置。使用远程模型时，对话、被读取并加入上下文的文件内容和图片附件会发送给配置的模型服务；网页搜索、抓取和图片生成也会访问对应服务。
+
+上下文可按阈值自动压缩，默认阈值为 70%，可在设置中调整或关闭。压缩会以摘要替换早期消息，保留规划模式与目标状态；会话记录不应视为完整、不可变的原始历史备份。超限工具输出会保存为文件，并以预览和路径回传给模型。
+
+## 扩展与当前边界
+
+**Skills**：支持发现本机 Skills、查看名称与描述、管理启用及斜杠显示选项。扫描范围包括用户目录下的 `.agents/skills`、`.claude/skills`、`.config/opencode/skills`、`.opencode/skills`，以及启动环境中发现的 `tools/` 目录。当前 Skill 斜杠入口会补全名称并按普通消息发送，尚未实现发送时自动读取、展开和注入对应 `SKILL.md` 内容的执行管线。
+
+**插件 Hooks**：启动时加载应用数据目录 `plugins/` 下的 `.mjs` 文件，可处理聊天文本及工具执行前后事件。插件在主进程中拥有完整 Node/Electron 权限，应按本地可执行代码管理。
+
+当前尚未接入 MCP、完整 LSP、浏览器或桌面图形界面自动化，也没有跨设备会话同步和后台目标调度。内置诊断以本地 TypeScript 检查为主；其他语言的验证依赖项目已有命令和本机工具链。
+
+## 源码开发
+
+工程采用 pnpm workspace，核心逻辑与桌面界面分离：
+
+```text
 packages/
-  shared/      core↔UI 协议 DTO(Op/EventMsg/ContentBlock) + 设计 tokens
-  core/        Agent 核心(纯 TS,零 Electron 依赖,272 单测；含 permission/sandbox/clarification)
-  app-desktop/ Electron 壳 + React UI（Composer 斜杠补全、ClarificationCard、Skills 设置页）
-release/      安装包产物（仅保留当前版本）
+  core/          TypeScript Agent 核心：模型协议、主循环、工具、权限、会话与子代理
+  app-desktop/   Electron 主进程与 React 界面：会话装配、IPC、对话及设置
+  shared/        共享协议、配置类型、命令定义、思考档位与设计 tokens
+tools/           Python 构建辅助、视觉资源、动效、冒烟测试与发布脚本
+agent-study/     Agent 架构研究与设计参考
+release/         本地安装包与校验和产物
 ```
 
-## 开发
+开发环境：Windows、Node.js 24、`pnpm@11.7.0`。在仓库根目录执行：
 
 ```powershell
 pnpm install
-pnpm dev          # 构建全部并启动桌面应用
-pnpm test         # core 单元测试
-node packages/core/scripts/e2e.mjs   # 真实 API 端到端冒烟(需已配置 key)
+pnpm dev             # 构建工作区并启动桌面应用
+pnpm test            # 运行自动化测试
+pnpm build           # 构建全部包并执行桌面端类型检查
 ```
 
-## 发布
+测试覆盖模型适配、主循环、文件与联网工具、权限、会话、Plan/Goal、子代理及界面交互等。另有真实 API 冒烟脚本 `node packages/core/scripts/e2e.mjs`，需先配置模型凭据，运行会产生实际模型调用。
+
+### 本地打包
+
+安装包由 Electron Builder 生成 Windows x64 NSIS 产物，发布辅助脚本同时生成 SHA-256 校验和。以下命令均在仓库根目录执行：
 
 ```powershell
-cd tools
-python -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt
-
-.venv\Scripts\python release\release.py          # 正式安装包 + SHA256SUMS.txt
-.venv\Scripts\python release\release.py --version 0.2.0   # 指定版本
-# 一键：自动提交 → 打包 → 清理旧包 → 静默安装 → 校验 → 推送并发布 GitHub Releases(附安装包)
-powershell -ExecutionPolicy Bypass -File tools\release\auto-release.ps1
-powershell -ExecutionPolicy Bypass -File tools\release\auto-release.ps1 -Version 0.2.14 -Message "feat: ..."
-powershell -ExecutionPolicy Bypass -File tools\release\auto-release.ps1 -SkipGitHub   # 只本地打包安装,不上传
+python -m venv tools\.venv
+.\tools\.venv\Scripts\python.exe -m pip install -r tools\requirements.txt
+.\tools\.venv\Scripts\python.exe tools\release\release.py
 ```
 
-**双版本策略**：仓库源码 = 有注释版（单一事实源）；发布管线经 esbuild/vite 剥注释产出**无注释版**并打包，二者永不失同步。
+可向 `release.py` 传入 `--version X.Y.Z` 更新桌面端版本后打包。正式发布前先运行 `pnpm test` 和 `pnpm build`；打包脚本本身不代替这两项验证。
 
-动效参数只改 `tools/motion/gen_motion.py` 顶部常量后重跑，renderer 消费 `packages/shared/tokens` 下的同一份产物。
+仓库另提供 `tools/release/auto-release.ps1`，用于提交工作区全部变更、打包、清理旧安装包、静默安装、版本校验及推送 GitHub Release。使用前需准备 Python 虚拟环境、Git 远端和已登录的 GitHub CLI；`-SkipGitHub` 仅跳过远端推送与上传，其余本地步骤仍会执行。
 
-## 测试
-
-| 命令 | 内容 |
-|---|---|
-| `pnpm test` | 272 个单元测试（SSE/块装配/主循环/工具/权限/会话/clarification/appearance/compact/provider profile 等） |
-| `tools/smoke/smoke.py` | mock provider 全链路冒烟 |
-| `node packages/core/scripts/e2e.mjs` | 真实 API 端到端 |
-
-## 路线图
-
-已实现：子代理、沙箱、插件 hooks、Skills/斜杠命令（含单 skill 开关）、结构化澄清、上下文窗口可视化、并行工具调用、WebFetch/WebSearch、TodoWrite 计划板、tsc 诊断闭环、后台任务、自动压缩 + /compact
-待实现：MCP · LSP 完整接入 · 图片读取 · Rust sidecar 热路径
+构建工具说明见 [tools/README.md](./tools/README.md)。设计研究见 [agent-study/README.md](./agent-study/README.md)，其中记录的其他 Agent 能力是研究参考，当前产品能力以本仓库实现为准。
