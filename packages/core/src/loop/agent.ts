@@ -144,7 +144,12 @@ export async function runAgent(
     const turnTools = dispatching
       ? [...deps.tools.filter((tool) => tool.name === "task"), ultraDirectTool]
       : deps.tools;
-    const toolsByName = new Map(turnTools.map((tool) => [tool.name, tool]));
+    // The provider only sees coordination tools at this stage, but some models
+    // still emit a known ordinary tool in the same batch as task. Recognize it
+    // so it can run *after* the delegation has completed.
+    const toolsByName = new Map(
+      [...deps.tools, ...(dispatching ? [ultraDirectTool] : [])].map((tool) => [tool.name, tool]),
+    );
     if (dispatching) dispatchAttempts++;
     const dispatchPrompt = dispatching
       ? ULTRA_DISPATCH_PROMPT + (dispatchAttempts > 1 ? "\n上次未完成有效委派决定，请纠正工具调用；不要重复直接作答。" : "")
@@ -269,8 +274,8 @@ export async function runAgent(
       };
     }
 
-    // 4. 两阶段执行:审批串行(逐个弹窗),执行并行(互不依赖的调用并发跑),
-    //    结果按原始 tool_use 顺序回填,保证与请求块配对。
+    // 4. 同阶段审批串行、执行并行；Ultra 首轮先完成协作调用，
+    //    再处理同批的普通工具。结果按原始 tool_use 顺序回填。
     const toolContextBase = {
       cwd: deps.cwd,
       artifactDir: deps.artifactDir,
@@ -288,6 +293,10 @@ export async function runAgent(
       index: number;
       denied?: boolean;
     }
+
+    const isDispatchCall = (call: ToolCallBlock): boolean =>
+      call.name === "task" || call.name === "ultra_direct";
+    const hasDispatchCall = dispatching && toolCalls.some(isDispatchCall);
 
     // 4a. 预处理:abort/未知工具直接占位,其余进审批队列
     const pending: Planned[] = [];
@@ -311,7 +320,7 @@ export async function runAgent(
           toolCallId: call.id,
           name: call.name,
           isError: true,
-          content: dispatching ? "Ultra 协作尚未确定，请先调用 task；仅简单请求、用户禁止委派或需澄清时使用 ultra_direct。" : `未知工具: ${call.name}`,
+          content: `未知工具: ${call.name}`,
         };
         deps.emit({
           type: "tool-state",
@@ -320,6 +329,18 @@ export async function runAgent(
           preview,
           summary: "未知工具",
         });
+        return;
+      }
+      if (dispatching && !hasDispatchCall) {
+        const reason = "本轮尚未作出 Ultra 协作决定，此工具未执行。请先调用 task；仅简单请求、用户禁止委派或需澄清时使用 ultra_direct。";
+        ordered[index] = {
+          type: "tool-result",
+          toolCallId: call.id,
+          name: call.name,
+          isError: true,
+          content: reason,
+        };
+        deps.emit({ type: "tool-state", toolCallId: call.id, state: "failed", preview, summary: reason });
         return;
       }
       // 插件 before 钩子:审批前改写 args
@@ -345,52 +366,29 @@ export async function runAgent(
       pending.push({ call, tool, preview, args, index });
     });
 
-    // 4b. 审批串行(保持弹窗顺序与交互稳定)
-    for (const item of pending) {
-      if (deps.abortSignal?.aborted) break;
-      // Internal decisions have no external effects and grant no tool permissions.
-      if (item.tool === ultraDirectTool) continue;
-      const outcome = await deps.approve({
-        toolCallId: item.call.id,
-        toolName: item.call.name,
-        preview: item.preview,
-        description: item.tool.description,
-      });
-      if (outcome.decision === "deny") {
-        const reason =
-          outcome.reason ??
-          "工具调用被用户拒绝。请改用其他方式完成任务,或向用户说明为什么需要此操作。";
-        ordered[item.index] = {
-          type: "tool-result",
+    let dispatchSucceeded = false;
+    // 4b. 同一阶段审批串行(保持弹窗顺序与交互稳定)
+    const executeItems = async (items: Planned[]): Promise<void> => {
+      for (const item of items) {
+        if (deps.abortSignal?.aborted) break;
+        // Internal decisions have no external effects and grant no tool permissions.
+        if (item.tool === ultraDirectTool) continue;
+        const outcome = await deps.approve({
           toolCallId: item.call.id,
-          name: item.call.name,
-          isError: true,
-          content: reason,
-        };
-        deps.emit({
-          type: "tool-state",
-          toolCallId: item.call.id,
-          state: "denied",
+          toolName: item.call.name,
           preview: item.preview,
+          description: item.tool.description,
         });
-        item.denied = true;
-        // Respect denied delegation instead of repeatedly asking for the same approval.
-        if (dispatching && item.call.name === "task") dispatchPending = false;
-      }
-    }
-
-    // 4c. 执行并行:仅剩已批准的调用;结果按索引占位,顺序不变
-    await Promise.all(
-      pending.map(async (item) => {
-        if (item.denied) return;
-        const index = item.index;
-        if (deps.abortSignal?.aborted) {
-          ordered[index] = {
+        if (outcome.decision === "deny") {
+          const reason =
+            outcome.reason ??
+            "工具调用被用户拒绝。请改用其他方式完成任务,或向用户说明为什么需要此操作。";
+          ordered[item.index] = {
             type: "tool-result",
             toolCallId: item.call.id,
             name: item.call.name,
             isError: true,
-            content: ABORT_RESULT,
+            content: reason,
           };
           deps.emit({
             type: "tool-state",
@@ -398,89 +396,139 @@ export async function runAgent(
             state: "denied",
             preview: item.preview,
           });
-          return;
+          item.denied = true;
+          // Respect denied delegation instead of repeatedly asking for the same approval.
+          if (dispatching && item.call.name === "task") dispatchPending = false;
         }
-        deps.emit({
-          type: "tool-state",
-          toolCallId: item.call.id,
-          state: "executing",
-          preview: item.preview,
-        });
-        try {
-          // 审批可能跨越 SetConfig;在真正调用工具前读取最新模式。
-          const toolContext: ToolContext = {
-            ...toolContextBase,
-            sandboxMode: getSandboxMode(),
-            imageProvider: deps.imageProvider,
-            subagentLog: (line: string) => {
-              deps.emit({ type: "subagent-activity", toolCallId: item.call.id, text: line });
-            },
-            subagentEmit: (part: SubagentPart) => {
-              deps.emit({ type: "subagent-part", toolCallId: item.call.id, part });
-            },
-          };
-          const output = await item.tool.call(item.args, toolContext);
-          if (dispatching) dispatchPending = false;
-          const truncated = await truncateOutput(output, deps.artifactDir);
-          notifyToolAfter(pluginHooks, item.call.name, truncated.content, false);
-          if (
-            item.call.name === "write" ||
-            item.call.name === "edit" ||
-            item.call.name === "generate_image"
-          ) {
-            const filePath = (item.args as { file_path?: unknown } | null)?.file_path;
-            if (typeof filePath === "string" && filePath.length > 0) {
-              const absolute = path.resolve(deps.cwd, filePath);
-              const insideCwd =
-                absolute === deps.cwd || absolute.startsWith(deps.cwd + path.sep);
-              const display = insideCwd
-                ? path.relative(deps.cwd, absolute)
-                : absolute;
-              deps.emit({
-                type: "file-changed",
-                toolCallId: item.call.id,
-                path: display,
-                action: item.call.name === "edit" ? "edited" : "written",
-              });
-            }
+      }
+
+      // 4c. 同一阶段执行并行:仅剩已批准的调用;结果按索引占位,顺序不变
+      await Promise.all(
+        items.map(async (item) => {
+          if (item.denied) return;
+          const index = item.index;
+          if (deps.abortSignal?.aborted) {
+            ordered[index] = {
+              type: "tool-result",
+              toolCallId: item.call.id,
+              name: item.call.name,
+              isError: true,
+              content: ABORT_RESULT,
+            };
+            deps.emit({
+              type: "tool-state",
+              toolCallId: item.call.id,
+              state: "denied",
+              preview: item.preview,
+            });
+            return;
           }
-          ordered[index] = {
-            type: "tool-result",
-            toolCallId: item.call.id,
-            name: item.call.name,
-            isError: false,
-            content: truncated.content,
-          };
           deps.emit({
             type: "tool-state",
             toolCallId: item.call.id,
-            state: "completed",
+            state: "executing",
             preview: item.preview,
-            // 工具卡片的展开区需要完整结果。truncateOutput 已负责将超大输出
-            // 换成安全的截断预览并落盘，因此这里可以统一交给 UI 展示。
-            summary: truncated.content,
           });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          const content = `<tool_use_error>${message}</tool_use_error>`;
-          notifyToolAfter(pluginHooks, item.call.name, content, true);
-          ordered[index] = {
-            type: "tool-result",
-            toolCallId: item.call.id,
-            name: item.call.name,
-            isError: true,
-            content,
+          try {
+            // 审批可能跨越 SetConfig;在真正调用工具前读取最新模式。
+            const toolContext: ToolContext = {
+              ...toolContextBase,
+              sandboxMode: getSandboxMode(),
+              imageProvider: deps.imageProvider,
+              subagentLog: (line: string) => {
+                deps.emit({ type: "subagent-activity", toolCallId: item.call.id, text: line });
+              },
+              subagentEmit: (part: SubagentPart) => {
+                deps.emit({ type: "subagent-part", toolCallId: item.call.id, part });
+              },
+            };
+            const output = await item.tool.call(item.args, toolContext);
+            const truncated = await truncateOutput(output, deps.artifactDir);
+            if (dispatching && isDispatchCall(item.call)) {
+              dispatchPending = false;
+              dispatchSucceeded = true;
+            }
+            notifyToolAfter(pluginHooks, item.call.name, truncated.content, false);
+            if (
+              item.call.name === "write" ||
+              item.call.name === "edit" ||
+              item.call.name === "generate_image"
+            ) {
+              const filePath = (item.args as { file_path?: unknown } | null)?.file_path;
+              if (typeof filePath === "string" && filePath.length > 0) {
+                const absolute = path.resolve(deps.cwd, filePath);
+                const insideCwd =
+                  absolute === deps.cwd || absolute.startsWith(deps.cwd + path.sep);
+                const display = insideCwd
+                  ? path.relative(deps.cwd, absolute)
+                  : absolute;
+                deps.emit({
+                  type: "file-changed",
+                  toolCallId: item.call.id,
+                  path: display,
+                  action: item.call.name === "edit" ? "edited" : "written",
+                });
+              }
+            }
+            ordered[index] = {
+              type: "tool-result",
+              toolCallId: item.call.id,
+              name: item.call.name,
+              isError: false,
+              content: truncated.content,
+            };
+            deps.emit({
+              type: "tool-state",
+              toolCallId: item.call.id,
+              state: "completed",
+              preview: item.preview,
+              // 工具卡片的展开区需要完整结果。truncateOutput 已负责将超大输出
+              // 换成安全的截断预览并落盘，因此这里可以统一交给 UI 展示。
+              summary: truncated.content,
+            });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            const content = `<tool_use_error>${message}</tool_use_error>`;
+            notifyToolAfter(pluginHooks, item.call.name, content, true);
+            ordered[index] = {
+              type: "tool-result",
+              toolCallId: item.call.id,
+              name: item.call.name,
+              isError: true,
+              content,
+            };
+            deps.emit({
+              type: "tool-state",
+              toolCallId: item.call.id,
+              state: "failed",
+              preview: item.preview,
+              summary: message.slice(0, 200),
+            });
+          }
+        }),
+      );
+    };
+
+    if (dispatching) {
+      await executeItems(pending.filter((item) => isDispatchCall(item.call)));
+      const ordinaryItems = pending.filter((item) => !isDispatchCall(item.call));
+      if (dispatchSucceeded) {
+        // Same-turn ordinary calls must not race the child or be approved before
+        // we know delegation succeeded. Their result slots retain model order.
+        await executeItems(ordinaryItems);
+      } else {
+        for (const item of ordinaryItems) {
+          const reason = "Ultra 协作决定未成功，当前回合的后续工具未执行。请先查看 task 或 ultra_direct 的结果，再重新调用所需工具。";
+          ordered[item.index] = {
+            type: "tool-result", toolCallId: item.call.id, name: item.call.name,
+            isError: true, content: reason,
           };
-          deps.emit({
-            type: "tool-state",
-            toolCallId: item.call.id,
-            state: "failed",
-            preview: item.preview,
-            summary: message.slice(0, 200),
-          });
+          deps.emit({ type: "tool-state", toolCallId: item.call.id, state: "failed", preview: item.preview, summary: reason });
         }
-      }),
-    );
+      }
+    } else {
+      await executeItems(pending);
+    }
 
     const results: ContentBlock[] = ordered.filter(
       (block): block is ContentBlock => block !== null,

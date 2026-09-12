@@ -36,6 +36,48 @@ describe("Ultra runtime coordination", () => {
     expect(result.finalText).toBe("整合并交叉验证完成");
   });
 
+  it("runs known same-turn writes only after every delegated task returns", async () => {
+    const env = setup([
+      { events: [
+        toolCall("task-a", "task", '{"prompt":"独立核验 A"}'),
+        toolCall("write-a", "write", '{"file_path":"a.md"}'),
+        toolCall("task-b", "task", '{"prompt":"独立核验 B"}'),
+        toolCall("write-b", "write", '{"file_path":"b.md"}'),
+        turnComplete(),
+      ] },
+      { events: [textBlock("完成"), turnComplete()] },
+    ]);
+    const order: string[] = [];
+    env.dispatch.mockImplementation(async (prompt) => {
+      await Promise.resolve();
+      order.push(`task:${prompt}`);
+      return `证据：${prompt}`;
+    });
+    const write = vi.fn(async (args: unknown) => {
+      order.push(`write:${(args as { file_path: string }).file_path}`);
+      return "写入成功";
+    });
+    env.deps.tools.push({
+      name: "write", description: "write", inputSchema: z.object({ file_path: z.string() }),
+      isReadOnly: false, preview: (args) => (args as { file_path: string }).file_path, call: write,
+    });
+    env.deps.approve = vi.fn(async (request) => {
+      order.push(`approve:${request.toolName}`);
+      return { decision: "allow-once" as const };
+    });
+
+    const result = await runAgent([user], env.deps);
+    expect(result.error).toBeNull();
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(order.filter((entry) => entry.startsWith("task:"))).toHaveLength(2);
+    expect(order.findIndex((entry) => entry === "approve:write")).toBeGreaterThan(order.findLastIndex((entry) => entry.startsWith("task:")));
+    expect(order.findIndex((entry) => entry.startsWith("write:"))).toBeGreaterThan(order.findLastIndex((entry) => entry.startsWith("task:")));
+    expect(result.messages[2]?.content.map((block) => block.type === "tool-result" ? [block.toolCallId, block.isError] : null)).toEqual([
+      ["task-a", false], ["write-a", false], ["task-b", false], ["write-b", false],
+    ]);
+    expect(env.events.some((event) => event.type === "tool-state" && event.state === "failed")).toBe(false);
+  });
+
   it("blocks research tools if the model skips coordination, then accepts corrected delegation", async () => {
     const env = setup([
       { events: [toolCall("a", "websearch", "{}"), turnComplete()] },
@@ -45,8 +87,31 @@ describe("Ultra runtime coordination", () => {
     const result = await runAgent([user], env.deps);
     expect(env.search).not.toHaveBeenCalled();
     expect(env.dispatch).toHaveBeenCalledOnce();
-    expect(JSON.stringify(env.provider.receivedHistory[1])).toContain("Ultra 协作尚未确定");
+    expect(JSON.stringify(env.provider.receivedHistory[1])).toContain("本轮尚未作出 Ultra 协作决定");
     expect(result.error).toBeNull();
+  });
+
+  it("does not approve or execute a same-turn write if delegation failed", async () => {
+    const env = setup([
+      { events: [toolCall("a", "task", '{"prompt":"独立核验"}'), toolCall("b", "write", '{"file_path":"a.md"}'), turnComplete()] },
+      { events: [toolCall("c", "task", '{"prompt":"重试核验"}'), turnComplete()] },
+      { events: [textBlock("完成"), turnComplete()] },
+    ]);
+    const write = vi.fn(async () => "写入成功");
+    env.deps.tools.push({
+      name: "write", description: "write", inputSchema: z.object({ file_path: z.string() }),
+      isReadOnly: false, preview: () => "a.md", call: write,
+    });
+    env.dispatch.mockRejectedValueOnce(new Error("子代理失败"));
+
+    const result = await runAgent([user], env.deps);
+    expect(result.error).toBeNull();
+    expect(write).not.toHaveBeenCalled();
+    expect(env.approve.mock.calls.map(([request]) => request.toolName)).toEqual(["task", "task"]);
+    expect(result.messages[2]?.content[1]).toMatchObject({
+      type: "tool-result", toolCallId: "b", isError: true,
+      content: expect.stringContaining("当前回合的后续工具未执行"),
+    });
   });
 
   it("does not silently complete or loop forever when the model keeps returning text", async () => {
