@@ -2,11 +2,12 @@
 // 会话存储:JSONL append-only 事件流
 // 设计依据:codex/08 rollout + ClaudeCode/08 JSONL。行格式:
 //   { ordinal, ts, kind, ... }
-// kind ∈ meta | title | message | controls
+// kind ∈ meta | title | message | controls | shell
 //  - meta:   首行,会话元信息(id/createdAt/model/cwd)
 //  - title:  标题可追加(最后一次生效),保持 append-only 不重写首行
 //  - message: 完整 Message(含 tool_result),按序重建历史
 //  - controls: 会话规划模式与目标(最后一次生效，压缩时保留)
+//  - shell:   当前 Shell 工作目录(最后一次生效，压缩时保留)
 // 加载容忍 torn tail:最后一行损坏则忽略之。
 // =====================================================================
 
@@ -28,16 +29,18 @@ const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 export interface LoadedSession {
   meta: SessionMeta;
   messages: Message[];
+  shellCwd?: string;
 }
 
 interface Line {
   ordinal: number;
   ts: string;
-  kind: "meta" | "title" | "message" | "controls";
+  kind: "meta" | "title" | "message" | "controls" | "shell";
   meta?: SessionMeta;
   title?: string;
   message?: Message;
   controls?: SessionControls;
+  shellCwd?: string;
 }
 
 export class SessionStore {
@@ -95,6 +98,12 @@ export class SessionStore {
     }]);
   }
 
+  async appendShellCwd(sessionId: string, shellCwd: string): Promise<void> {
+    await this.appendLines(sessionId, [{
+      ordinal: this.nextOrdinal(), ts: new Date().toISOString(), kind: "shell", shellCwd,
+    }]);
+  }
+
   /**
    * 压缩后整体替换消息流:保留 meta 首行与最后一条 title,
    * 用新消息列表重写 transcript(compaction 语义 = 历史被摘要取代)。
@@ -105,11 +114,13 @@ export class SessionStore {
     const titleLines = lines.filter((line) => line.kind === "title");
     const lastTitle = titleLines.length > 0 ? titleLines[titleLines.length - 1] : undefined;
     const lastControls = lines.filter((line) => line.kind === "controls").at(-1);
+    const lastShell = lines.filter((line) => line.kind === "shell").at(-1);
     if (!metaLine) throw new Error(`会话 ${sessionId} 无 meta 行,无法重写`);
     const rebuilt: Line[] = [
       metaLine,
       ...(lastTitle ? [lastTitle] : []),
       ...(lastControls ? [lastControls] : []),
+      ...(lastShell ? [lastShell] : []),
       ...messages.map((message) => ({
         ordinal: this.nextOrdinal(),
         ts: new Date().toISOString(),
@@ -129,15 +140,17 @@ export class SessionStore {
     let meta: SessionMeta | null = null;
     let title: string | undefined;
     let controls: SessionControls | undefined;
+    let shellCwd: string | undefined;
     const messages: Message[] = [];
     for (const line of lines) {
       if (line.kind === "meta" && line.meta) meta = line.meta;
       if (line.kind === "title" && line.title) title = line.title;
       if (line.kind === "controls" && line.controls) controls = line.controls;
+      if (line.kind === "shell" && typeof line.shellCwd === "string") shellCwd = line.shellCwd;
       if (line.kind === "message" && line.message) messages.push(line.message);
     }
     if (!meta) throw new Error(`会话 ${sessionId} 无 meta 行,可能已损坏`);
-    return { meta: { ...meta, title: title ?? meta.title, ...(controls ? { controls } : {}) }, messages };
+    return { meta: { ...meta, title: title ?? meta.title, ...(controls ? { controls } : {}) }, messages, shellCwd };
   }
 
   /** 删除会话(对话)及其产物 */

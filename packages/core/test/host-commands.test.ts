@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { BrowserWindow } from "electron";
 import { DEFAULT_CONFIG, type AppEvent, type SessionMeta } from "@entrotect/shared";
 import { SessionHost } from "../../app-desktop/src/main/host.js";
 import { SessionStore } from "../src/session/store.js";
+import { buildBuiltinTools } from "@entrotect/core";
 
 const originalFetch = globalThis.fetch;
 const dirs: string[] = [];
@@ -97,6 +98,45 @@ describe("SessionHost commands", () => {
     expect((await store.load(meta.id)).meta.controls?.goal).toBeNull();
     expect(calls).toHaveLength(3);
   });
+
+  it("persists Shell directory across session switch and resume", async () => {
+    const { dir, host, send, calls, store, meta } = await setup();
+    const sub = path.join(dir, "sub");
+    await mkdir(sub);
+    globalThis.fetch = (async (_url, init) => {
+      calls.push(JSON.parse(String(init?.body)));
+      if (calls.length === 1) return response({ name: "bash", args: { command: "Set-Location -LiteralPath 'sub'" } });
+      if (calls.length === 3) return response({ name: "bash", args: { command: "(Get-Location).Path" } });
+      return response();
+    }) as typeof fetch;
+    await send("切到子目录");
+    const first = await store.load(meta.id);
+    expect(first.shellCwd, JSON.stringify(first.messages)).toBe(sub);
+    await host.handleOp({ kind: "NewSession" });
+    await host.handleOp({ kind: "ResumeSession", sessionId: meta.id });
+    await send("当前目录是什么");
+    const results = (await store.load(meta.id)).messages.flatMap((message) => message.content);
+    expect(results.some((block) => block.type === "tool-result" && String(block.content).includes(sub))).toBe(true);
+  });
+
+  it("deleting a session stops and removes its background processes", async () => {
+    const { host, send, calls, store, meta } = await setup();
+    globalThis.fetch = (async (_url, init) => {
+      calls.push(JSON.parse(String(init?.body)));
+      return calls.length === 1 ? response({ name: "bash", args: { command: "Start-Sleep -Seconds 60", background: true } }) : response();
+    }) as typeof fetch;
+    await send("启动后台任务");
+    const owner = store.artifactDir(meta.id);
+    const messages = (await store.load(meta.id)).messages;
+    const id = messages.flatMap((message) => message.content)
+      .find((block) => block.type === "tool-result")?.content.match(/id: (\S+)/)?.[1];
+    expect(id).toBeTruthy();
+    const output = buildBuiltinTools().find((tool) => tool.name === "bash_output")!;
+    const ctx = { cwd: meta.cwd, artifactDir: owner, sandboxMode: "full" as const };
+    expect(await output.call({ jobId: id }, ctx)).toContain(`任务: ${id}`);
+    await host.handleOp({ kind: "DeleteSession", sessionId: meta.id });
+    await expect(output.call({ jobId: id }, ctx)).rejects.toThrow("未找到后台任务");
+  }, 15000);
 
   it("allows model to report verified completion and persists its evidence", async () => {
     const { send, calls, store, meta, events } = await setup();

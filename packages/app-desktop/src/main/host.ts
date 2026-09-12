@@ -42,6 +42,7 @@ import {
   compactMessages,
   shouldAutoCompact,
   resolveInsideCwd,
+  stopBgJobsForOwner,
   type PluginHooks,
   type Provider,
 } from "@entrotect/core";
@@ -59,6 +60,8 @@ interface ActiveRun {
   running: boolean;
   /** Parent observations survive user turns; child runners own separate snapshots. */
   fileStates: Map<string, string>;
+  shellState: { cwd?: string; pending?: Promise<void> };
+  persistedShellCwd?: string;
 }
 
 interface AcceptedRun {
@@ -128,6 +131,7 @@ export class SessionHost {
   private config!: AppConfig;
   private provider!: Provider;
   private active: ActiveRun | null = null;
+  private readonly runningSessionIds = new Set<string>();
   private nextRunId = 0;
   /** 插件 hooks:{appData}/plugins 下 *.mjs 加载而来,init 时填充 */
   private plugins: PluginHooks[] = [];
@@ -254,7 +258,7 @@ export class SessionHost {
           this.emit({ type: "error", message: "当前没有活动会话,无法压缩" });
           break;
         }
-        if (run.running) {
+        if (run.running || this.runningSessionIds.has(run.meta.id)) {
           this.emit({ type: "error", message: "会话正在运行中,请先停止再压缩" });
           break;
         }
@@ -279,6 +283,7 @@ export class SessionHost {
           if (!accepted.abort.signal.aborted) this.emit({ type: "error", message });
         } finally {
           run.running = false;
+          this.runningSessionIds.delete(run.meta.id);
           this.emit({ type: "turn-completed", usage: null, runId: accepted.runId, ...accepted.context });
         }
         break;
@@ -386,6 +391,7 @@ export class SessionHost {
       abort: new AbortController(),
       running: false,
       fileStates: new Map(),
+      shellState: {},
     };
     this.emit({ type: "session-meta", meta });
     this.emit({ type: "sessions-listed", sessions: await this.store.list() });
@@ -405,6 +411,7 @@ export class SessionHost {
       abort: new AbortController(),
       running: false,
       fileStates: new Map(),
+      shellState: {},
     };
     this.emit({ type: "session-meta", meta });
     this.emit({ type: "sessions-listed", sessions: await this.store.list() });
@@ -412,26 +419,33 @@ export class SessionHost {
 
   /** 删除对话;正在运行的对话拒绝删除 */
   private async handleDelete(sessionId: string): Promise<void> {
-    if (this.active?.meta.id === sessionId) {
-      if (this.active.running) {
-        this.emit({ type: "error", message: "该对话正在运行中,请先停止再删除" });
-        return;
-      }
-      this.teardownActive();
+    if (this.runningSessionIds.has(sessionId)) {
+      this.emit({ type: "error", message: "该对话正在运行中,请先停止再删除" });
+      return;
     }
+    const deletingActive = this.active?.meta.id === sessionId;
+    try {
+      await stopBgJobsForOwner(this.store.artifactDir(sessionId));
+    } catch (error) {
+      this.emit({ type: "error", message: `删除会话前无法终止后台任务: ${String(error)}` });
+      return;
+    }
+    if (deletingActive) this.teardownActive();
     await this.store.deleteSession(sessionId);
     this.emit({ type: "sessions-listed", sessions: await this.store.list() });
   }
 
   private async handleResume(sessionId: string): Promise<void> {
     this.teardownActive();
-    const { meta, messages } = await this.store.load(sessionId);
+    const { meta, messages, shellCwd } = await this.store.load(sessionId);
     this.active = {
       meta,
       gate: this.makeGate(),
       abort: new AbortController(),
       running: false,
       fileStates: new Map(),
+      shellState: shellCwd ? { cwd: shellCwd } : {},
+      persistedShellCwd: shellCwd,
     };
     this.emit({ type: "session-meta", meta });
     // 回放历史:UI 按序重建消息与工具卡片
@@ -486,7 +500,7 @@ export class SessionHost {
       return;
     }
     const reply = (message: string) => this.emit({ type: "command-result", sessionId: run.meta.id, message });
-    if (run.running) {
+    if (run.running || this.runningSessionIds.has(run.meta.id)) {
       reply("任务正在运行，请先停止再使用命令。");
       return;
     }
@@ -549,7 +563,7 @@ export class SessionHost {
     let run = this.active;
     if (!run) run = await this.ensureSession();
     if (!run) return;
-    if (run.running) {
+    if (run.running || this.runningSessionIds.has(run.meta.id)) {
       this.emit({ type: "error", message: "上一轮任务仍在运行中" });
       return;
     }
@@ -584,6 +598,7 @@ export class SessionHost {
       abort: run.abort,
       controls: structuredClone(run.meta.controls ?? { mode: "default", goal: null }),
     };
+    this.runningSessionIds.add(run.meta.id);
     // registration 必须先于所有异步持久化和首个 turn-started。
     this.emit({ type: "run-registered", runId: accepted.runId, ...context });
     return accepted;
@@ -737,6 +752,7 @@ export class SessionHost {
         sandboxMode: getSandboxMode,
         abortSignal: abort.signal,
         fileStates: run.fileStates,
+        shellState: run.shellState,
         onMessage: (message) => this.store.appendMessage(run.meta.id, message),
         plugins: this.plugins,
       });
@@ -744,7 +760,16 @@ export class SessionHost {
         this.emit({ type: "error", message: result.error });
       }
     } finally {
+      if (run.shellState.cwd && run.shellState.cwd !== run.persistedShellCwd) {
+        try {
+          await this.store.appendShellCwd(run.meta.id, run.shellState.cwd);
+          run.persistedShellCwd = run.shellState.cwd;
+        } catch (error) {
+          this.emit({ type: "error", message: `无法保存 Shell 工作目录: ${String(error)}` });
+        }
+      }
       run.running = false;
+      this.runningSessionIds.delete(run.meta.id);
       // 收口:中断/异常路径也要让 UI 退出忙碌态
       this.emit({ type: "turn-completed", usage: null, runId, ...context });
     }

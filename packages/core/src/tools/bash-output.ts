@@ -19,15 +19,18 @@ export const bashOutputTool: Tool = {
   inputSchema,
   isReadOnly: true,
   preview: (args) => `output ${(args as Input).jobId}`,
-  async call(rawArgs: unknown, _ctx: ToolContext): Promise<string> {
+  async call(rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const args = inputSchema.parse(rawArgs);
-    const job = getBgJob(args.jobId);
+    const job = getBgJob(args.jobId, ctx.artifactDir);
     if (!job) throw new Error(`未找到后台任务: ${args.jobId}`);
     const tail = args.tail ?? 12000;
     const stdoutTail = job.stdout.slice(-tail);
     const stderrTail = job.stderr.slice(-tail);
-    const wall = ((Date.now() - job.startTime) / 1000).toFixed(1);
-    const state = job.done ? `已结束 (exit ${job.code ?? "null"})` : "运行中";
+    const wall = (((job.endedAt ?? Date.now()) - job.startTime) / 1000).toFixed(1);
+    const state = job.reason === "timeout" ? job.done ? `已超时 (exit ${job.code ?? "null"})` : "超时，正在终止"
+      : job.reason === "killed" ? job.done ? `已终止 (exit ${job.code ?? "null"})` : "正在终止"
+      : job.reason === "spawn_error" ? "启动失败"
+      : job.done ? `已结束 (exit ${job.code ?? "null"})` : "运行中";
     const elapsed = `已运行 ${wall}s`;
     const out = `${stdoutTail}${stderrTail ? `\n[stderr]\n${stderrTail}` : ""}`.trim() || "(暂无输出)";
     return `任务: ${job.id}\n命令: ${job.command}\n状态: ${state} · ${elapsed}\n\n输出（尾部 ${tail} 字符）：\n${out}`;

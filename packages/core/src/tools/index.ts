@@ -10,6 +10,7 @@ export * from "./edit.js";
 export * from "./glob.js";
 export * from "./grep.js";
 export * from "./bash.js";
+export { stopBgJobsForOwner, stopAllBgJobs } from "./bg-manager.js";
 export * from "./file-state.js";
 export * from "./goal.js";
 export * from "./plan.js";

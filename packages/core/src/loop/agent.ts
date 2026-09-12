@@ -18,7 +18,7 @@ import type {
 } from "@entrotect/shared";
 import path from "node:path";
 import type { Provider } from "../provider/types.js";
-import type { Tool, ToolContext } from "../tools/types.js";
+import type { ShellState, Tool, ToolContext } from "../tools/types.js";
 import { truncateOutput } from "../tools/output.js";
 import { zodToJsonSchema } from "../tools/zod-json.js";
 import type { ApprovalOutcome } from "../permission/gate.js";
@@ -55,6 +55,7 @@ export interface AgentDeps {
   abortSignal?: AbortSignal;
   /** Optional continuation state; independent agents must use separate maps. */
   fileStates?: FileStates;
+  shellState?: ShellState;
   /**
    * 消息落盘钩子:历史每追加一条消息即回调(边跑边持久化,
    * 崩溃后可 resume;append-only,JSONL 层由宿主实现)。
@@ -113,6 +114,7 @@ export async function runAgent(
 ): Promise<AgentRunResult> {
   const history: Message[] = [...initialMessages];
   const fileStates = deps.fileStates ?? new Map<string, string>();
+  const shellState = deps.shellState ?? {};
   let dispatchPending = deps.orchestration === "ultra";
   let dispatchAttempts = 0;
   const pluginHooks = deps.plugins ?? [];
@@ -282,6 +284,7 @@ export async function runAgent(
       protectedPaths: deps.protectedPaths,
       abortSignal: deps.abortSignal,
       fileStates,
+      shellState,
     };
     const ordered = new Array<ContentBlock | null>(toolCalls.length).fill(null);
 
@@ -367,6 +370,7 @@ export async function runAgent(
     });
 
     let dispatchSucceeded = false;
+    let dispatchFailed = false;
     // 4b. 同一阶段审批串行(保持弹窗顺序与交互稳定)
     const executeItems = async (items: Planned[]): Promise<void> => {
       for (const item of items) {
@@ -398,7 +402,10 @@ export async function runAgent(
           });
           item.denied = true;
           // Respect denied delegation instead of repeatedly asking for the same approval.
-          if (dispatching && item.call.name === "task") dispatchPending = false;
+          if (dispatching && isDispatchCall(item.call)) {
+            dispatchFailed = true;
+            if (item.call.name === "task") dispatchPending = false;
+          }
         }
       }
 
@@ -487,8 +494,14 @@ export async function runAgent(
               summary: truncated.content,
             });
           } catch (error) {
+            if (dispatching && isDispatchCall(item.call)) dispatchFailed = true;
             const message = error instanceof Error ? error.message : String(error);
-            const content = `<tool_use_error>${message}</tool_use_error>`;
+            let content = `<tool_use_error>${message}</tool_use_error>`;
+            try {
+              content = (await truncateOutput(content, deps.artifactDir)).content;
+            } catch {
+              content = `${content.slice(0, 16_000)}\n[错误输出已截断，且无法保存完整日志]`;
+            }
             notifyToolAfter(pluginHooks, item.call.name, content, true);
             ordered[index] = {
               type: "tool-result",
@@ -512,13 +525,13 @@ export async function runAgent(
     if (dispatching) {
       await executeItems(pending.filter((item) => isDispatchCall(item.call)));
       const ordinaryItems = pending.filter((item) => !isDispatchCall(item.call));
-      if (dispatchSucceeded) {
+      if (dispatchSucceeded && !dispatchFailed) {
         // Same-turn ordinary calls must not race the child or be approved before
         // we know delegation succeeded. Their result slots retain model order.
         await executeItems(ordinaryItems);
       } else {
         for (const item of ordinaryItems) {
-          const reason = "Ultra 协作决定未成功，当前回合的后续工具未执行。请先查看 task 或 ultra_direct 的结果，再重新调用所需工具。";
+          const reason = "Ultra 协作调用未全部成功，当前回合的后续工具未执行。请先查看 task 或 ultra_direct 的结果，再重新调用所需工具。";
           ordered[item.index] = {
             type: "tool-result", toolCallId: item.call.id, name: item.call.name,
             isError: true, content: reason,

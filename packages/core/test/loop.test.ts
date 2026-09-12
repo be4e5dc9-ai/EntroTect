@@ -115,6 +115,25 @@ describe("runAgent 主循环", () => {
     expect(JSON.stringify(secondRoundHistory)).toContain("tool_use_error");
   });
 
+  it("工具的大型错误输出也会截断后再回喂模型", async () => {
+    const { cwd, artifactDir } = await makeEnv();
+    const provider = new MockProvider([
+      { events: [toolCall("big1", "fail_large", "{}"), turnComplete()] },
+      { events: [textBlock("已收到错误摘要。"), turnComplete()] },
+    ]);
+    const failing: Tool = {
+      name: "fail_large", description: "test", inputSchema: z.strictObject({}),
+      isReadOnly: true, preview: () => "fail_large",
+      call: async () => { throw new Error("x".repeat(100_000)); },
+    };
+    const { deps } = makeDeps(cwd, artifactDir, { provider, tools: [failing] });
+    const result = await runAgent([{ role: "user", content: [{ type: "text", text: "run" }] }], deps);
+    const content = String(result.messages[2]?.content[0]?.content);
+    expect(content).toContain("完整内容保存在");
+    expect(content.length).toBeLessThan(20_000);
+    expect(result.finalText).toBe("已收到错误摘要。");
+  });
+
   it("deny 回喂理由,且不执行工具", async () => {
     const { cwd, artifactDir } = await makeEnv();
     await writeFile(path.join(cwd, "keep.txt"), "important", "utf8");

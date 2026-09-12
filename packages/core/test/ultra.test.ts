@@ -114,6 +114,34 @@ describe("Ultra runtime coordination", () => {
     });
   });
 
+  it("holds same-turn writes when one of several delegates fails", async () => {
+    const env = setup([
+      { events: [
+        toolCall("a", "task", '{"prompt":"成功的子任务"}'),
+        toolCall("b", "task", '{"prompt":"失败的子任务"}'),
+        toolCall("c", "write", '{"file_path":"a.md"}'),
+        turnComplete(),
+      ] },
+      { events: [textBlock("根据报告处理失败"), turnComplete()] },
+    ]);
+    const write = vi.fn(async () => "写入成功");
+    env.deps.tools.push({
+      name: "write", description: "write", inputSchema: z.object({ file_path: z.string() }),
+      isReadOnly: false, preview: () => "a.md", call: write,
+    });
+    env.dispatch.mockImplementation(async (prompt) => {
+      if (prompt === "失败的子任务") throw new Error("子代理失败");
+      return "核验完成";
+    });
+    const result = await runAgent([user], env.deps);
+    expect(result.error).toBeNull();
+    expect(write).not.toHaveBeenCalled();
+    expect(result.messages[2]?.content[2]).toMatchObject({
+      type: "tool-result", toolCallId: "c", isError: true,
+      content: expect.stringContaining("未全部成功"),
+    });
+  });
+
   it("does not silently complete or loop forever when the model keeps returning text", async () => {
     const env = setup([{ events: [textBlock("我会调研"), turnComplete()] }, { events: [textBlock("已完成"), turnComplete()] }]);
     const result = await runAgent([user], env.deps);

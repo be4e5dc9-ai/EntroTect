@@ -19,7 +19,7 @@ export function zodToJsonSchema(schema: z.ZodType): unknown {
 
 function convert(schema: z.ZodType): unknown {
   if (schema instanceof z.ZodOptional || schema instanceof z.ZodDefault) {
-    return convert(schema._def.innerType);
+    return withDescription(schema, convert(schema._def.innerType) as Record<string, unknown>);
   }
   if (schema instanceof z.ZodEffects) {
     return convert(schema._def.schema);
@@ -44,19 +44,35 @@ function convert(schema: z.ZodType): unknown {
     return withDescription(schema, result);
   }
   if (schema instanceof z.ZodString) {
-    return withDescription(schema, { type: "string" });
+    const result: Record<string, unknown> = { type: "string" };
+    for (const check of schema._def.checks) {
+      if (check.kind === "min") result.minLength = check.value;
+      if (check.kind === "max") result.maxLength = check.value;
+      if (check.kind === "regex") result.pattern = check.regex.source;
+    }
+    return withDescription(schema, result);
   }
   if (schema instanceof z.ZodNumber) {
-    return withDescription(schema, { type: "number" });
+    const result: Record<string, unknown> = { type: "number" };
+    for (const check of schema._def.checks) {
+      if (check.kind === "int") result.type = "integer";
+      if (check.kind === "min") result[check.inclusive ? "minimum" : "exclusiveMinimum"] = check.value;
+      if (check.kind === "max") result[check.inclusive ? "maximum" : "exclusiveMaximum"] = check.value;
+      if (check.kind === "multipleOf") result.multipleOf = check.value;
+    }
+    return withDescription(schema, result);
   }
   if (schema instanceof z.ZodBoolean) {
     return withDescription(schema, { type: "boolean" });
   }
   if (schema instanceof z.ZodArray) {
-    return withDescription(schema, {
+    const result: Record<string, unknown> = {
       type: "array",
       items: convert(schema.element),
-    });
+    };
+    if (schema._def.minLength) result.minItems = schema._def.minLength.value;
+    if (schema._def.maxLength) result.maxItems = schema._def.maxLength.value;
+    return withDescription(schema, result);
   }
   if (schema instanceof z.ZodEnum) {
     return withDescription(schema, {

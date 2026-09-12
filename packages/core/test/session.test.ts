@@ -44,6 +44,18 @@ describe("SessionStore", () => {
     expect(loaded.messages).toHaveLength(1);
   });
 
+  it("Shell 工作目录重开会话后恢复，压缩消息后仍保留", async () => {
+    const store = await makeStore();
+    const meta = await store.create({ title: "目录", model: "m", cwd: "C:\\proj" });
+    await store.appendShellCwd(meta.id, "C:\\proj\\one");
+    await store.appendShellCwd(meta.id, "C:\\proj\\two");
+    expect((await store.load(meta.id)).shellCwd).toBe("C:\\proj\\two");
+    await store.replaceMessages(meta.id, [userMessage]);
+    const reopened = await store.load(meta.id);
+    expect(reopened.shellCwd).toBe("C:\\proj\\two");
+    expect(reopened.messages).toEqual([userMessage]);
+  });
+
   it("torn tail 容忍:损坏行被跳过", async () => {
     const store = await makeStore();
     const meta = await store.create({ title: "", model: "m", cwd: "." });

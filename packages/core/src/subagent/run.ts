@@ -145,6 +145,7 @@ export function createSubagentRunner(deps: SubagentRunnerDeps): SubagentRunner {
       protectedPaths: deps.protectedPaths,
       sandboxMode: deps.sandboxMode,
       fileStates: new Map<string, string>(),
+      shellState: {},
     };
     let messages = initialMessages;
     // A reasoning-only / token-limited response is not a completed task. Resume once

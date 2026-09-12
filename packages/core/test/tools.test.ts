@@ -9,6 +9,10 @@ import { editTool } from "../src/tools/edit.js";
 import { globTool } from "../src/tools/glob.js";
 import { grepTool } from "../src/tools/grep.js";
 import { bashTool } from "../src/tools/bash.js";
+import { bashOutputTool } from "../src/tools/bash-output.js";
+import { getBgJob, stopAllBgJobs, stopBgJobsForOwner } from "../src/tools/bg-manager.js";
+import { killShellTool } from "../src/tools/kill-shell.js";
+import { once } from "node:events";
 import { diagnosticsTool } from "../src/tools/diagnostics.js";
 import { truncateOutput, MAX_TOOL_OUTPUT_BYTES } from "../src/tools/output.js";
 import { zodToJsonSchema } from "../src/tools/zod-json.js";
@@ -170,9 +174,112 @@ describe("bash 工具", () => {
 
   it("非零退出码保留输出", async () => {
     const { ctx } = await makeCtx();
-    const out = await bashTool.call({ command: "exit 3" }, ctx);
-    expect(out).toContain("Exit code: 3");
+    await expect(bashTool.call({ command: "exit 3" }, ctx)).rejects.toThrow("Exit code: 3");
+    await expect(bashTool.call({ command: 'node -e "process.exit(7)"' }, ctx)).rejects.toThrow("Exit code: 7");
+    await expect(bashTool.call({ command: "Write-Error 'expected failure'" }, ctx)).rejects.toThrow("Exit code: 1");
   });
+
+  it("顶层原生命令链不能用最后一个成功退出码掩盖前面的失败", async () => {
+    const { ctx } = await makeCtx();
+    await expect(bashTool.call({ command: 'node -e "process.exit(7)"; node -e "process.exit(0)"' }, ctx))
+      .rejects.toThrow("Exit code: 7");
+    await expect(bashTool.call({ command: '& { node -e "process.exit(9)"; node -e "process.exit(0)" }' }, ctx))
+      .rejects.toThrow("Exit code: 9");
+    const handled = await bashTool.call({
+      command: 'node -e "process.exit(7)"; if (-not $?) { Write-Output handled }; node -e "process.exit(0)"',
+    }, ctx);
+    expect(handled).toContain("handled");
+  });
+
+  it("前台高输出有内存上限并告知截断", async () => {
+    const { ctx } = await makeCtx();
+    const out = await bashTool.call({ command: 'node -e "process.stdout.write(\'x\'.repeat(350000))"' }, ctx);
+    expect(out).toContain("stdout 前部已省略");
+    expect(out.length).toBeLessThan(310_000);
+  });
+
+  it("UTF-8 中文文件默认可读", async () => {
+    const { ctx, root } = await makeCtx();
+    await writeFile(path.join(root, "note.txt"), "中文内容", "utf8");
+    const out = await bashTool.call({ command: "Get-Content -LiteralPath 'note.txt'" }, ctx);
+    expect(out).toContain("中文内容");
+  });
+
+  it("目录在注释和 exit 后持久，同工作区的其他代理独立", async () => {
+    const { ctx, root } = await makeCtx();
+    await mkdir(path.join(root, "one"));
+    await mkdir(path.join(root, "one", "two"));
+    ctx.shellState = {};
+    const other = { ...ctx, shellState: {} };
+    await bashTool.call({ command: "Set-Location -LiteralPath 'one' # comment" }, ctx);
+    expect(await bashTool.call({ command: "(Get-Location).Path" }, ctx)).toContain(path.join(root, "one"));
+    expect(await bashTool.call({ command: "(Get-Location).Path" }, other)).toContain(root);
+    await bashTool.call({ command: "Set-Location -LiteralPath 'two'; exit 0" }, ctx);
+    expect(await bashTool.call({ command: "(Get-Location).Path" }, ctx)).toContain(path.join(root, "one", "two"));
+    expect(await bashTool.call({ command: "(Get-Location).Path" }, other)).not.toContain(path.join(root, "one"));
+  });
+
+  it("同代理并发命令按列表顺序继承目录", async () => {
+    const { ctx, root } = await makeCtx();
+    await mkdir(path.join(root, "sub"));
+    ctx.shellState = {};
+    const [, next] = await Promise.all([
+      bashTool.call({ command: "Set-Location -LiteralPath 'sub'" }, ctx),
+      bashTool.call({ command: "(Get-Location).Path" }, { ...ctx }),
+    ]);
+    expect(next).toContain(path.join(root, "sub"));
+  });
+
+  it("后台输出不泄漏目录标记，结束时间固定且超时可见", async () => {
+    const { ctx } = await makeCtx();
+    const started = await bashTool.call({ command: "Write-Output background_ok", background: true }, ctx);
+    const id = started.match(/id: (\S+)/)?.[1];
+    expect(id).toBeTruthy();
+    const job = getBgJob(id!, ctx.artifactDir);
+    expect(job).toBeDefined();
+    if (!job!.done) await once(job!.child!, "close");
+    const out = await bashOutputTool.call({ jobId: id }, ctx);
+    expect(out).toContain("background_ok");
+    expect(out).not.toContain("__ENTROTECT_CWD_");
+    const endedAt = job!.endedAt;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(job!.endedAt).toBe(endedAt);
+    expect(await bashOutputTool.call({ jobId: id }, ctx)).toBe(out);
+
+    const timeoutStarted = await bashTool.call({ command: "Start-Sleep -Seconds 5", background: true, timeout: 1 }, ctx);
+    const timeoutId = timeoutStarted.match(/id: (\S+)/)?.[1];
+    const timeoutJob = getBgJob(timeoutId!, ctx.artifactDir);
+    if (!timeoutJob!.done) await once(timeoutJob!.child!, "close");
+    expect(await bashOutputTool.call({ jobId: timeoutId }, ctx)).toContain("已超时");
+  });
+
+  it("后台任务按会话隔离，删除会话时终止并移除", async () => {
+    const { ctx, root } = await makeCtx();
+    const other = { ...ctx, artifactDir: path.join(root, "other-artifacts") };
+    const started = await bashTool.call({ command: "Start-Sleep -Seconds 60", background: true }, ctx);
+    const id = started.match(/id: (\S+)/)?.[1];
+    expect(id).toBeTruthy();
+    expect(getBgJob(id!, ctx.artifactDir)).toBeDefined();
+    expect(getBgJob(id!, other.artifactDir)).toBeUndefined();
+    await expect(bashOutputTool.call({ jobId: id }, other)).rejects.toThrow("未找到后台任务");
+    await expect(killShellTool.call({ jobId: id }, other)).rejects.toThrow("未找到后台任务");
+    await stopBgJobsForOwner(ctx.artifactDir);
+    expect(getBgJob(id!, ctx.artifactDir)).toBeUndefined();
+  }, 15000);
+
+  it("退出应用时清理所有会话的后台任务", async () => {
+    const { ctx, root } = await makeCtx();
+    const other = { ...ctx, artifactDir: path.join(root, "other-artifacts") };
+    const first = await bashTool.call({ command: "Start-Sleep -Seconds 60", background: true }, ctx);
+    const second = await bashTool.call({ command: "Start-Sleep -Seconds 60", background: true }, other);
+    const firstId = first.match(/id: (\S+)/)?.[1];
+    const secondId = second.match(/id: (\S+)/)?.[1];
+    expect(getBgJob(firstId!, ctx.artifactDir)).toBeDefined();
+    expect(getBgJob(secondId!, other.artifactDir)).toBeDefined();
+    await stopAllBgJobs();
+    expect(getBgJob(firstId!, ctx.artifactDir)).toBeUndefined();
+    expect(getBgJob(secondId!, other.artifactDir)).toBeUndefined();
+  }, 15000);
 });
 
 describe("diagnostics 工具", () => {
@@ -232,5 +339,17 @@ describe("zodToJsonSchema", () => {
   it("同一 schema 对象缓存(字节级稳定)", () => {
     const schema = z.strictObject({ a: z.string() });
     expect(zodToJsonSchema(schema)).toBe(zodToJsonSchema(schema));
+  });
+
+  it("保留可选参数说明与数值边界", () => {
+    expect(zodToJsonSchema(bashTool.inputSchema)).toMatchObject({
+      properties: {
+        timeout: { type: "integer", minimum: 1, maximum: 600, description: expect.stringContaining("默认 120") },
+        background: { type: "boolean", description: expect.stringContaining("后台运行") },
+      },
+    });
+    expect(zodToJsonSchema(bashOutputTool.inputSchema)).toMatchObject({
+      properties: { tail: { type: "integer", minimum: 100, maximum: 50000, description: expect.stringContaining("默认 12000") } },
+    });
   });
 });

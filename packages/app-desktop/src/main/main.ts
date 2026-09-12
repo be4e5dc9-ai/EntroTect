@@ -5,6 +5,7 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import path from "node:path";
 import { opSchema, type Op } from "@entrotect/shared";
+import { stopAllBgJobs } from "@entrotect/core";
 import { SessionHost } from "./host.js";
 import { createAccentWindowIcon } from "./window-icon.js";
 import { discoverSkills } from "./skills.js";
@@ -106,6 +107,18 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
+  let cleanupStarted = false;
+  let cleanupFinished = false;
+  app.on("before-quit", (event) => {
+    if (cleanupFinished) return;
+    event.preventDefault();
+    if (cleanupStarted) return;
+    cleanupStarted = true;
+    void stopAllBgJobs().catch(() => {}).finally(() => {
+      cleanupFinished = true;
+      app.quit();
+    });
+  });
   app.on("second-instance", () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();

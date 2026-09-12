@@ -9,6 +9,12 @@ import type { SubagentPart } from "@entrotect/shared";
 import type { SandboxMode } from "../sandbox/policy.js";
 import type { FileStates } from "./file-state.js";
 
+/** Directory and ordering state belongs to one agent, not the workspace path. */
+export interface ShellState {
+  cwd?: string;
+  pending?: Promise<void>;
+}
+
 /** 工具执行上下文:由主循环注入 */
 export interface ToolContext {
   /** 会话工作目录(所有相对路径的基准) */
@@ -22,6 +28,7 @@ export interface ToolContext {
   abortSignal?: AbortSignal;
   /** Shared across tool calls of one agent, never across parent/child agents. */
   fileStates?: FileStates;
+  shellState?: ShellState;
   /** 子代理活动日志通道:task 工具内部活动以行进日志(挂在对应工具卡片) */
   subagentLog?: (line: string) => void;
   /** 子代理对话页通道:内部事件翻译成 part 实时上报(task 工具专用) */
