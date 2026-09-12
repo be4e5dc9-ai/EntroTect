@@ -91,7 +91,7 @@ export function ToolCard({ block, onOpenDetail }: ToolCardProps): React.JSX.Elem
           <StateIcon state={block.state} />
         </span>
         {isSubagent && <span className="tool-subagent-badge">Subagent</span>}
-        <span className="tool-name">{isSubagent ? "子代理" : block.name}</span>
+        <span className="tool-name">{isSubagent ? "子代理" : block.name === "ultra_direct" ? "协作方式" : block.name}</span>
         <span className="tool-preview">{block.preview}</span>
         <span className={`tool-state-label state-${block.state}`}>
           {STATE_LABEL[block.state]}

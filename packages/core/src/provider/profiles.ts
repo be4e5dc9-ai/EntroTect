@@ -11,6 +11,7 @@ import { clampEffort } from "@entrotect/shared";
 export type AuthScheme = "bearer" | "api-key" | "x-api-key" | "x-goog-api-key" | "none";
 export type TokenField = "max_tokens" | "max_completion_tokens";
 export type ReasoningStrategy = "none" | "reasoning_effort" | "enable_thinking" | "thinking";
+export type ProviderReasoningEffort = "low" | "medium" | "high" | "max";
 
 export interface ResolvedProviderProfile {
   /** 实际采用的 profile 名称，便于日志/诊断而不暴露密钥 */
@@ -25,7 +26,7 @@ export interface ResolvedProviderProfile {
   omitTemperature: boolean;
   reasoning: ReasoningStrategy;
   /** reasoning_effort 的真实可接受值；仅 reasoning 策略使用 */
-  reasoningValues: readonly ("low" | "high" | "max")[];
+  reasoningValues: readonly ProviderReasoningEffort[];
   /** 供应商扩展字段是否应在未指定 effort 时保持省略 */
   supportsExplicitThinkingToggle: boolean;
 }
@@ -121,7 +122,7 @@ export function resolveProviderProfile(input: {
         preserveReasoningContent: true,
         omitTemperature: true,
         reasoning: "thinking",
-        reasoningValues: THREE_TIERS,
+        reasoningValues: ["low", "medium", "high"],
         supportsExplicitThinkingToggle: true,
       };
     case "qwen":
@@ -298,8 +299,8 @@ export function buildProviderHeaders(input: {
 export function mapReasoningEffort(
   requested: ReasoningEffort | undefined,
   supported: ReasoningEffort[] | undefined,
-  accepted: readonly ("low" | "high" | "max")[],
-): "low" | "high" | "max" | undefined {
+  accepted: readonly ProviderReasoningEffort[],
+): ProviderReasoningEffort | undefined {
   if (!requested || requested === "off" || accepted.length === 0) return undefined;
   // ultra 是 harness 编排档位；供应商只看到其模型侧等价 max。
   if (requested === "ultra") return accepted.includes("max") ? "max" : accepted[accepted.length - 1];
@@ -310,24 +311,28 @@ export function mapReasoningEffort(
   if (declared.length > 0) {
     const clamped = clampEffort(requested, declared);
     if (clamped === "off") return undefined;
-    // profile 只有 low/high/max 三档;medium/xhigh 投影到 high(与旧回退一致)
-    if (clamped === "medium" || clamped === "xhigh") {
+    if (clamped === "medium") {
+      return candidates.includes("medium") ? "medium" : candidates.includes("high") ? "high" : undefined;
+    }
+    if (clamped === "xhigh") {
       return candidates.includes("high") ? "high" : undefined;
     }
     if (clamped === "ultra") {
       return candidates.includes("max") ? "max" : accepted[accepted.length - 1];
     }
-    return clamped; // low / high / max
+    if (candidates.includes(clamped)) return clamped;
+    return accepted[accepted.length - 1];
   }
 
   // 无声明:保守降级到 profile 三档(现值回退)
+  if (requested === "medium" && candidates.includes("medium")) return "medium";
   if ((requested === "medium" || requested === "xhigh") && candidates.includes("high")) {
     return "high";
   }
   if (requested === "max" && candidates.includes("max")) return "max";
   if (requested === "high" && candidates.includes("high")) return "high";
   if (requested === "low" && candidates.includes("low")) return "low";
-  return candidates[candidates.length - 1] as "low" | "high" | "max" | undefined;
+  return accepted[accepted.length - 1];
 }
 
 /** 拼接 endpoint，同时避免 base URL 已经包含完整路径时重复追加。 */

@@ -11,6 +11,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   appConfigSchema,
+  isOfficialMimoProvider,
   DEFAULT_CONFIG,
   type AppConfig,
   type ProviderConfig,
@@ -65,6 +66,10 @@ function sanitizeAndFillReasoningLevels(providers: ProviderConfig[]): void {
     }
     // 为 provider.models 中未声明但有 preset 的模型自动填充
     for (const model of provider.models) {
+      if (isOfficialMimoProvider(provider, model)) {
+        levels[model] = ["low", "medium", "high"];
+        continue;
+      }
       if (levels[model] !== undefined) continue;
       const preset = getPresetEfforts(model);
       if (preset !== undefined) {

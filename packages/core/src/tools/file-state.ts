@@ -1,38 +1,33 @@
-// =====================================================================
-// 文件状态追踪:edit 的新鲜度校验依据
-// 设计依据:ClaudeCode FileEdit 的 readFileState——read 记录文件状态,
-// edit 前校验未被外部修改,防止覆盖他人的改动。
-// =====================================================================
+import { createHash } from "node:crypto";
+import type { ToolContext } from "./types.js";
 
-import { stat } from "node:fs/promises";
+/** Each agent owns its observations; a child's read must not refresh its parent's snapshot. */
+export type FileStates = Map<string, string>;
+const contextStates = new WeakMap<ToolContext, FileStates>();
 
-interface FileState {
-  mtimeMs: number;
-  size: number;
+function statesFor(ctx: ToolContext): FileStates {
+  if (ctx.fileStates) return ctx.fileStates;
+  let states = contextStates.get(ctx);
+  if (!states) contextStates.set(ctx, states = new Map());
+  return states;
 }
 
-const states = new Map<string, FileState>();
+function key(filePath: string): string {
+  return process.platform === "win32" ? filePath.toLowerCase() : filePath;
+}
 
-export async function recordFileState(filePath: string): Promise<void> {
-  try {
-    const info = await stat(filePath);
-    states.set(filePath, { mtimeMs: info.mtimeMs, size: info.size });
-  } catch {
-    states.delete(filePath);
+function digest(content: string): string {
+  return createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+/** Record the content actually read/written, not a later stat of a possibly different file. */
+export function recordFileState(ctx: ToolContext, filePath: string, content: string): void {
+  statesFor(ctx).set(key(filePath), digest(content));
+}
+
+export function assertFileFresh(ctx: ToolContext, filePath: string, content: string | null): void {
+  const expected = statesFor(ctx).get(key(filePath));
+  if (expected !== undefined && (content === null || expected !== digest(content))) {
+    throw new Error(`文件 ${filePath} 自上次 read 后被修改,请重新 read 后再编辑或覆盖。`);
   }
-}
-
-export async function isStale(filePath: string): Promise<boolean> {
-  const state = states.get(filePath);
-  if (!state) return false; // 从未 read 过,不拦截
-  try {
-    const info = await stat(filePath);
-    return info.mtimeMs !== state.mtimeMs || info.size !== state.size;
-  } catch {
-    return true; // 文件消失视为被修改
-  }
-}
-
-export function clearFileStates(): void {
-  states.clear();
 }

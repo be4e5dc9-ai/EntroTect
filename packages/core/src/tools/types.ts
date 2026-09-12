@@ -7,6 +7,7 @@
 import type { z } from "zod";
 import type { SubagentPart } from "@entrotect/shared";
 import type { SandboxMode } from "../sandbox/policy.js";
+import type { FileStates } from "./file-state.js";
 
 /** 工具执行上下文:由主循环注入 */
 export interface ToolContext {
@@ -19,6 +20,8 @@ export interface ToolContext {
   /** 受保护路径(应用自身数据目录):文件工具必须拒绝对其读写 */
   protectedPaths?: readonly string[];
   abortSignal?: AbortSignal;
+  /** Shared across tool calls of one agent, never across parent/child agents. */
+  fileStates?: FileStates;
   /** 子代理活动日志通道:task 工具内部活动以行进日志(挂在对应工具卡片) */
   subagentLog?: (line: string) => void;
   /** 子代理对话页通道:内部事件翻译成 part 实时上报(task 工具专用) */

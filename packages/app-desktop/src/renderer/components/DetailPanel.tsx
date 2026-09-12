@@ -16,7 +16,6 @@ import {
 } from "../store";
 import { fileName } from "./FileCard";
 import { SubagentChat } from "./SubagentChat";
-import { PanelCollapseIcon } from "./Sidebar";
 
 const RESIZE_MAX = 640;
 const RESIZE_MIN = 320;
@@ -96,15 +95,13 @@ function FileDetailBody({ path }: { path: string }): React.JSX.Element {
 interface DetailPanelProps {
   width: number;
   onWidthChange: (width: number) => void;
-  onCollapse: () => void;
 }
 
-export function DetailPanel({ width, onWidthChange, onCollapse }: DetailPanelProps): React.JSX.Element | null {
+export function DetailPanel({ width, onWidthChange }: DetailPanelProps): React.JSX.Element {
   const tabs = useStore((s) => s.detailTabs);
   const activeDetailId = useStore((s) => s.activeDetailId);
   const messages = useStore((s) => s.messages);
   const active = tabs.find((tab) => tab.id === activeDetailId) ?? null;
-  if (!active) return null;
 
   const taskBlockOf = useMemo(
     () => (toolCallId: string) => findTaskBlock(messages, toolCallId),
@@ -142,16 +139,17 @@ export function DetailPanel({ width, onWidthChange, onCollapse }: DetailPanelPro
   };
 
   return (
-    <aside className="detail-panel" style={{ width }}>
+    <aside id="detail-panel" className="detail-panel" style={{ width }} aria-label="详情栏">
       <div className="detail-head">
         <div className="detail-tabs" role="tablist">
+          {tabs.length === 0 && <span className="detail-empty-title">详情</span>}
           {tabs.map((tab) => (
             <div
               key={tab.id}
-              className={`detail-tab${tab.id === active.id ? " active" : ""}`}
+              className={`detail-tab${tab.id === active?.id ? " active" : ""}`}
               onClick={() => activateDetailTab(tab.id)}
               role="tab"
-              aria-selected={tab.id === active.id}
+              aria-selected={tab.id === active?.id}
               title={tab.kind === "file" ? tab.path : tabTitle(tab)}
             >
               <span className="detail-tab-icon">
@@ -173,19 +171,8 @@ export function DetailPanel({ width, onWidthChange, onCollapse }: DetailPanelPro
             </div>
           ))}
         </div>
-        <div className="detail-head-actions">
-          <button
-            type="button"
-            className="detail-panel-collapse"
-            onClick={onCollapse}
-            aria-label="Collapse details"
-            title="Collapse details"
-          >
-            <PanelCollapseIcon direction="right" />
-          </button>
-        </div>
       </div>
-      <div className="detail-meta">
+      {active && <div className="detail-meta">
         <span className={`detail-meta-dot${active.kind === "subagent" ? " subagent" : ""}`} aria-hidden="true" />
         <span className="detail-meta-text" title={address(active)}>
           {address(active)}
@@ -201,9 +188,15 @@ export function DetailPanel({ width, onWidthChange, onCollapse }: DetailPanelPro
             <path d="M1.5 1.5l6 6M7.5 1.5l-6 6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
           </svg>
         </button>
-      </div>
+      </div>}
       <div className="detail-body">
-        {active.kind === "file" ? (
+        {!active ? (
+          <div className="detail-empty">
+            <FileIcon />
+            <p>在这里查看文件与子代理</p>
+            <span>点击对话中的文件或子代理卡片打开详情。</span>
+          </div>
+        ) : active.kind === "file" ? (
           <FileDetailBody path={active.path} />
         ) : (
           <SubagentChat toolCallId={active.toolCallId} />

@@ -247,6 +247,11 @@ export class OpenAiCompatibleProvider implements Provider {
         if (requested === undefined) break;
         const disable = requested === "off" && profile.supportsExplicitThinkingToggle;
         body.thinking = { type: disable ? "disabled" : "enabled" };
+        // MiMo Chat 同时接受 reasoning_effort；max/ultra 由映射钳为最高原生 high。
+        if (!disable && profile.id === "mimo") {
+          const effort = mapReasoningEffort(requested, this.supportedEfforts, profile.reasoningValues);
+          if (effort) body.reasoning_effort = effort;
+        }
         break;
       }
       case "none":

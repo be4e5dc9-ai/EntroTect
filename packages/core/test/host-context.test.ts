@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { BrowserWindow } from "electron";
@@ -12,9 +12,9 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-function streamResponse(): Response {
+function streamResponse(delegate = false): Response {
   const body = [
-    `data: ${JSON.stringify({ choices: [{ delta: { content: "ok" } }] })}`,
+    `data: ${JSON.stringify({ choices: [{ delta: delegate ? { reasoning_content: "delegate research", tool_calls: [{ index: 0, id: "research-task", function: { name: "task", arguments: JSON.stringify({ prompt: "只读比较开源记忆框架并回报来源" }) } }] } : { content: "ok" } }] })}`,
     `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] })}`,
     `data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 12, completion_tokens: 3 } })}`,
     "data: [DONE]",
@@ -57,13 +57,50 @@ function fakeWindow(events: AppEvent[]): BrowserWindow {
 }
 
 describe("SessionHost run context", () => {
-  it("Ultra 向模型发送 max，同时注入主动子代理编排策略", async () => {
+  it("preserves parent file observations across user turns", async () => {
+    const appDataDir = await mkdtemp(path.join(tmpdir(), "entrotect-host-file-state-"));
+    const events: AppEvent[] = [];
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      const step = calls++;
+      if (step !== 0 && step !== 2) return streamResponse();
+      const name = step === 0 ? "read" : "edit";
+      const args = step === 0 ? { file_path: "code.js" } : { file_path: "code.js", old_string: "alpha", new_string: "overwrite" };
+      return new Response([
+        `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: `file-${step}`, function: { name, arguments: JSON.stringify(args) } }] } }] })}`,
+        `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "tool_calls" }] })}`,
+        "data: [DONE]", "",
+      ].join("\n\n"), { headers: { "content-type": "text/event-stream" } });
+    }) as typeof fetch;
+    try {
+      await writeFile(path.join(appDataDir, "code.js"), "alpha beta", "utf8");
+      const host = new SessionHost({ appDataDir, getWindow: () => fakeWindow(events) });
+      await host.init();
+      const config = { ...configFor("deepseek", "https://api.deepseek.com/v1", "deepseek-chat"), workspaceDir: appDataDir };
+      await host.handleOp({ kind: "SetConfig", config });
+      await host.handleOp({ kind: "NewSession" });
+      await host.handleOp({ kind: "SendMessage", text: "read code" });
+      await writeFile(path.join(appDataDir, "code.js"), "alpha external change", "utf8");
+      await host.handleOp({ kind: "SendMessage", text: "edit code" });
+      expect(calls).toBe(4);
+      expect(await readFile(path.join(appDataDir, "code.js"), "utf8")).toBe("alpha external change");
+      expect(events.find((event) => event.type === "tool-state" && event.toolCallId === "file-2" && event.state === "failed")).toMatchObject({ summary: expect.stringContaining("重新 read") });
+    } finally {
+      await rm(appDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it.each([
+    ["deepseek", "https://api.deepseek.com/v1", "deepseek-chat", false],
+    ["mimo", "https://api.xiaomimimo.com/v1", "mimo-v2.5-pro", false],
+    ["mimo", "https://api.xiaomimimo.com/v1", "mimo-v2.5-pro", true],
+  ] as const)("Ultra %s executes a child research run with native thinking parameters (%s, %s, plan=%s)", async (providerId, baseUrl, model, planning) => {
     const appDataDir = await mkdtemp(path.join(tmpdir(), "entrotect-host-ultra-"));
     const events: AppEvent[] = [];
     const calls: Array<Record<string, unknown>> = [];
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
       calls.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      return streamResponse();
+      return streamResponse(calls.length === 1);
     }) as typeof fetch;
 
     try {
@@ -72,16 +109,41 @@ describe("SessionHost run context", () => {
         getWindow: () => fakeWindow(events),
       });
       await host.init();
-      const config = configFor("deepseek", "https://api.deepseek.com/v1", "deepseek-chat");
+      const config = configFor(providerId, baseUrl, model);
       config.reasoningEffort = "ultra";
+      config.providers![0]!.modelReasoningLevels = { [model]: ["low", "high", "max"] };
       await host.handleOp({ kind: "SetConfig", config });
       await host.handleOp({ kind: "NewSession" });
-      await host.handleOp({ kind: "SendMessage", text: "调研并实现" });
+      if (planning) await host.handleOp({ kind: "SendMessage", text: "/plan" });
+      await host.handleOp({ kind: "SendMessage", text: "调研类人脑 Agent 记忆系统的现有产品和开源项目" });
 
-      expect(calls[0]?.reasoning_effort).toBe("max");
+      expect(calls).toHaveLength(3); // parent dispatch, real child run, parent synthesis
+      for (const call of calls) {
+        if (providerId === "mimo") {
+          expect(call.thinking).toEqual({ type: "enabled" });
+          expect(call.reasoning_effort).toBe("high");
+          expect(call.max_completion_tokens).toBe(131072);
+        } else expect(call.reasoning_effort).toBe("max");
+      }
       const serialized = JSON.stringify(calls[0]?.messages);
       expect(serialized).toContain("<ultra_mode>");
       expect(serialized).toContain("至少调用一次 task");
+      const toolNames = (index: number) => (calls[index]?.tools as Array<{ function: { name: string } }>).map((tool) => tool.function.name);
+      expect(toolNames(0)).toEqual(["task", "ultra_direct"]);
+      expect(toolNames(1)).not.toContain("task");
+      expect(toolNames(1)).not.toContain("ultra_direct");
+      expect(JSON.stringify(calls[1]?.messages)).not.toContain("<ultra_mode>");
+      expect(toolNames(2)).toContain("websearch");
+      expect(JSON.stringify(calls[2]?.messages)).toContain("delegate research");
+      expect(events.some((event) => event.type === "subagent-part")).toBe(true);
+      if (planning) {
+        expect(JSON.stringify(calls[1]?.messages)).toContain("<plan_mode>");
+        for (const index of [1, 2]) {
+          for (const forbidden of ["write", "edit", "generate_image", "todowrite", "kill_shell"]) {
+            expect(toolNames(index)).not.toContain(forbidden);
+          }
+        }
+      }
     } finally {
       await rm(appDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }

@@ -7,6 +7,25 @@ import { PROVIDER_PRESETS } from "../src/provider/presets.js";
 import type { AppConfig } from "@entrotect/shared";
 
 describe("config 持久化回环", () => {
+  it("repairs stale official MiMo max to low/medium/high while retaining Ultra and custom gateway declarations", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "entrotect-config-mimo-"));
+    const model = "mimo-v2.5-pro";
+    const provider = { id: "mimo", name: "MiMo", baseUrl: "https://api.xiaomimimo.com/v1", apiKey: "", models: [model], modelReasoningLevels: { [model]: ["low", "high", "max"] as const }, modelReasoningDefaults: { [model]: "max" as const } };
+    const config: AppConfig = {
+      baseUrl: provider.baseUrl, apiKey: "", model, activeProviderId: "mimo", reasoningEffort: "ultra",
+      providers: [
+        { ...provider, modelReasoningLevels: { [model]: ["low", "high", "max"] } },
+        { ...provider, id: "gateway", apiProfile: "generic", baseUrl: "https://gateway.example/v1", modelReasoningLevels: { [model]: ["low", "high", "max"] } },
+      ],
+    };
+    await saveConfig(dir, config);
+    const loaded = await loadConfig(dir);
+    expect(loaded.reasoningEffort).toBe("ultra");
+    expect(loaded.providers?.find((p) => p.id === "mimo")?.modelReasoningLevels?.[model]).toEqual(["low", "medium", "high"]);
+    expect(loaded.providers?.find((p) => p.id === "mimo")?.modelReasoningDefaults?.[model]).toBe("high");
+    expect(loaded.providers?.find((p) => p.id === "gateway")?.modelReasoningLevels?.[model]).toEqual(["low", "high", "max"]);
+  });
+
   it("showReasoning / ultra / 控件样式 / permissionMode 落盘后可完整读回", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "entrotect-config-"));
     const config: AppConfig = {

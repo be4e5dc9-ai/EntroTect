@@ -25,6 +25,8 @@ import type { ApprovalOutcome } from "../permission/gate.js";
 import type { PluginHooks } from "../plugins/types.js";
 import { applyToolBefore, notifyToolAfter } from "../plugins/manager.js";
 import type { SandboxMode } from "../sandbox/policy.js";
+import { ULTRA_DISPATCH_PROMPT, ultraDirectTool } from "./ultra.js";
+import type { FileStates } from "../tools/file-state.js";
 
 export interface AgentDeps {
   provider: Provider;
@@ -34,6 +36,8 @@ export interface AgentDeps {
   temperature?: number;
   /** 思考强度(off = 不发送该参数) */
   reasoningEffort?: ReasoningEffort;
+  /** Ultra coordination belongs to the parent run, not to provider reasoning parameters. */
+  orchestration?: "ultra";
   /** 事件汇:主循环对 UI/持久层的唯一输出通道 */
   emit: (event: AppEvent) => void;
   /** 审批回调:await 到用户决定(M3 实现真实闸门) */
@@ -49,6 +53,8 @@ export interface AgentDeps {
   /** @deprecated 保留向后兼容,实际不再使用 */
   maxTurns?: number;
   abortSignal?: AbortSignal;
+  /** Optional continuation state; independent agents must use separate maps. */
+  fileStates?: FileStates;
   /**
    * 消息落盘钩子:历史每追加一条消息即回调(边跑边持久化,
    * 崩溃后可 resume;append-only,JSONL 层由宿主实现)。
@@ -64,6 +70,8 @@ export interface AgentRunResult {
   usage: TokenUsage | null;
   error: string | null;
   interrupted: boolean;
+  /** Terminal provider reason, retained so a child cannot mistake truncation for completion. */
+  finishReason?: string | null;
 }
 
 const ABORT_RESULT = "[工具调用被取消] 用户中断了操作";
@@ -104,7 +112,9 @@ export async function runAgent(
   deps: AgentDeps,
 ): Promise<AgentRunResult> {
   const history: Message[] = [...initialMessages];
-  const toolsByName = new Map(deps.tools.map((tool) => [tool.name, tool]));
+  const fileStates = deps.fileStates ?? new Map<string, string>();
+  let dispatchPending = deps.orchestration === "ultra";
+  let dispatchAttempts = 0;
   const pluginHooks = deps.plugins ?? [];
   const getSandboxMode = (): SandboxMode => {
     const source = deps.sandboxMode;
@@ -125,6 +135,21 @@ export async function runAgent(
       };
     }
 
+    if (dispatchPending && (!deps.tools.some((tool) => tool.name === "task") || dispatchAttempts >= 2)) {
+      const error = "Ultra 子代理编排未完成：模型未作出有效委派决定或子代理启动失败。请重试或切换思考模式。";
+      deps.emit({ type: "error", message: error });
+      return { messages: history, finalText: null, usage: lastUsage, error, interrupted: false };
+    }
+    const dispatching = dispatchPending;
+    const turnTools = dispatching
+      ? [...deps.tools.filter((tool) => tool.name === "task"), ultraDirectTool]
+      : deps.tools;
+    const toolsByName = new Map(turnTools.map((tool) => [tool.name, tool]));
+    if (dispatching) dispatchAttempts++;
+    const dispatchPrompt = dispatching
+      ? ULTRA_DISPATCH_PROMPT + (dispatchAttempts > 1 ? "\n上次未完成有效委派决定，请纠正工具调用；不要重复直接作答。" : "")
+      : "";
+
     deps.emit({ type: "turn-started" });
 
     // 1. 流式调模型,收集内容块
@@ -132,11 +157,12 @@ export async function runAgent(
     let providerError: string | null = null;
     // 模型原始思考内容(Mimo/Kimi 工具调用回合需随历史回传,缺失会被 400)
     let turnReasoningContent: string | undefined;
+    let finishReason: string | null = null;
     const stream = deps.provider.streamBlocks(
       history,
       {
-        systemPrompt: deps.systemPrompt,
-        tools: deps.tools.map((tool) => ({
+        systemPrompt: deps.systemPrompt + dispatchPrompt,
+        tools: turnTools.map((tool) => ({
           name: tool.name,
           description: tool.description,
           parameters: zodToJsonSchema(tool.inputSchema),
@@ -162,6 +188,7 @@ export async function runAgent(
           break;
         case "turn-complete":
           lastUsage = event.usage;
+          finishReason = event.finishReason;
           if (event.reasoningContent) turnReasoningContent = event.reasoningContent;
           break;
         case "error":
@@ -193,13 +220,18 @@ export async function runAgent(
 
     // 2. 追加 assistant 消息(含本轮全部块)
     if (assistantBlocks.length === 0) {
-      // 空响应防御:直接结束,不产生空消息
+      deps.emit({ type: "turn-completed", usage: lastUsage });
+      if (dispatching) {
+        continue;
+      }
+      // Do not fabricate an empty assistant message; callers can resume from history.
       return {
         messages: history,
         finalText: lastText,
         usage: lastUsage,
         error: null,
         interrupted: false,
+        finishReason,
       };
     }
     const assistantMessage: Message = {
@@ -217,6 +249,10 @@ export async function runAgent(
 
     // 3. 出口 = tool_use 数量
     if (toolCalls.length === 0) {
+      if (dispatching) {
+        deps.emit({ type: "turn-completed", usage: lastUsage });
+        continue;
+      }
       lastText = assistantBlocks
         .filter((block): block is Extract<ContentBlock, { type: "text" }> =>
           block.type === "text")
@@ -229,6 +265,7 @@ export async function runAgent(
         usage: lastUsage,
         error: null,
         interrupted: false,
+        finishReason,
       };
     }
 
@@ -239,6 +276,7 @@ export async function runAgent(
       artifactDir: deps.artifactDir,
       protectedPaths: deps.protectedPaths,
       abortSignal: deps.abortSignal,
+      fileStates,
     };
     const ordered = new Array<ContentBlock | null>(toolCalls.length).fill(null);
 
@@ -273,7 +311,7 @@ export async function runAgent(
           toolCallId: call.id,
           name: call.name,
           isError: true,
-          content: `未知工具: ${call.name}`,
+          content: dispatching ? "Ultra 协作尚未确定，请先调用 task；仅简单请求、用户禁止委派或需澄清时使用 ultra_direct。" : `未知工具: ${call.name}`,
         };
         deps.emit({
           type: "tool-state",
@@ -310,6 +348,8 @@ export async function runAgent(
     // 4b. 审批串行(保持弹窗顺序与交互稳定)
     for (const item of pending) {
       if (deps.abortSignal?.aborted) break;
+      // Internal decisions have no external effects and grant no tool permissions.
+      if (item.tool === ultraDirectTool) continue;
       const outcome = await deps.approve({
         toolCallId: item.call.id,
         toolName: item.call.name,
@@ -334,6 +374,8 @@ export async function runAgent(
           preview: item.preview,
         });
         item.denied = true;
+        // Respect denied delegation instead of repeatedly asking for the same approval.
+        if (dispatching && item.call.name === "task") dispatchPending = false;
       }
     }
 
@@ -378,6 +420,7 @@ export async function runAgent(
             },
           };
           const output = await item.tool.call(item.args, toolContext);
+          if (dispatching) dispatchPending = false;
           const truncated = await truncateOutput(output, deps.artifactDir);
           notifyToolAfter(pluginHooks, item.call.name, truncated.content, false);
           if (

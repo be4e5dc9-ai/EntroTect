@@ -28,6 +28,23 @@ function makeRequest(toolName: string, toolCallId: string): ApprovalRequest {
 }
 
 describe("task 工具与子代理", () => {
+  it("registry instances keep their runner after another session or child builds tools", async () => {
+    const first = buildBuiltinTools({ taskRunner: async () => "session A" }).find((tool) => tool.name === "task")!;
+    const second = buildBuiltinTools({ taskRunner: async () => "session B" }).find((tool) => tool.name === "task")!;
+    buildBuiltinTools();
+    const ctx = { cwd: ".", artifactDir: ".", sandboxMode: "full" as const };
+    expect(await Promise.all([first.call({ prompt: "a" }, ctx), second.call({ prompt: "b" }, ctx)])).toEqual(["session A", "session B"]);
+  });
+
+  it("propagates child errors instead of marking a failed task completed", async () => {
+    const runner = createSubagentRunner({
+      provider: new MockProvider([{ events: [{ type: "error", message: "provider failed" }] }]),
+      tools: [], systemPrompt: "child", cwd: ".", artifactDir: ".",
+      approve: async () => ({ decision: "allow-once" }),
+    });
+    await expect(runner("research")).rejects.toThrow("provider failed");
+  });
+
   it("注入 taskRunner:task 工具追加到末尾,运行器收到 prompt,日志经 subagentLog 上报", async () => {
     const prompts: string[] = [];
     const logLines: string[] = [];

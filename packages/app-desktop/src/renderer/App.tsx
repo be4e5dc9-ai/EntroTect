@@ -25,7 +25,6 @@ export function App(): React.JSX.Element {
   const busy = useStore((s) => s.busy);
   const view = useStore((s) => s.view);
   const activeProviderId = useStore((s) => s.config?.activeProviderId);
-  const detailTabs = useStore((s) => s.detailTabs);
 
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = Number(localStorage.getItem("entrotect-sidebar-width"));
@@ -40,7 +39,7 @@ export function App(): React.JSX.Element {
     return saved >= 320 && saved <= 640 ? saved : DEFAULT_DETAIL_WIDTH;
   });
   const [detailCollapsed, setDetailCollapsed] = useState(
-    () => localStorage.getItem("entrotect-detail-collapsed") === "1",
+    () => localStorage.getItem("entrotect-detail-collapsed") !== "0",
   );
   const lastActiveDetailRef = useRef<string | null>(null);
 
@@ -103,8 +102,6 @@ export function App(): React.JSX.Element {
     localStorage.setItem("entrotect-detail-collapsed", "0");
   };
 
-  const hasDetail = detailTabs.length > 0 && activeDetailId !== null;
-
   return (
     <div className="app">
       <div className="titlebar">
@@ -124,15 +121,17 @@ export function App(): React.JSX.Element {
             {sidebarCollapsed && "对话列表"}
           </button>
         )}
-        {view === "chat" && detailCollapsed && hasDetail && (
+        {view === "chat" && (
           <button
             type="button"
             className="btn btn-ghost detail-peek"
-            onClick={expandDetail}
-            aria-label="Open details"
-            title="Open details"
+            onClick={detailCollapsed ? expandDetail : collapseDetail}
+            aria-label={detailCollapsed ? "展开详情栏" : "收起详情栏"}
+            title={detailCollapsed ? "展开详情栏" : "收起详情栏"}
+            aria-expanded={!detailCollapsed}
+            aria-controls="detail-panel"
           >
-            <PanelCollapseIcon direction="left" />
+            <PanelCollapseIcon direction={detailCollapsed ? "left" : "right"} />
           </button>
         )}
       </div>
@@ -164,11 +163,10 @@ export function App(): React.JSX.Element {
             <Composer />
           </main>
         )}
-        {view === "chat" && hasDetail && !detailCollapsed && (
+        {view === "chat" && !detailCollapsed && (
           <DetailPanel
             width={detailWidth}
             onWidthChange={persistDetailWidth}
-            onCollapse={collapseDetail}
           />
         )}
       </div>

@@ -399,7 +399,7 @@ async function runOnce(
 }
 
 describe("OpenAiCompatibleProvider 请求构建(profile 驱动)", () => {
-  it("Mimo: 仅 api-key 头 / max_completion_tokens / thinking.type,且不发 stream_options", async () => {
+  it("Mimo: api-key / max_completion_tokens / thinking.type + native reasoning_effort", async () => {
     const request = await runOnce(
       { baseUrl: "https://api.xiaomimimo.com/v1", apiKey: "sk-x", model: "mimo-v2.5", apiProfile: "mimo" },
       [userMessage],
@@ -416,9 +416,8 @@ describe("OpenAiCompatibleProvider 请求构建(profile 驱动)", () => {
       stream: true,
       max_completion_tokens: 4096,
       thinking: { type: "enabled" },
+      reasoning_effort: "high",
     });
-    // 官方只支持 thinking enabled/disabled,没有分档参数
-    expect(request.body).not.toHaveProperty("reasoning_effort");
     // 思考模式下自定义 temperature 不生效,直接不发
     expect(request.body).not.toHaveProperty("temperature");
     // 未声明 stream_options 支持,不发
@@ -434,6 +433,22 @@ describe("OpenAiCompatibleProvider 请求构建(profile 驱动)", () => {
       { reasoningEffort: "off" },
     );
     expect(request.body).toMatchObject({ thinking: { type: "disabled" } });
+    expect(request.body).not.toHaveProperty("reasoning_effort");
+  });
+
+  it.each([
+    ["low", "low"],
+    ["medium", "medium"],
+    ["high", "high"],
+    ["max", "high"],
+    ["ultra", "high"],
+  ] as const)("Mimo %s 映射到原生 %s", async (requested, expected) => {
+    const request = await runOnce(
+      { baseUrl: "https://api.xiaomimimo.com/v1", apiKey: "sk-x", model: "mimo-v2.5-pro", providerId: "mimo", supportedEfforts: ["low", "medium", "high"] },
+      [userMessage],
+      { reasoningEffort: requested },
+    );
+    expect(request.body).toMatchObject({ thinking: { type: "enabled" }, reasoning_effort: expected });
   });
 
   it("Mimo max_completion_tokens 超出模型上限时按内置目录 clamp(官方最大 131072)", async () => {

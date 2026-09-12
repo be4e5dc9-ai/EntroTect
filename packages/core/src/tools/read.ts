@@ -7,6 +7,7 @@ import { readFile, stat } from "node:fs/promises";
 import { z } from "zod";
 import type { Tool, ToolContext } from "./types.js";
 import { recordFileState } from "./file-state.js";
+import { withFileLock } from "./file-access.js";
 import { resolveInsideCwd } from "./paths.js";
 
 /** 单次可读上限 256KB,超出引导用 offset/limit 窗口读 */
@@ -30,33 +31,34 @@ export const readTool: Tool = {
   async call(rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const args = inputSchema.parse(rawArgs);
     const absolute = resolveInsideCwd(ctx.cwd, args.file_path, ctx.protectedPaths);
+    return withFileLock(absolute, ctx.abortSignal, async (filePath) => {
+      let info;
+      try {
+        info = await stat(filePath);
+      } catch {
+        throw new Error(`文件不存在: ${args.file_path}`);
+      }
+      if (!info.isFile()) throw new Error(`不是文件: ${args.file_path}`);
+      if (info.size > MAX_READ_BYTES) {
+        throw new Error(
+          `文件过大(${info.size} 字节,上限 ${MAX_READ_BYTES})。请用 offset/limit 分窗口读取。`,
+        );
+      }
 
-    let info;
-    try {
-      info = await stat(absolute);
-    } catch {
-      throw new Error(`文件不存在: ${args.file_path}`);
-    }
-    if (!info.isFile()) throw new Error(`不是文件: ${args.file_path}`);
-    if (info.size > MAX_READ_BYTES) {
-      throw new Error(
-        `文件过大(${info.size} 字节,上限 ${MAX_READ_BYTES})。请用 offset/limit 分窗口读取。`,
-      );
-    }
+      const text = await readFile(filePath, "utf8");
+      const lines = text.split(/\r?\n/);
+      if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
 
-    const text = await readFile(absolute, "utf8");
-    let lines = text.split(/\r?\n/);
-    if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+      const offset = (args.offset ?? 1) - 1;
+      const limit = args.limit ?? lines.length - offset;
+      const window = lines.slice(offset, offset + limit);
 
-    const offset = (args.offset ?? 1) - 1;
-    const limit = args.limit ?? lines.length - offset;
-    const window = lines.slice(offset, offset + limit);
+      // 记录实际读取的内容供 edit/write 新鲜度校验。
+      recordFileState(ctx, filePath, text);
 
-    // 记录状态供 edit 新鲜度校验
-    await recordFileState(absolute);
-
-    return window
-      .map((line, i) => `${String(offset + i + 1).padStart(6, " ")}| ${line}`)
-      .join("\n");
+      return window
+        .map((line, i) => `${String(offset + i + 1).padStart(6, " ")}| ${line}`)
+        .join("\n");
+    });
   },
 };

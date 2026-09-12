@@ -57,6 +57,8 @@ interface ActiveRun {
   gate: SessionPermissionGate;
   abort: AbortController;
   running: boolean;
+  /** Parent observations survive user turns; child runners own separate snapshots. */
+  fileStates: Map<string, string>;
 }
 
 interface AcceptedRun {
@@ -383,6 +385,7 @@ export class SessionHost {
       gate: this.makeGate(),
       abort: new AbortController(),
       running: false,
+      fileStates: new Map(),
     };
     this.emit({ type: "session-meta", meta });
     this.emit({ type: "sessions-listed", sessions: await this.store.list() });
@@ -401,6 +404,7 @@ export class SessionHost {
       gate: this.makeGate(),
       abort: new AbortController(),
       running: false,
+      fileStates: new Map(),
     };
     this.emit({ type: "session-meta", meta });
     this.emit({ type: "sessions-listed", sessions: await this.store.list() });
@@ -427,6 +431,7 @@ export class SessionHost {
       gate: this.makeGate(),
       abort: new AbortController(),
       running: false,
+      fileStates: new Map(),
     };
     this.emit({ type: "session-meta", meta });
     // 回放历史:UI 按序重建消息与工具卡片
@@ -720,6 +725,7 @@ export class SessionHost {
         })] : [])], controls),
         imageProvider,
         systemPrompt,
+        orchestration: config.reasoningEffort === "ultra" ? "ultra" : undefined,
         maxTokens: resolveMaxTokens(config.model),
         temperature: config.temperature,
         reasoningEffort: effectiveEffort,
@@ -730,6 +736,7 @@ export class SessionHost {
         protectedPaths: this.protectedPaths(),
         sandboxMode: getSandboxMode,
         abortSignal: abort.signal,
+        fileStates: run.fileStates,
         onMessage: (message) => this.store.appendMessage(run.meta.id, message),
         plugins: this.plugins,
       });

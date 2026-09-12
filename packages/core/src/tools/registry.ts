@@ -11,7 +11,7 @@ import { editTool } from "./edit.js";
 import { globTool } from "./glob.js";
 import { grepTool } from "./grep.js";
 import { bashTool } from "./bash.js";
-import { taskTool, setTaskRunner } from "./task.js";
+import { createTaskTool } from "./task.js";
 import { imageTool, setImageProvider } from "./image.js";
 import { webfetchTool } from "./webfetch.js";
 import { websearchTool } from "./websearch.js";
@@ -45,12 +45,9 @@ export function buildBuiltinTools(options?: BuildBuiltinToolsOptions): Tool[] {
     todowriteTool,
     imageTool,
   ];
-  if (options?.taskRunner) setTaskRunner(options.taskRunner);
-  else setTaskRunner(null);
-
   if (options?.imageProvider) setImageProvider(options.imageProvider);
   else setImageProvider(null);
 
-  if (options?.taskRunner) return [...base, taskTool];
+  if (options?.taskRunner) return [...base, createTaskTool(options.taskRunner)];
   return base;
 }

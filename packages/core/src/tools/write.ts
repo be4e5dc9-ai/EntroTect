@@ -2,11 +2,12 @@
 // write:创建/覆盖文件(自动创建父目录)
 // =====================================================================
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import type { Tool, ToolContext } from "./types.js";
-import { recordFileState } from "./file-state.js";
+import { assertFileFresh, recordFileState } from "./file-state.js";
+import { atomicWriteText, readTextIfExists, withFileLock } from "./file-access.js";
 import { resolveInsideCwd } from "./paths.js";
 
 const inputSchema = z.strictObject({
@@ -27,9 +28,13 @@ export const writeTool: Tool = {
   async call(rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const args = inputSchema.parse(rawArgs);
     const absolute = resolveInsideCwd(ctx.cwd, args.file_path, ctx.protectedPaths);
-    await mkdir(path.dirname(absolute), { recursive: true });
-    await writeFile(absolute, args.content, "utf8");
-    await recordFileState(absolute);
-    return `已写入 ${args.file_path}(${Buffer.byteLength(args.content, "utf8")} 字节)`;
+    return withFileLock(absolute, ctx.abortSignal, async (filePath) => {
+      const content = await readTextIfExists(filePath);
+      assertFileFresh(ctx, filePath, content);
+      await mkdir(path.dirname(filePath), { recursive: true });
+      await atomicWriteText(filePath, args.content, content, ctx.abortSignal);
+      recordFileState(ctx, filePath, args.content);
+      return `已写入 ${args.file_path}(${Buffer.byteLength(args.content, "utf8")} 字节)`;
+    });
   },
 };

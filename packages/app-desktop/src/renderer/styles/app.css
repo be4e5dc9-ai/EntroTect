@@ -138,7 +138,8 @@
 .detail-peek {
   position: absolute;
   top: 4px;
-  right: 8px;
+  /* Stay to the left of native window controls, including different Windows scales. */
+  right: max(8px, calc(100% - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100% - 140px)) + 8px));
   width: 32px;
   height: 32px;
   padding: 0;
@@ -150,6 +151,35 @@
 .detail-peek:hover,
 .detail-peek:focus-visible {
   border-color: var(--border-strong);
+}
+
+.detail-empty-title {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.detail-empty {
+  display: flex;
+  min-height: 220px;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.detail-empty > svg {
+  width: 28px;
+  height: 28px;
+  opacity: 0.5;
+}
+.detail-empty p {
+  margin: 14px 0 6px;
+  color: var(--text);
+  font-size: 13px;
 }
 
 .sidebar-brand {
@@ -1883,7 +1913,7 @@
   background: var(--accent-dim);
 }
 
-/* ---------- 面板头部(标签 + 折叠按钮同一行) ---------- */
+/* ---------- 面板头部(标签；收起/展开按钮常驻标题栏) ---------- */
 .detail-head {
   display: flex;
   align-items: center;
@@ -1972,36 +2002,6 @@
 .detail-tab-close:active {
   transform: scale(0.88);
 }
-.detail-head-actions {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-.detail-panel-collapse {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-sm);
-  color: var(--text-tertiary);
-  flex-shrink: 0;
-  -webkit-app-region: no-drag;
-  transition:
-    background-color var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
-    transform var(--dur-press) var(--ease-out);
-}
-@media (hover: hover) and (pointer: fine) {
-  .detail-panel-collapse:hover {
-    background: var(--surface-hover);
-    color: var(--text);
-  }
-}
-.detail-panel-collapse:active {
-  transform: scale(0.94);
-}
-
 /* ---------- 面板信息行(路径 / subagent 地址) ---------- */
 .detail-meta {
   display: flex;

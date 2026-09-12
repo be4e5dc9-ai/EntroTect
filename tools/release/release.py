@@ -38,9 +38,9 @@ def set_version(version: str) -> None:
     print(f"[release] 版本 -> {version}")
 
 
-def checksums() -> None:
+def checksums(version: str) -> None:
     sums = []
-    for exe in sorted(RELEASE_DIR.glob("*.exe")):
+    for exe in sorted(RELEASE_DIR.glob(f"EntroTect-Setup-{version}.exe")):
         digest = hashlib.sha256(exe.read_bytes()).hexdigest()
         sums.append(f"{digest}  {exe.name}")
     (RELEASE_DIR / "SHA256SUMS.txt").write_text("\n".join(sums) + "\n", encoding="utf-8")
@@ -79,7 +79,7 @@ def main() -> None:
         sys.exit(1)
 
     print("[4/4] 校验和")
-    checksums()
+    checksums(version)
 
     artifacts = [p.name for p in RELEASE_DIR.glob("EntroTect-Setup-*.exe")]
     print(f"[release] 完成: {artifacts}")

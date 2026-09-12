@@ -151,6 +151,16 @@ describe("TodoCard 任务计划板", () => {
 });
 
 describe("ReasoningSlider 思考强度", () => {
+  it("MiMo shows native low/medium/high plus Ultra orchestration", () => {
+    const onSelect = vi.fn();
+    render(<ReasoningSlider value="high" efforts={["low", "medium", "high", "ultra"]} defaultValue="high" model="mimo-v2.5-pro" onSelect={onSelect} />);
+    fireEvent.click(screen.getByRole("button", { name: "思考强度：深入" }));
+    const slider = screen.getByRole("slider");
+    expect(slider.getAttribute("max")).toBe("3");
+    fireEvent.change(slider, { target: { value: "3" } });
+    expect(onSelect).toHaveBeenCalledWith("ultra");
+  });
+
   it("通过离散滑块选择 ultra，并可恢复模型默认值", () => {
     const onSelect = vi.fn();
     render(

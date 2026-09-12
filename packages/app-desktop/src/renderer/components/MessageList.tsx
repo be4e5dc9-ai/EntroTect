@@ -37,6 +37,7 @@ function ReasoningSection({ text, streaming }: { text: string; streaming: boolea
         className="reasoning-head"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
+        title={`模型返回了 ${text.length} 个字符的思考内容；可见长度不代表实际推理预算或质量`}
       >
         <svg className="reasoning-head-icon" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
           <path
@@ -48,7 +49,7 @@ function ReasoningSection({ text, streaming }: { text: string; streaming: boolea
           />
         </svg>
         <span className="reasoning-title">
-          {streaming ? "Thinking…" : `思考过程(${text.length} 字)`}
+          {streaming ? "正在思考…" : "思考内容"}
         </span>
         <svg
           className={`tool-chevron${open ? " open" : ""}`}

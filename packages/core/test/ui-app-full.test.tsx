@@ -221,7 +221,22 @@ describe("App 首条消息与子代理点击", () => {
     });
   });
 
-  it("折叠详情栏后不再被自动弹回;再次关闭标签栏收起面板", async () => {
+  it("空会话也有常驻详情栏开关，切换时保持同一个按钮", async () => {
+    render(<App />);
+    const toggle = screen.getByLabelText("展开详情栏");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(document.querySelector(".detail-panel")).toBeNull();
+    fireEvent.click(toggle);
+    expect(screen.getByLabelText("收起详情栏")).toBe(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("在这里查看文件与子代理")).toBeDefined();
+    fireEvent.click(toggle);
+    expect(screen.getByLabelText("展开详情栏")).toBe(toggle);
+    expect(document.querySelector(".detail-panel")).toBeNull();
+    expect(localStorage.getItem("entrotect-detail-collapsed")).toBe("1");
+  });
+
+  it("折叠详情栏后不回弹，关闭最后一个标签仍保留面板和开关", async () => {
     localStorage.setItem("entrotect-detail-collapsed", "1");
     render(<App />);
     await waitFor(() => expect(screen.getByText(/早上好|中午好|下午好|晚上好|夜深了/)).toBeDefined());
@@ -247,23 +262,26 @@ describe("App 首条消息与子代理点击", () => {
     });
     // 首次激活 → 自动展开(点击任务卡打开子代理标签)
     fireEvent.click(screen.getByText("调研 hello.txt").closest("button")!);
-    await waitFor(() => expect(screen.getByLabelText("Collapse details")).toBeDefined());
-    fireEvent.click(screen.getByLabelText("Collapse details"));
-    // 面板收起:右栏折叠按钮消失,消息流卡片仍在
-    await waitFor(() => expect(screen.queryByLabelText("Collapse details")).toBeNull());
+    await waitFor(() => expect(screen.getByLabelText("收起详情栏")).toBeDefined());
+    const toggle = screen.getByLabelText("收起详情栏");
+    fireEvent.click(toggle);
+    // 面板收起，常驻按钮原位切换为展开，消息流卡片仍在。
+    await waitFor(() => expect(screen.getByLabelText("展开详情栏")).toBe(toggle));
     expect(screen.getByText("调研 hello.txt")).toBeDefined();
     // 等待一会儿确保没有回弹(手动折叠后不应被自动展开)
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(screen.queryByLabelText("Collapse details")).toBeNull();
-    // 点击幽灵按钮重新展开
-    fireEvent.click(screen.getByLabelText("Open details"));
-    // 关闭当前标签 → activeDetailId 应变为 null → 面板隐藏
-    await waitFor(() => expect(screen.getByLabelText("Collapse details")).toBeDefined());
+    expect(document.querySelector(".detail-panel")).toBeNull();
+    fireEvent.click(toggle);
+    // 关闭当前标签 → activeDetailId 变为 null → 展示空态而非消失。
+    await waitFor(() => expect(screen.getByLabelText("收起详情栏")).toBe(toggle));
     fireEvent.click(screen.getByLabelText("关闭当前页"));
     await waitFor(() => {
       expect(useStore.getState().activeDetailId).toBeNull();
       expect(useStore.getState().detailTabs.length).toBe(0);
     });
-    expect(screen.queryByLabelText("Collapse details")).toBeNull();
+    expect(screen.getByLabelText("收起详情栏")).toBe(toggle);
+    expect(screen.getByText("在这里查看文件与子代理")).toBeDefined();
+    fireEvent.click(toggle);
+    expect(screen.getByLabelText("展开详情栏")).toBe(toggle);
   });
 });

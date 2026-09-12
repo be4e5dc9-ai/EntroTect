@@ -6,7 +6,7 @@
 //  ultra(80) 是 EntroTect 编排档位：模型侧映射为 max，并启用主动子代理策略。
 // =====================================================================
 
-import type { AppConfig, ReasoningEffort } from "./protocol.js";
+import type { AppConfig, ProviderConfig, ReasoningEffort } from "./protocol.js";
 
 export type { ReasoningEffort };
 
@@ -67,8 +67,8 @@ export const PRESET_MODEL_EFFORTS: Array<{
   { pattern: /claude/i, efforts: ["low", "medium", "high"], defaultEffort: "medium" },
   // DeepSeek V4-Pro/V4-Flash/V3.2 等 — low/high/max
   { pattern: /deepseek/i, efforts: ["low", "high", "max"], defaultEffort: "high" },
-  // Mimo v2.5 / v2 — Xiaomi MiMo，官方仅 thinking enabled/disabled（默认 enabled），无分档
-  { pattern: /mimo/i, efforts: [], defaultEffort: "high" },
+  // MiMo v2.5 — 官方接口接受 low/medium/high；Ultra 使用 high + harness 编排
+  { pattern: /mimo/i, efforts: ["low", "medium", "high"], defaultEffort: "high" },
   // OpenAI GPT-5.6 / GPT-5* / o3 / o4-mini — 支持 none/off 全档位
   { pattern: /gpt-5\.6/i, efforts: ["off", "low", "medium", "high", "xhigh", "max"], defaultEffort: "high" },
   { pattern: /gpt-5/i, efforts: ["off", "low", "medium", "high", "xhigh", "max"], defaultEffort: "high" },
@@ -127,6 +127,8 @@ export function getSupportedEffortsForModel(
     config?.providers?.find((p) => p.id === providerId) ??
     config?.providers?.[0];
   const declared = provider?.modelReasoningLevels?.[model];
+  // 官方 MiMo Chat 端点实测接受 low/medium/high，拒绝旧配置中的 max。
+  if (isOfficialMimoProvider(provider, model)) return ["low", "medium", "high", "ultra"];
   if (declared !== undefined) {
     const filtered = filterValidEfforts(declared);
     return withUltra(sortEfforts(filtered));
@@ -136,7 +138,14 @@ export function getSupportedEffortsForModel(
   return withUltra([...GENERIC_FALLBACK_EFFORTS]);
 }
 
-/** 只有模型原生支持 max 时才提供 ultra，避免伪造模型能力。 */
+/** 官方协议修正只作用于 MiMo 直连，不覆盖自定义网关声明。 */
+export function isOfficialMimoProvider(provider: ProviderConfig | undefined, model: string): boolean {
+  if (!/mimo/i.test(model)) return false;
+  if (provider?.apiProfile) return provider.apiProfile === "mimo";
+  return provider?.id === "mimo" || /xiaomimimo\.com/i.test(provider?.baseUrl ?? "");
+}
+
+/** 只有模型原生支持 max 时才提供 ultra；MiMo 在上方按最高 high 特判。 */
 function withUltra(efforts: ReasoningEffort[]): ReasoningEffort[] {
   return efforts.includes("max") && !efforts.includes("ultra")
     ? [...efforts, "ultra"]
