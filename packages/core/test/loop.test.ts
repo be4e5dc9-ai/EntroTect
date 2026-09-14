@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -8,6 +8,9 @@ import { runAgent } from "../src/loop/agent.js";
 import type { Tool } from "../src/tools/types.js";
 import { buildBuiltinTools } from "../src/tools/registry.js";
 import { buildSystemPrompt } from "../src/prompt/system.js";
+import { bashOutputTool } from "../src/tools/bash-output.js";
+import { createBgJob, stopBgJobsForOwner } from "../src/tools/bg-manager.js";
+import { compactMessages, estimateTokens } from "../src/compact.js";
 import { MockProvider, textBlock, toolCall, turnComplete } from "./helpers/mock-provider.js";
 
 async function makeEnv(): Promise<{ cwd: string; artifactDir: string }> {
@@ -33,6 +36,72 @@ function makeDeps(cwd: string, artifactDir: string, overrides: Record<string, un
 }
 
 describe("runAgent 主循环", () => {
+  it("compacts between tool turns before the next model request", async () => {
+    const { cwd, artifactDir } = await makeEnv();
+    const provider = new MockProvider([
+      { events: [toolCall("read-large", "large", "{}"), turnComplete()] },
+      { events: [textBlock("继续完成"), turnComplete()] },
+    ]);
+    const summaries = new MockProvider([{ events: [{ type: "text-delta", text: "已读取项目，下一步完成验证。" }, turnComplete()] }]);
+    const compact = vi.fn(async (history: Message[]) => (await compactMessages(summaries, history)).compacted);
+    const tools: Tool[] = [{ name: "large", description: "read", inputSchema: z.object({}), isReadOnly: true, preview: () => "read", call: async () => "large evidence".repeat(1000) }];
+    const { deps } = makeDeps(cwd, artifactDir, { provider, tools, compact: { shouldCompact: (history: Message[]) => estimateTokens(history) > 1000, run: compact } });
+    const result = await runAgent([{ role: "user", content: [{ type: "text", text: "检查项目" }] }], deps);
+    expect(result.finalText).toBe("继续完成");
+    expect(compact).toHaveBeenCalledOnce();
+    expect(provider.receivedHistory[1]![0]!.compaction).toBeDefined();
+    expect(estimateTokens(provider.receivedHistory[1]!)).toBeLessThan(1000);
+    expect(result.messages[0]!.compaction).toBeDefined();
+  });
+
+  it("stops safely with original history when automatic compaction fails", async () => {
+    const { cwd, artifactDir } = await makeEnv();
+    const provider = new MockProvider([]);
+    const history: Message[] = [{ role: "user", content: [{ type: "text", text: "keep me" }] }];
+    const { deps } = makeDeps(cwd, artifactDir, { provider, compact: { shouldCompact: () => true, run: async () => { throw new Error("压缩超时"); } } });
+    const result = await runAgent(history, deps);
+    expect(result.error).toContain("压缩超时");
+    expect(result.messages).toEqual(history);
+    expect(provider.receivedHistory).toEqual([]);
+  });
+
+  it.each([true, false])("samples background status after slow peers regardless of call order (poll first: %s)", async (pollFirst) => {
+    const { cwd, artifactDir } = await makeEnv();
+    const job = createBgJob("diagnostic", cwd, artifactDir);
+    job.stdout = "old log";
+    const peer: Tool = {
+      name: "peer", description: "Independent work", inputSchema: z.object({}), isReadOnly: true,
+      preview: () => "peer", async call() {
+        await Promise.resolve();
+        job.stdout = "fresh final log";
+        job.done = true;
+        job.code = 0;
+        job.endedAt = Date.now();
+        return "done";
+      },
+    };
+    const calls = [toolCall("poll", "bash_output", JSON.stringify({ jobId: job.id })), toolCall("work", "peer", "{}")];
+    if (!pollFirst) calls.reverse();
+    const provider = new MockProvider([
+      { events: [...calls, turnComplete()] },
+      { events: [textBlock("done"), turnComplete()] },
+    ]);
+    try {
+      const { deps, events } = makeDeps(cwd, artifactDir, { provider, tools: [bashOutputTool, peer] });
+      const result = await runAgent([], deps);
+      expect(result.error).toBeNull();
+      const results = provider.receivedHistory[1]!.at(-1)!.content;
+      expect(results.map((block) => block.type === "tool-result" && block.toolCallId)).toEqual(pollFirst ? ["poll", "work"] : ["work", "poll"]);
+      const snapshot = results.find((block) => block.type === "tool-result" && block.toolCallId === "poll");
+      expect(snapshot).toMatchObject({ isError: false, content: expect.stringContaining("fresh final log") });
+      expect(JSON.stringify(snapshot)).toContain("已结束 (exit 0)");
+      expect(events.filter((event) => event.type === "tool-state" && event.state === "completed").map((event) => event.type === "tool-state" && event.toolCallId)).toEqual(["work", "poll"]);
+    } finally {
+      job.done = true;
+      await stopBgJobsForOwner(artifactDir);
+    }
+  });
+
   it("多轮闭环:文本→read 工具→结果回喂→最终答复,出口=无 tool_use", async () => {
     const { cwd, artifactDir } = await makeEnv();
     await writeFile(path.join(cwd, "note.txt"), "hello entrotect", "utf8");

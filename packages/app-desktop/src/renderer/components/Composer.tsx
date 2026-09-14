@@ -54,6 +54,7 @@ export function Composer(): React.JSX.Element {
   const commandNotice = useStore((s) => s.commandNotice);
   const config = useStore((s) => s.config);
   const usage = useStore((s) => s.usage);
+  const contextEstimate = useStore((s) => s.contextEstimate);
   const modelsByProvider = useStore((s) => s.modelsByProvider);
   const contextWindowsByProvider = useStore((s) => s.contextWindowsByProvider);
   const skills = useStore((s) => s.skills);
@@ -545,7 +546,8 @@ export function Composer(): React.JSX.Element {
             </button>
           )}
           <ContextUsagePopover
-            inputTokens={usage?.inputTokens}
+            inputTokens={contextEstimate ?? usage?.inputTokens}
+            estimated={contextEstimate != null}
             contextWindow={contextWindow}
           />
         </div>

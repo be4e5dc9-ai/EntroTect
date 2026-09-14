@@ -61,6 +61,11 @@ export interface AgentDeps {
    * 崩溃后可 resume;append-only,JSONL 层由宿主实现)。
    */
   onMessage?: (message: Message) => Promise<void> | void;
+  /** Called before each model request, at complete tool-result boundaries. */
+  compact?: {
+    shouldCompact: (messages: Message[]) => boolean;
+    run: (messages: Message[]) => Promise<Message[]>;
+  };
   /** 插件 hooks(宿主注入):chat.message 改写 / tool.execute 换参与观察 */
   plugins?: PluginHooks[];
 }
@@ -112,7 +117,7 @@ export async function runAgent(
   initialMessages: Message[],
   deps: AgentDeps,
 ): Promise<AgentRunResult> {
-  const history: Message[] = [...initialMessages];
+  let history: Message[] = [...initialMessages];
   const fileStates = deps.fileStates ?? new Map<string, string>();
   const shellState = deps.shellState ?? {};
   let dispatchPending = deps.orchestration === "ultra";
@@ -135,6 +140,20 @@ export async function runAgent(
         error: "已中断",
         interrupted: true,
       };
+    }
+
+    if (deps.compact?.shouldCompact(history)) {
+      try {
+        const compacted = await deps.compact.run(history);
+        if (compacted === history) throw new Error("上下文仍超过压缩阈值，无法进一步精简；请缩短最新输入或开启新会话。");
+        history = compacted;
+        lastUsage = null;
+      } catch (cause) {
+        const error = cause instanceof Error ? cause.message : String(cause);
+        const interrupted = deps.abortSignal?.aborted ?? false;
+        if (!interrupted) deps.emit({ type: "error", message: error });
+        return { messages: history, finalText: null, usage: null, error, interrupted };
+      }
     }
 
     if (dispatchPending && (!deps.tools.some((tool) => tool.name === "task") || dispatchAttempts >= 2)) {
@@ -409,9 +428,10 @@ export async function runAgent(
         }
       }
 
-      // 4c. 同一阶段执行并行:仅剩已批准的调用;结果按索引占位,顺序不变
-      await Promise.all(
-        items.map(async (item) => {
+      // Volatile read-only snapshots are sampled last, so slow peers cannot
+      // make their status/logs stale before the batch reaches the model.
+      const executeGroup = (group: Planned[]) => Promise.all(
+        group.map(async (item) => {
           if (item.denied) return;
           const index = item.index;
           if (deps.abortSignal?.aborted) {
@@ -520,6 +540,9 @@ export async function runAgent(
           }
         }),
       );
+      const isSnapshot = (item: Planned) => item.tool.isReadOnly && item.tool.afterBatch === true;
+      await executeGroup(items.filter((item) => !isSnapshot(item)));
+      await executeGroup(items.filter(isSnapshot));
     };
 
     if (dispatching) {

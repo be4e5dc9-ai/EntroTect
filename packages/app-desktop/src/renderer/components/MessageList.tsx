@@ -89,6 +89,25 @@ function PlanBlock({ text }: { text: string }): React.JSX.Element {
 export function Message({ message }: { message: UiMessage }): React.JSX.Element {
   const showReasoning = useStore((s) => s.config?.showReasoning ?? false);
 
+  if (message.compaction) {
+    const { state, createdAt, detail } = message.compaction;
+    const label = state === "running" ? "正在压缩上下文…"
+      : state === "completed" ? "上下文已压缩"
+      : state === "skipped" ? "上下文无需压缩"
+      : state === "cancelled" ? "上下文压缩已取消"
+      : "上下文压缩失败";
+    return (
+      <div className={`context-compaction is-${state}`} role="status" aria-live="polite"
+        title={detail ?? (createdAt ? `压缩完成于 ${new Date(createdAt).toLocaleString()}` : state === "skipped" ? "当前历史已足够精简，保留原上下文。" : undefined)}>
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M3 3v2m0 3v7a2 2 0 0 0 2 2h2M7 3h5M7 7h8M7 11h6M11 15h4m-2-2 2 2-2 2"
+            stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span>{label}</span>
+      </div>
+    );
+  }
+
   if (message.role === "user") {
     const images = message.blocks.filter((b) => b.kind === "image");
     const text = message.blocks

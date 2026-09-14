@@ -12,7 +12,7 @@
 // =====================================================================
 
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   messageSchema,
@@ -131,7 +131,14 @@ export class SessionStore {
     const dir = this.sessionDir(sessionId);
     await mkdir(dir, { recursive: true });
     const text = rebuilt.map((line) => JSON.stringify(line)).join("\n") + "\n";
-    await writeFile(this.transcriptPath(sessionId), text, { encoding: "utf8" });
+    const target = this.transcriptPath(sessionId);
+    const temporary = `${target}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporary, text, { encoding: "utf8", flag: "wx" });
+      await rename(temporary, target);
+    } finally {
+      await rm(temporary, { force: true }).catch(() => {});
+    }
   }
 
   /** 重建会话:meta + 全部 message + 最后一条 title */

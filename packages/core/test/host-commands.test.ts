@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -7,10 +7,16 @@ import { DEFAULT_CONFIG, type AppEvent, type SessionMeta } from "@entrotect/shar
 import { SessionHost } from "../../app-desktop/src/main/host.js";
 import { SessionStore } from "../src/session/store.js";
 import { buildBuiltinTools } from "@entrotect/core";
+import { COMPACT_TIMEOUT_MS } from "../src/compact.js";
+import { useStore, applyEvent } from "../../app-desktop/src/renderer/store.js";
 
 const originalFetch = globalThis.fetch;
+(globalThis as Record<string, unknown>).requestAnimationFrame = (callback: FrameRequestCallback) =>
+  setTimeout(() => callback(Date.now()), 0) as unknown as number;
+(globalThis as Record<string, unknown>).cancelAnimationFrame = (id: number) => clearTimeout(id);
 const dirs: string[] = [];
 afterEach(async () => {
+  vi.useRealTimers();
   globalThis.fetch = originalFetch;
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })));
 });
@@ -36,6 +42,46 @@ async function setup() {
 }
 
 describe("SessionHost commands", () => {
+  it("reports a small history as unchanged without making a summary request", async () => {
+    const { send, calls, events, store, meta } = await setup();
+    await send("你好");
+    const before = (await store.load(meta.id)).messages;
+    const requests = calls.length;
+    await send("/compact");
+    expect(calls).toHaveLength(requests);
+    expect(events.some((event) => event.type === "session-compaction-skipped")).toBe(true);
+    expect(events.some((event) => event.type === "session-compacted")).toBe(false);
+    expect((await store.load(meta.id)).messages).toEqual(before);
+  });
+
+  it.each(["cancel", "timeout"])("manual compaction enters busy immediately and releases a stalled request on %s", async (mode) => {
+    const { host, send, store, meta, events } = await setup();
+    await send("历史内容".repeat(1000));
+    const before = (await store.load(meta.id)).messages;
+    useStore.setState({ config: (host as any).config, currentSession: meta, messages: [], busy: false, activeRunId: null, invalidatedRunIds: [], contextEstimate: null });
+    host.emit = (event) => { events.push(event); applyEvent(event); };
+    let entered!: () => void;
+    const ready = new Promise<void>((resolve) => { entered = resolve; });
+    globalThis.fetch = (async () => { entered(); return await new Promise(() => {}); }) as typeof fetch;
+    vi.useFakeTimers();
+    const pending = send("/compact");
+    // Registration happens before the first disk/network await.
+    expect(useStore.getState().busy).toBe(true);
+    await ready;
+    expect(useStore.getState().messages.at(-1)?.compaction?.state).toBe("running");
+    if (mode === "cancel") await host.handleOp({ kind: "Interrupt" });
+    else await vi.advanceTimersByTimeAsync(COMPACT_TIMEOUT_MS);
+    await pending;
+    expect(useStore.getState().busy).toBe(false);
+    expect(useStore.getState().messages.at(-1)?.compaction?.state).toBe(mode === "cancel" ? "cancelled" : "failed");
+    expect((await store.load(meta.id)).messages).toEqual(before);
+    vi.useRealTimers();
+    globalThis.fetch = (async () => response()) as typeof fetch;
+    await send("现在继续");
+    expect(events.filter((event) => event.type === "error").some((event) => event.type === "error" && event.message.includes("上一轮任务仍在运行中"))).toBe(false);
+    expect((await store.load(meta.id)).messages.length).toBe(before.length + 2);
+  });
+
   it("toggles plan locally, strips its prefix, and restores executable tools on exit", async () => {
     const { send, calls, events, meta, store } = await setup();
     await send("/plan");
@@ -168,12 +214,62 @@ describe("SessionHost commands", () => {
   });
 
   it("locks compaction against new messages and preserves goal/mode", async () => {
-    const { send, store, meta, events } = await setup();
+    const { host, send, store, meta, events } = await setup();
     await send("/goal 验证项目");
     await send("/plan");
+    await store.appendMessage(meta.id, { role: "assistant", content: [{ type: "text", text: "已完成的工作。".repeat(1000) }] });
     await Promise.all([send("/compact"), send("压缩期间发送")]);
     expect(events.some((event) => event.type === "error" && event.message.includes("运行中"))).toBe(true);
     expect(events.some((event) => event.type === "session-compacted")).toBe(true);
     expect((await store.load(meta.id)).meta.controls).toMatchObject({ mode: "plan", goal: { objective: "验证项目", status: "active" } });
+    const lifecycle = events.filter((event) => event.type === "session-compacting" || event.type === "session-compacted");
+    expect(lifecycle.map((event) => event.type)).toEqual(["session-compacting", "session-compacted"]);
+    const completed = lifecycle[1] as Extract<AppEvent, { type: "session-compacted" }>;
+    expect(lifecycle[0]).toMatchObject({ sessionId: meta.id, id: completed.marker.id });
+    expect((await store.load(meta.id)).messages[0]?.compaction).toEqual(completed.marker);
+    await send("压缩后继续");
+    await host.handleOp({ kind: "NewSession" });
+    events.length = 0;
+    await host.handleOp({ kind: "ResumeSession", sessionId: meta.id });
+    const replay = events.filter((event) => event.type === "message-appended" || event.type === "session-compacted");
+    expect(replay.filter((event) => event.type === "session-compacted")).toHaveLength(1);
+    const markerIndex = replay.findIndex((event) => event.type === "session-compacted");
+    expect(markerIndex).toBe(completed.marker.retainedMessages);
+    expect(replay[markerIndex + 1]).toMatchObject({ type: "message-appended", message: { content: [{ type: "text", text: "压缩后继续" }] } });
+    expect(JSON.stringify(replay)).not.toContain("【对话压缩摘要】");
+  });
+
+  it("publishes the same compaction lifecycle for automatic compaction", async () => {
+    const { host, send, store, meta, dir, events, calls } = await setup();
+    for (let i = 0; i < 8; i++) await store.appendMessage(meta.id, { role: "user", content: [{ type: "text", text: "x".repeat(5000) }] });
+    await host.handleOp({ kind: "SetConfig", config: { ...DEFAULT_CONFIG, providers: [], baseUrl: "https://model.test/v1", apiKey: "test", model: "test-model", permissionMode: "full", autoCompact: true, autoCompactRatio: 0.1, workspaceDir: dir } });
+    await send("继续");
+    expect(events.filter((event) => event.type.startsWith("session-compact")).map((event) => event.type)).toEqual(["session-compacting", "session-compacted"]);
+    expect((await store.load(meta.id)).messages[0]?.compaction).toBeDefined();
+    expect(calls).toHaveLength(2);
+    expect(JSON.stringify(calls[1].messages)).not.toContain("retainedMessages");
+  });
+
+  it.each([false, true])("clears compression progress on failure/cancellation and keeps history (cancel: %s)", async (cancel) => {
+    const { host, send, store, meta, events } = await setup();
+    await send("准备历史".repeat(1000));
+    const before = (await store.load(meta.id)).messages;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let started!: () => void;
+    const ready = new Promise<void>((resolve) => { started = resolve; });
+    globalThis.fetch = (async () => {
+      started();
+      await held;
+      return cancel ? response() : new Response("data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } });
+    }) as typeof fetch;
+    const pending = send("/compact");
+    await ready;
+    if (cancel) await host.handleOp({ kind: "Interrupt" });
+    release();
+    await pending;
+    expect(events.filter((event) => event.type.startsWith("session-compact")).map((event) => event.type)).toEqual(["session-compacting", "session-compaction-failed"]);
+    expect(events.find((event) => event.type === "session-compaction-failed")).toMatchObject({ sessionId: meta.id, cancelled: cancel });
+    expect((await store.load(meta.id)).messages).toEqual(before);
   });
 });

@@ -19,7 +19,7 @@ import type {
 import type { Provider } from "../provider/types.js";
 import type { Tool } from "../tools/types.js";
 import type { ApprovalOutcome } from "../permission/gate.js";
-import { runAgent } from "../loop/agent.js";
+import { runAgent, type AgentDeps } from "../loop/agent.js";
 import type { SandboxMode } from "../sandbox/policy.js";
 
 type LogLine = (line: string) => void;
@@ -52,6 +52,7 @@ export interface SubagentRunnerDeps {
   temperature?: number;
   reasoningEffort?: ReasoningEffort;
   abortSignal?: AbortSignal;
+  compact?: AgentDeps["compact"];
   /** @deprecated 保留向后兼容,实际不再使用(轮次无上限,由自动压缩控制上下文) */
   maxTurns?: number;
 }
@@ -146,6 +147,15 @@ export function createSubagentRunner(deps: SubagentRunnerDeps): SubagentRunner {
       sandboxMode: deps.sandboxMode,
       fileStates: new Map<string, string>(),
       shellState: {},
+      compact: deps.compact ? {
+        shouldCompact: deps.compact.shouldCompact,
+        run: async (history: Message[]) => {
+          log?.("正在压缩子代理上下文");
+          const compacted = await deps.compact!.run(history);
+          log?.(compacted === history ? "子代理上下文无需压缩" : "子代理上下文已压缩");
+          return compacted;
+        },
+      } : undefined,
     };
     let messages = initialMessages;
     // A reasoning-only / token-limited response is not a completed task. Resume once

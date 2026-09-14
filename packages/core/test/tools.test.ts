@@ -239,14 +239,18 @@ describe("bash 工具", () => {
     expect(job).toBeDefined();
     if (!job!.done) await once(job!.child!, "close");
     const out = await bashOutputTool.call({ jobId: id }, ctx);
+    expect(out).toContain("采样时间:");
+    expect(out).toContain("总运行");
     expect(out).toContain("background_ok");
     expect(out).not.toContain("__ENTROTECT_CWD_");
     const endedAt = job!.endedAt;
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(job!.endedAt).toBe(endedAt);
-    expect(await bashOutputTool.call({ jobId: id }, ctx)).toBe(out);
+    const refreshed = await bashOutputTool.call({ jobId: id }, ctx);
+    expect(refreshed.match(/状态: .*/)?.[0]).toBe(out.match(/状态: .*/)?.[0]);
 
     const timeoutStarted = await bashTool.call({ command: "Start-Sleep -Seconds 5", background: true, timeout: 1 }, ctx);
+    expect(timeoutStarted).toContain("超时策略：1 秒后终止进程树");
     const timeoutId = timeoutStarted.match(/id: (\S+)/)?.[1];
     const timeoutJob = getBgJob(timeoutId!, ctx.artifactDir);
     if (!timeoutJob!.done) await once(timeoutJob!.child!, "close");
@@ -257,6 +261,7 @@ describe("bash 工具", () => {
     const { ctx, root } = await makeCtx();
     const other = { ...ctx, artifactDir: path.join(root, "other-artifacts") };
     const started = await bashTool.call({ command: "Start-Sleep -Seconds 60", background: true }, ctx);
+    expect(started).toContain("超时策略：无自动超时");
     const id = started.match(/id: (\S+)/)?.[1];
     expect(id).toBeTruthy();
     expect(getBgJob(id!, ctx.artifactDir)).toBeDefined();

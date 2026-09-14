@@ -15,7 +15,7 @@ const fallbackStates = new WeakMap<ToolContext, ShellState>();
 const inputSchema = z.strictObject({
   command: z.string().describe("要执行的 PowerShell 命令"),
   timeout: z.number().int().min(1).max(600).optional()
-    .describe(`超时秒数(默认 ${DEFAULT_TIMEOUT_SECONDS},上限 600)`),
+    .describe(`超时秒数：前台默认 ${DEFAULT_TIMEOUT_SECONDS}；后台省略时无自动超时；显式设置范围 1–600`),
   background: z.boolean().optional()
     .describe("true 时后台运行（长任务/dev server），立即返回任务 id，用 bash_output 轮询；默认 false"),
 });
@@ -167,7 +167,8 @@ export const bashTool: Tool = {
           job.reason = "spawn_error";
           appendOutput(job, error.message, true);
         });
-        return `后台任务已启动\nid: ${job.id}\ncommand: ${args.command}\n提示：用 bash_output 轮询输出，用 kill_shell 终止。`;
+        const timeoutPolicy = args.timeout ? `${args.timeout} 秒后终止进程树` : "无自动超时";
+        return `后台任务已启动\nid: ${job.id}\ncommand: ${args.command}\n超时策略：${timeoutPolicy}\n提示：用 bash_output 轮询快照，用 kill_shell 终止；删除会话或正常退出应用也会清理任务。`;
       }
 
       return await new Promise<string>((resolve, reject) => {

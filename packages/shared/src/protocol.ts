@@ -21,6 +21,15 @@ export type ContentBlock =
 
 export type Role = "system" | "user" | "assistant";
 
+/** UI boundary on a context summary; never part of provider message content. */
+export interface CompactionMarker {
+  id: string;
+  createdAt: string;
+  retainedMessages: number;
+  beforeTokens?: number;
+  afterTokens?: number;
+}
+
 export interface Message {
   role: Role;
   content: ContentBlock[];
@@ -29,6 +38,7 @@ export interface Message {
    * 不放进 ContentBlock，避免把内部推理误当作用户可见正文。
    */
   reasoningContent?: string;
+  compaction?: CompactionMarker;
 }
 
 export interface TokenUsage {
@@ -447,7 +457,10 @@ export type AppEvent =
   | { type: "session-controls"; sessionId: string; controls: SessionControls }
   | { type: "command-result"; sessionId: string; message: string }
   | { type: "sessions-listed"; sessions: SessionMeta[] }
-  | { type: "session-compacted"; summary: string }
+  | { type: "session-compacting"; sessionId: string; id: string }
+  | { type: "session-compacted"; sessionId: string; marker: CompactionMarker; summary: string; replayed?: boolean }
+  | { type: "session-compaction-skipped"; sessionId: string; id: string }
+  | { type: "session-compaction-failed"; sessionId: string; id: string; cancelled: boolean; message?: string }
   | {
       type: "models-listed";
       providerId: string;
@@ -546,10 +559,19 @@ export const contentBlockSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
+export const compactionMarkerSchema = z.object({
+  id: z.string().min(1),
+  createdAt: z.string().datetime(),
+  retainedMessages: z.number().int().nonnegative(),
+  beforeTokens: z.number().int().nonnegative().optional(),
+  afterTokens: z.number().int().nonnegative().optional(),
+});
+
 export const messageSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),
   content: z.array(contentBlockSchema),
   reasoningContent: z.string().optional(),
+  compaction: compactionMarkerSchema.optional(),
 });
 
 export const sessionControlsSchema = z.object({
@@ -711,7 +733,10 @@ export const appEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("session-controls"), sessionId: z.string(), controls: sessionControlsSchema }),
   z.object({ type: z.literal("command-result"), sessionId: z.string(), message: z.string() }),
   z.object({ type: z.literal("session-meta"), meta: sessionMetaSchema }),  z.object({ type: z.literal("sessions-listed"), sessions: z.array(sessionMetaSchema) }),
-  z.object({ type: z.literal("session-compacted"), summary: z.string() }),
+  z.object({ type: z.literal("session-compacting"), sessionId: z.string(), id: z.string() }),
+  z.object({ type: z.literal("session-compacted"), sessionId: z.string(), marker: compactionMarkerSchema, summary: z.string(), replayed: z.boolean().optional() }),
+  z.object({ type: z.literal("session-compaction-skipped"), sessionId: z.string(), id: z.string() }),
+  z.object({ type: z.literal("session-compaction-failed"), sessionId: z.string(), id: z.string(), cancelled: z.boolean(), message: z.string().optional() }),
   z.object({
     type: z.literal("models-listed"),
     providerId: z.string(),

@@ -71,12 +71,12 @@ describe("compact 阈值与估算", () => {
     expect(estimateTokens([long])).toBeGreaterThan(estimateTokens([one]));
   });
 
-  it("消息数低于下限不压缩", () => {
+  it("消息数低于旧下限仍按预算触发", () => {
     const few: Message[] = Array.from({ length: COMPACT_MIN_MESSAGES - 1 }, () => ({
       role: "user",
-      content: [{ type: "text", text: "x".repeat(10000) }],
+      content: [{ type: "text", text: "x".repeat(100000) }],
     }));
-    expect(shouldAutoCompact(few, "deepseek-chat")).toBe(false);
+    expect(shouldAutoCompact(few, "unknown-model")).toBe(true);
   });
 
   it("保留最近消息数常量合理", () => {

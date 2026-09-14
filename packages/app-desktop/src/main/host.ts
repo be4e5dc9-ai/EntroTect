@@ -5,6 +5,7 @@
 // =====================================================================
 
 import { homedir } from "node:os";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import type { BrowserWindow } from "electron";
@@ -41,6 +42,7 @@ import {
   loadPluginsFromDir,
   compactMessages,
   shouldAutoCompact,
+  resolveContextWindow,
   resolveInsideCwd,
   stopBgJobsForOwner,
   type PluginHooks,
@@ -266,18 +268,11 @@ export class SessionHost {
         const accepted = this.acceptRun(run);
         try {
           const loaded = await this.store.load(run.meta.id);
-          if (loaded.messages.length < 2) {
+          if (loaded.messages.length === 0) {
             this.emit({ type: "error", message: "会话内容太少,无需压缩" });
             break;
           }
-          const { compacted, summary } = await compactMessages(
-            accepted.provider,
-            loaded.messages,
-            accepted.abort.signal,
-          );
-          if (accepted.abort.signal.aborted) break;
-          await this.store.replaceMessages(run.meta.id, compacted);
-          if (this.active === run) this.emit({ type: "session-compacted", summary });
+          await this.compactHistory(run, accepted.provider, loaded.messages, accepted.abort.signal, this.contextWindow(accepted.config));
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           if (!accepted.abort.signal.aborted) this.emit({ type: "error", message });
@@ -449,8 +444,16 @@ export class SessionHost {
     };
     this.emit({ type: "session-meta", meta });
     // 回放历史:UI 按序重建消息与工具卡片
-    for (const message of messages) {
-      this.emit({ type: "message-appended", message });
+    const boundaries = new Map<number, NonNullable<Message["compaction"]>>();
+    messages.forEach((message, index) => {
+      if (message.compaction) {
+        boundaries.set(Math.min(index + message.compaction.retainedMessages, messages.length - 1), message.compaction);
+      }
+    });
+    for (const [index, message] of messages.entries()) {
+      if (!message.compaction) this.emit({ type: "message-appended", message });
+      const marker = boundaries.get(index);
+      if (marker) this.emit({ type: "session-compacted", sessionId, marker, summary: "", replayed: true });
     }
     this.emit({ type: "sessions-listed", sessions: await this.store.list() });
   }
@@ -460,6 +463,31 @@ export class SessionHost {
     this.active.abort.abort();
     this.active.gate.dispose();
     this.active = null;
+  }
+
+  /** Persist the boundary with its summary and publish a matching lifecycle. */
+  private contextWindow(config: AppConfig): number {
+    const provider = this.activeProvider(config);
+    return resolveContextWindow(config.model, provider ? [provider] : []);
+  }
+
+  private async compactHistory(run: ActiveRun, provider: Provider, messages: Message[], signal: AbortSignal, contextWindow: number): Promise<Message[]> {
+    const id = randomUUID();
+    this.emit({ type: "session-compacting", sessionId: run.meta.id, id });
+    try {
+      const { compacted, summary, changed } = await compactMessages(provider, messages, signal, { id, contextWindow });
+      signal.throwIfAborted();
+      if (!changed) {
+        this.emit({ type: "session-compaction-skipped", sessionId: run.meta.id, id });
+        return messages;
+      }
+      await this.store.replaceMessages(run.meta.id, compacted);
+      this.emit({ type: "session-compacted", sessionId: run.meta.id, marker: compacted[0]!.compaction!, summary });
+      return compacted;
+    } catch (error) {
+      this.emit({ type: "session-compaction-failed", sessionId: run.meta.id, id, cancelled: signal.aborted, message: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
   }
 
   private handleInterrupt(): void {
@@ -656,21 +684,6 @@ export class SessionHost {
         this.emit({ type: "sessions-listed", sessions: await this.store.list() });
       }
 
-      // 自动压缩:开启且占用超阈值时,历史替换为 [摘要 + 最近 N 条]
-      if (
-        (config.autoCompact ?? true) &&
-        shouldAutoCompact(messages, config.model, config.providers, config.autoCompactRatio)
-      ) {
-        try {
-          const { compacted, summary } = await compactMessages(provider, messages, abort.signal);
-          await this.store.replaceMessages(run.meta.id, compacted);
-          messages = compacted;
-          this.emit({ type: "session-compacted", summary });
-        } catch {
-          // 压缩失败不阻塞主流程,沿用原历史
-        }
-      }
-
       // 主循环与子代理共用的装配:同源提示词 / 审批 / 事件 / 工作目录
       const promptEnv = {
         cwd: run.meta.cwd,
@@ -715,6 +728,9 @@ export class SessionHost {
         requestedEffort && nativeSupported.length > 0
           ? clampEffort(requestedEffort, nativeSupported)
           : requestedEffort;
+      const selectedProvider = this.activeProvider(config);
+      const contextWindow = this.contextWindow(config);
+      const needsCompaction = (history: Message[]) => shouldAutoCompact(history, config.model, selectedProvider ? [selectedProvider] : [], config.autoCompactRatio);
       const result = await runAgent(messages, {
         provider,
         // 注入子代理运行器 → task 工具可用;子代理工具池无 task,防递归
@@ -732,6 +748,13 @@ export class SessionHost {
             temperature: config.temperature,
             reasoningEffort: effectiveEffort,
             abortSignal: abort.signal,
+            compact: (config.autoCompact ?? true) ? {
+              shouldCompact: needsCompaction,
+              run: async (history) => {
+                const result = await compactMessages(provider, history, abort.signal, { contextWindow });
+                return result.compacted;
+              },
+            } : undefined,
           }),
           imageProvider,
         }), ...(controls.goal && controls.goal.status !== "completed" ? [createGoalTool(async (status, summary) => {
@@ -754,6 +777,10 @@ export class SessionHost {
         fileStates: run.fileStates,
         shellState: run.shellState,
         onMessage: (message) => this.store.appendMessage(run.meta.id, message),
+        compact: (config.autoCompact ?? true) ? {
+          shouldCompact: needsCompaction,
+          run: (history) => this.compactHistory(run, provider, history, abort.signal, contextWindow),
+        } : undefined,
         plugins: this.plugins,
       });
       if (result.error && !result.interrupted) {

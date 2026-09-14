@@ -1145,6 +1145,23 @@
   animation: entro-rise-in var(--spring-rise-ms) linear both;
 }
 
+.context-compaction {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 24px 0;
+  color: var(--text-tertiary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.context-compaction svg { flex-shrink: 0; }
+.context-usage-estimate-note { margin-top: 10px; color: var(--text-tertiary); font-size: 11px; line-height: 1.5; }
+.context-compaction.is-running svg { animation: context-compaction-pulse 1.6s ease-in-out infinite; }
+@keyframes context-compaction-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  .context-compaction.is-running svg { animation: none; }
+}
+
 /* 用户消息:右对齐,顶部 "You" 小字标签,无气泡 */
 .msg-user {
   display: flex;

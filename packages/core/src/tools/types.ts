@@ -45,6 +45,8 @@ export interface Tool {
   inputSchema: z.ZodType;
   /** 只读工具免审批(M3 权限闸门按此分流) */
   isReadOnly: boolean;
+  /** Read a volatile snapshot after other approved tools in this batch finish. */
+  afterBatch?: boolean;
   /** 审批 UI 的一行预览(命令文本/路径) */
   preview(args: unknown): string;
   /** 执行并返回模型可见的结果文本;抛错由主循环包成 is_error */

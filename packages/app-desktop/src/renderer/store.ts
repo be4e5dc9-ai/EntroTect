@@ -76,6 +76,12 @@ export interface UiMessage {
   streaming: boolean;
   /** 思考过程(不回喂历史,仅 UI 展示;未持久化) */
   reasoning: string;
+  compaction?: {
+    id: string;
+    state: "running" | "completed" | "failed" | "cancelled" | "skipped";
+    createdAt?: string;
+    detail?: string;
+  };
 }
 
 export interface Toast {
@@ -152,6 +158,8 @@ interface UiState {
   messages: UiMessage[];
   busy: boolean;
   usage: TokenUsage | null;
+  /** Estimated history size after compaction, until fresh provider usage arrives. */
+  contextEstimate: number | null;
   /** 用量总览(usage-stats 事件写入,空态页 Overview 面板展示) */
   usageStats: UsageStats | null;
   activeRunId: string | null;
@@ -195,6 +203,7 @@ export const useStore = create<UiState>()(() => ({
   messages: [],
   busy: false,
   usage: null,
+  contextEstimate: null,
   usageStats: null,
   activeRunId: null,
   usageUpdatesBlocked: false,
@@ -745,7 +754,7 @@ function applySubagentPart(toolCallId: string, part: SubagentPart): void {
 // ---------- 事件归约 ----------
 function invalidateUsage(state: UiState): Pick<
   UiState,
-  "usage" | "usageUpdatesBlocked" | "usageBlockedRunId" | "invalidatedRunIds"
+  "usage" | "contextEstimate" | "usageUpdatesBlocked" | "usageBlockedRunId" | "invalidatedRunIds"
 > {
   const invalidatedRunIds =
     state.activeRunId === null || state.invalidatedRunIds.includes(state.activeRunId)
@@ -753,6 +762,7 @@ function invalidateUsage(state: UiState): Pick<
       : [...state.invalidatedRunIds, state.activeRunId];
   return {
     usage: null,
+    contextEstimate: null,
     usageUpdatesBlocked: true,
     usageBlockedRunId: state.activeRunId,
     invalidatedRunIds,
@@ -860,25 +870,34 @@ export function applyEvent(event: AppEvent): void {
         return { sessions: event.sessions };
       });
       break;
+    case "session-compacting":
     case "session-compacted":
-      // 压缩后:在消息流顶部插入摘要卡,保留现有可见消息
-      useStore.setState((state) => ({
-        messages: [
-          {
-            key: nextKey++,
-            role: "assistant",
-            blocks: [
-              {
-                kind: "text",
-                text: `上下文已压缩（保留最近对话）\n\n${event.summary}`,
-              },
-            ],
-            streaming: false,
-            reasoning: "",
-          },
-          ...state.messages,
-        ],
-      }));
+    case "session-compaction-skipped":
+    case "session-compaction-failed":
+      useStore.setState((state) => {
+        if (state.currentSession?.id !== event.sessionId) return {};
+        const id = event.type === "session-compacted" ? event.marker.id : event.id;
+        const compaction: NonNullable<UiMessage["compaction"]> = {
+          id,
+          state: event.type === "session-compacting" ? "running"
+            : event.type === "session-compacted" ? "completed"
+            : event.type === "session-compaction-skipped" ? "skipped"
+            : event.cancelled ? "cancelled" : "failed",
+          ...(event.type === "session-compacted" ? { createdAt: event.marker.createdAt } : {}),
+          ...(event.type === "session-compaction-failed" ? { detail: event.message ?? "原上下文已保留，可以继续对话或重试。" } : {}),
+        };
+        const lifecycle = event.type === "session-compacting" ? { busy: true }
+          : event.type === "session-compacted" && !event.replayed ? { usage: null, contextEstimate: event.marker.afterTokens ?? null } : {};
+        const existing = state.messages.find((message) => message.compaction?.id === id);
+        if (existing) {
+          // Ignore duplicate starts or late failures after a committed success.
+          if (existing.compaction?.state === "completed" || event.type === "session-compacting") return {};
+          return { ...lifecycle, messages: state.messages.map((message) => message === existing ? { ...message, compaction } : message) };
+        }
+        return { ...lifecycle, messages: [...state.messages, {
+          key: nextKey++, role: "assistant", blocks: [], streaming: false, reasoning: "", compaction,
+        }] };
+      });
       break;
     case "models-listed":
       // 空结果代表失败/无数据,不能抹掉已有缓存;状态页仍由原始事件更新失败提示。
@@ -900,6 +919,8 @@ export function applyEvent(event: AppEvent): void {
       break;
     case "message-appended": {
       const message = event.message;
+      // Context summaries are model history, not user-authored messages.
+      if (message.compaction) return;
       const textBlocks = message.content.filter(
         (b): b is Extract<typeof b, { type: "text" }> => b.type === "text",
       );
@@ -1090,6 +1111,7 @@ export function applyEvent(event: AppEvent): void {
           };
         }
         return {
+          busy: true,
           activeRunId: event.runId,
           usageUpdatesBlocked: false,
           usageBlockedRunId: null,
@@ -1137,6 +1159,7 @@ export function applyEvent(event: AppEvent): void {
           event.runId !== undefined && state.invalidatedRunIds.includes(event.runId);
         return {
           busy: false,
+          ...(event.usage !== null && !state.usageUpdatesBlocked && contextMatches && !runWasInvalidated ? { contextEstimate: null } : {}),
           usage:
             event.usage !== null &&
             !state.usageUpdatesBlocked &&

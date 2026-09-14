@@ -4,6 +4,7 @@ import { getContextSnapshot } from "../store";
 export interface ContextUsagePopoverProps {
   inputTokens?: number;
   contextWindow?: number;
+  estimated?: boolean;
 }
 
 export interface ContextUsageDisplay {
@@ -79,6 +80,7 @@ function ContextRing({
 export function ContextUsagePopover({
   inputTokens,
   contextWindow,
+  estimated = false,
 }: ContextUsagePopoverProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -114,7 +116,7 @@ export function ContextUsagePopover({
   }, [open]);
 
   const triggerLabel = known
-    ? `Context usage: ${display.summary} (${display.percentage})`
+    ? `${estimated ? "压缩后历史（估算）" : "Context usage"}: ${display.summary} (${display.percentage})`
     : "Context unknown";
 
   return (
@@ -145,7 +147,7 @@ export function ContextUsagePopover({
           {known ? (
             <>
               <div className="context-usage-summary">
-                <span>Context window</span>
+                <span>{estimated ? "压缩后历史（估算）" : "Context window"}</span>
                 <strong>
                   {display.summary}{" "}
                   <span className="context-usage-percent">({display.percentage})</span>
@@ -158,6 +160,7 @@ export function ContextUsagePopover({
                 <span>Remaining</span>
                 <strong>{display.remaining}</strong>
               </div>
+              {estimated && <div className="context-usage-estimate-note">不含系统提示与工具定义，下次模型响应后更新实际用量。</div>}
             </>
           ) : (
             <div className="context-usage-unknown">Context unknown</div>
