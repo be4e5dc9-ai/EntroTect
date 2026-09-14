@@ -299,8 +299,9 @@ describe("toOpenAiMessages", () => {
     ]);
   });
 
-  it("tool-result 展开为独立 role:tool 消息", () => {
+  it("旧版压缩留下的孤立工具结果不会作为 role:tool 发送", () => {
     const messages: Message[] = [
+      { role: "user", content: [{ type: "text", text: "压缩摘要" }] },
       {
         role: "user",
         content: [
@@ -308,11 +309,30 @@ describe("toOpenAiMessages", () => {
           { type: "tool-result", toolCallId: "b", name: "read", isError: true, content: "2" },
         ],
       },
+      { role: "user", content: [{ type: "text", text: "继续" }] },
     ];
     expect(toOpenAiMessages(messages)).toEqual([
-      { role: "tool", tool_call_id: "a", content: "1" },
-      { role: "tool", tool_call_id: "b", content: "2" },
+      { role: "user", content: "压缩摘要" },
+      { role: "user", content: "继续" },
     ]);
+  });
+
+  it("未保存的并行工具结果在下一条用户消息前补齐，混合消息先回填结果", () => {
+    const messages: Message[] = [
+      { role: "assistant", content: [
+        { type: "tool-call", id: "a", name: "read", arguments: "{}" },
+        { type: "tool-call", id: "b", name: "read", arguments: "{}" },
+      ] },
+      { role: "user", content: [
+        { type: "text", text: "继续" },
+        { type: "tool-result", toolCallId: "a", name: "read", isError: false, content: "OK" },
+      ] },
+    ];
+    const wire = toOpenAiMessages(messages) as Array<{ role: string; tool_call_id?: string; content?: string }>;
+    expect(wire.map((item) => item.role)).toEqual(["assistant", "tool", "tool", "user"]);
+    expect(wire[1]).toMatchObject({ tool_call_id: "a", content: "OK" });
+    expect(wire[2]).toMatchObject({ tool_call_id: "b", content: expect.stringContaining("结果未保存") });
+    expect(wire[3]).toMatchObject({ content: "继续" });
   });
 
   it("思考内容按 profile 决定是否回传", () => {

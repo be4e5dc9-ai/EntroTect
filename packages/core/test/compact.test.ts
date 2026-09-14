@@ -40,6 +40,20 @@ describe("context compaction", () => {
     expect(wire.filter((message) => message.role === "tool" && !calls.has(message.tool_call_id!))).toEqual([]);
   });
 
+  it("does not retain a tool exchange separated by another user message", async () => {
+    const messages: Message[] = [
+      text("user", "x".repeat(10000)),
+      { role: "assistant", content: [{ type: "tool-call", id: "a", name: "read", arguments: "{}" }] },
+      text("user", "intervening message"),
+      { role: "user", content: [{ type: "tool-result", toolCallId: "a", name: "read", content: "evidence", isError: false }] },
+      text("user", "latest request"),
+    ];
+    const result = await compactMessages(summaryProvider(), messages);
+    expect(result.changed).toBe(true);
+    expect(result.compacted.slice(1)).toEqual([messages.at(-1)]);
+    expect(toOpenAiMessages(result.compacted).some((message) => (message as { role: string }).role === "tool")).toBe(false);
+  });
+
   it("does not replace history or announce success when the summary would enlarge it", async () => {
     const messages = [text("user", "x".repeat(2000)), text("assistant", "done")];
     const provider = new MockProvider([{ events: [textDelta("y".repeat(3000)), turnComplete()] }]);

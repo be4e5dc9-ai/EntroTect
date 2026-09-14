@@ -8,6 +8,7 @@ import type { Message, ProviderConfig } from "@entrotect/shared";
 import { randomUUID } from "node:crypto";
 import type { Provider } from "./provider/types.js";
 import { knownContextWindow, suffixContextWindow } from "./provider/contexts.js";
+import { normalizeToolHistory } from "./tool-history.js";
 
 /** 保留的最近消息数(压缩后) */
 export const COMPACT_KEEP_RECENT = 6;
@@ -83,14 +84,7 @@ export interface CompactResult {
 
 /** A retained suffix must contain complete tool exchanges, including multi-call batches. */
 function validToolPairs(messages: Message[]): boolean {
-  const pending = new Set<string>();
-  for (const message of messages) {
-    for (const block of message.content) {
-      if (block.type === "tool-call") pending.add(block.id);
-      if (block.type === "tool-result" && !pending.delete(block.toolCallId)) return false;
-    }
-  }
-  return pending.size === 0;
+  return normalizeToolHistory(messages) === messages;
 }
 
 function clip(text: string, limit: number): string {

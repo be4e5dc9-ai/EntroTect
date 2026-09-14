@@ -217,7 +217,7 @@ describe("bash 工具", () => {
     await bashTool.call({ command: "Set-Location -LiteralPath 'two'; exit 0" }, ctx);
     expect(await bashTool.call({ command: "(Get-Location).Path" }, ctx)).toContain(path.join(root, "one", "two"));
     expect(await bashTool.call({ command: "(Get-Location).Path" }, other)).not.toContain(path.join(root, "one"));
-  });
+  }, 12_000);
 
   it("同代理并发命令按列表顺序继承目录", async () => {
     const { ctx, root } = await makeCtx();

@@ -27,6 +27,7 @@ import { applyToolBefore, notifyToolAfter } from "../plugins/manager.js";
 import type { SandboxMode } from "../sandbox/policy.js";
 import { ULTRA_DISPATCH_PROMPT, ultraDirectTool } from "./ultra.js";
 import type { FileStates } from "../tools/file-state.js";
+import { normalizeToolHistory } from "../tool-history.js";
 
 export interface AgentDeps {
   provider: Provider;
@@ -117,7 +118,7 @@ export async function runAgent(
   initialMessages: Message[],
   deps: AgentDeps,
 ): Promise<AgentRunResult> {
-  let history: Message[] = [...initialMessages];
+  let history: Message[] = normalizeToolHistory([...initialMessages]);
   const fileStates = deps.fileStates ?? new Map<string, string>();
   const shellState = deps.shellState ?? {};
   let dispatchPending = deps.orchestration === "ultra";
@@ -146,7 +147,7 @@ export async function runAgent(
       try {
         const compacted = await deps.compact.run(history);
         if (compacted === history) throw new Error("上下文仍超过压缩阈值，无法进一步精简；请缩短最新输入或开启新会话。");
-        history = compacted;
+        history = normalizeToolHistory(compacted);
         lastUsage = null;
       } catch (cause) {
         const error = cause instanceof Error ? cause.message : String(cause);

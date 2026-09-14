@@ -17,6 +17,7 @@ import { readSseLines } from "./sse.js";
 import { ProviderError } from "./errors.js";
 import { requestWithNetworkRetry, type FetchLike } from "./transport.js";
 import { clampMaxTokens } from "./contexts.js";
+import { normalizeToolHistory } from "../tool-history.js";
 import {
   appendEndpoint,
   buildProviderHeaders,
@@ -70,7 +71,7 @@ export function toOpenAiMessages(
   options: ToOpenAiMessagesOptions = {},
 ): unknown[] {
   const out: Record<string, unknown>[] = [];
-  for (const message of messages) {
+  for (const message of normalizeToolHistory(messages)) {
     if (message.role === "system") {
       const text = message.content
         .filter((b): b is TextBlock => b.type === "text")

@@ -36,6 +36,22 @@ function makeDeps(cwd: string, artifactDir: string, overrides: Record<string, un
 }
 
 describe("runAgent 主循环", () => {
+  it("continues a previously compacted session whose retained tool result lost its call", async () => {
+    const { cwd, artifactDir } = await makeEnv();
+    const provider = new MockProvider([{ events: [textBlock("可以继续对话"), turnComplete()] }]);
+    const history: Message[] = [
+      { role: "user", content: [{ type: "text", text: "旧版压缩摘要" }] },
+      { role: "user", content: [{ type: "tool-result", toolCallId: "orphan", name: "read", isError: false, content: "旧结果" }] },
+      { role: "user", content: [{ type: "text", text: "现在继续" }] },
+    ];
+    const { deps } = makeDeps(cwd, artifactDir, { provider });
+    const result = await runAgent(history, deps);
+    expect(result.error).toBeNull();
+    expect(result.finalText).toBe("可以继续对话");
+    expect(provider.receivedHistory[0]!.some((message) => message.content.some((block) => block.type === "tool-result"))).toBe(false);
+    expect(history).toHaveLength(3); // The saved history is not rewritten by request repair.
+  });
+
   it("compacts between tool turns before the next model request", async () => {
     const { cwd, artifactDir } = await makeEnv();
     const provider = new MockProvider([
