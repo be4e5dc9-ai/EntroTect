@@ -158,13 +158,12 @@ describe("OpenAiCompatibleProvider.streamBlocks", () => {
     expect(blocks[0]).toMatchObject({ block: { type: "text", text: "结论是 42" } });
   });
 
-  it("reasoning_effort 只在非 off 时发送", async () => {
+  it("DeepSeek 非 off 使用 reasoning_effort，off 显式关闭默认思考", async () => {
     const bodies: unknown[] = [];
     const provider = new OpenAiCompatibleProvider({
       baseUrl: "https://example.test/v1",
       apiKey: "k",
-      // deepseek profile 才走 reasoning_effort 策略
-      model: "deepseek-chat",
+      model: "deepseek-flash",
       fetchImpl: async (_url, init) => {
         bodies.push(JSON.parse(String(init.body)));
         return new Response(streamOf(['data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n']), { status: 200 });
@@ -183,7 +182,9 @@ describe("OpenAiCompatibleProvider.streamBlocks", () => {
     await collect(undefined);
     expect(bodies[0]).toMatchObject({ reasoning_effort: "high" });
     expect(bodies[1]).not.toHaveProperty("reasoning_effort");
+    expect(bodies[1]).toMatchObject({ thinking: { type: "disabled" } });
     expect(bodies[2]).not.toHaveProperty("reasoning_effort");
+    expect(bodies[2]).not.toHaveProperty("thinking");
   });
 
   it("流中错误 chunk 产出 error 事件", async () => {

@@ -147,7 +147,7 @@ export function resolveProviderProfile(input: {
         omitTemperature: false,
         reasoning: "reasoning_effort",
         reasoningValues: THREE_TIERS,
-        supportsExplicitThinkingToggle: false,
+        supportsExplicitThinkingToggle: true,
       };
     case "moonshot": {
       const isK3 = model.includes("kimi-k3");

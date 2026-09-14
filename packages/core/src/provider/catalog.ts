@@ -103,6 +103,15 @@ export const catalog = {
       maxTokens: 32_768,
     },
   },
+  "deepseek/deepseek-flash": {
+    capabilities: {
+      name: "DeepSeek Flash",
+      reasoning: true,
+      input: ["text"],
+      contextWindow: 1_000_000,
+      maxTokens: 384_000,
+    },
+  },
   "deepseek/deepseek-v4-flash": {
     capabilities: {
       name: "DeepSeek V4 Flash",

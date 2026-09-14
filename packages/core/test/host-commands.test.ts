@@ -54,6 +54,16 @@ describe("SessionHost commands", () => {
     expect((await store.load(meta.id)).messages).toEqual(before);
   });
 
+  it("manual compact passes the selected native reasoning tier and a larger output limit", async () => {
+    const { host, send, calls, store, meta } = await setup();
+    await host.handleOp({ kind: "SetConfig", config: { ...(host as any).config, model: "deepseek-flash", reasoningEffort: "ultra" } });
+    await store.appendMessage(meta.id, { role: "assistant", content: [{ type: "text", text: "历史内容".repeat(1000) }] });
+    await send("/compact");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ model: "deepseek-flash", reasoning_effort: "max", max_tokens: 32_768 });
+    expect(calls[0]).not.toHaveProperty("thinking", { type: "disabled" });
+  });
+
   it.each(["cancel", "timeout"])("manual compaction enters busy immediately and releases a stalled request on %s", async (mode) => {
     const { host, send, store, meta, events } = await setup();
     await send("历史内容".repeat(1000));
@@ -241,12 +251,14 @@ describe("SessionHost commands", () => {
 
   it("publishes the same compaction lifecycle for automatic compaction", async () => {
     const { host, send, store, meta, dir, events, calls } = await setup();
-    for (let i = 0; i < 8; i++) await store.appendMessage(meta.id, { role: "user", content: [{ type: "text", text: "x".repeat(5000) }] });
-    await host.handleOp({ kind: "SetConfig", config: { ...DEFAULT_CONFIG, providers: [], baseUrl: "https://model.test/v1", apiKey: "test", model: "test-model", permissionMode: "full", autoCompact: true, autoCompactRatio: 0.1, workspaceDir: dir } });
+    for (let i = 0; i < 8; i++) await store.appendMessage(meta.id, { role: "user", content: [{ type: "text", text: "x".repeat(35_000) }] });
+    await host.handleOp({ kind: "SetConfig", config: { ...DEFAULT_CONFIG, providers: [], baseUrl: "https://model.test/v1", apiKey: "test", model: "deepseek-flash", reasoningEffort: "low", permissionMode: "full", autoCompact: true, autoCompactRatio: 0.1, workspaceDir: dir } });
     await send("继续");
     expect(events.filter((event) => event.type.startsWith("session-compact")).map((event) => event.type)).toEqual(["session-compacting", "session-compacted"]);
     expect((await store.load(meta.id)).messages[0]?.compaction).toBeDefined();
     expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatchObject({ model: "deepseek-flash", reasoning_effort: "low" });
+    expect(calls[0].max_tokens).toBeGreaterThanOrEqual(8_192);
     expect(JSON.stringify(calls[1].messages)).not.toContain("retainedMessages");
   });
 

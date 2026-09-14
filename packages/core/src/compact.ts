@@ -4,10 +4,10 @@
 // 历史替换为 [摘要消息 + 最近 N 条],摘要作为 user 消息回填。
 // =====================================================================
 
-import type { Message, ProviderConfig } from "@entrotect/shared";
+import type { Message, ProviderConfig, ReasoningEffort } from "@entrotect/shared";
 import { randomUUID } from "node:crypto";
 import type { Provider } from "./provider/types.js";
-import { knownContextWindow, suffixContextWindow } from "./provider/contexts.js";
+import { knownContextWindow, knownMaxTokens, suffixContextWindow } from "./provider/contexts.js";
 import { normalizeToolHistory } from "./tool-history.js";
 
 /** 保留的最近消息数(压缩后) */
@@ -16,8 +16,20 @@ export const COMPACT_KEEP_RECENT = 6;
 export const COMPACT_RATIO = 0.7;
 /** Legacy export; message count no longer overrides the context budget. */
 export const COMPACT_MIN_MESSAGES = 8;
-export const COMPACT_TIMEOUT_MS = 120_000;
+export const COMPACT_TIMEOUT_MS = 180_000;
 const MIN_COMPACT_TOKENS = 512;
+// Completion limits include hidden reasoning. Keep the summary target separate
+// from the provider's total output allowance, with more room at higher efforts.
+const COMPACT_OUTPUT_BY_EFFORT: Record<ReasoningEffort, number> = {
+  off: 8_192,
+  low: 8_192,
+  medium: 12_288,
+  high: 16_384,
+  xhigh: 24_576,
+  max: 32_768,
+  ultra: 32_768,
+};
+const COMPACT_MAX_RETRY_OUTPUT = 65_536;
 
 export const COMPACT_SYSTEM_PROMPT = `把对话压缩成可直接继续工作的事实摘要。保留：
 - 用户当前目标、明确偏好与仍有效的约束；
@@ -72,6 +84,8 @@ export interface CompactOptions {
   id?: string;
   contextWindow?: number;
   timeoutMs?: number;
+  /** Use the session's effective native effort; ultra maps to max without delegation. */
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface CompactResult {
@@ -94,8 +108,8 @@ function clip(text: string, limit: number): string {
 }
 
 function summaryInput(messages: Message[], contextWindow: number): string {
-  const limit = Math.max(2048, Math.min(120_000, Math.floor(contextWindow * 1.5)));
-  const perMessage = Math.max(160, Math.min(16_000, Math.floor(limit / Math.max(1, messages.length))));
+  const limit = Math.max(2048, Math.min(240_000, Math.floor(contextWindow * 1.2)));
+  const perMessage = Math.max(160, Math.min(24_000, Math.floor(limit / Math.max(1, messages.length))));
   return clip(messages.map((message, index) => {
     const text = message.content.map((block) => {
       if (block.type === "text") return block.text;
@@ -108,8 +122,25 @@ function summaryInput(messages: Message[], contextWindow: number): string {
 }
 
 /** A deadline covers connection setup and streaming, even if a provider ignores cancellation. */
-async function readSummary(provider: Provider, body: string, budget: number, signal: AbortSignal | undefined, timeoutMs: number): Promise<string> {
+async function readSummary(
+  provider: Provider,
+  body: string,
+  budget: number,
+  effort: ReasoningEffort,
+  contextWindow: number,
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+): Promise<string> {
   signal?.throwIfAborted();
+  const nativeEffort = effort === "ultra" ? "max" : effort;
+  const systemPrompt = `${COMPACT_SYSTEM_PROMPT}\n只总结提供的早期历史；后续原文会另行保留。摘要尽量不超过 ${budget} tokens。`;
+  // Reserve context for the summary request itself and avoid asking the model
+  // for more output than its known capability or remaining context allows.
+  const inputTokens = Math.ceil((body.length + systemPrompt.length) / 2.5) + 512;
+  const outputLimit = Math.min(knownMaxTokens(provider.model) ?? COMPACT_MAX_RETRY_OUTPUT, COMPACT_MAX_RETRY_OUTPUT, contextWindow - inputTokens);
+  if (outputLimit < 512) throw new Error("压缩输入超过模型可用上下文，已保留原上下文。");
+  const firstLimit = Math.min(outputLimit, Math.max(COMPACT_OUTPUT_BY_EFFORT[nativeEffort], budget * 3));
+  const retryLimit = Math.min(outputLimit, firstLimit * 2);
   const controller = new AbortController();
   const cancel = () => controller.abort(signal?.reason ?? new Error("压缩已取消"));
   signal?.addEventListener("abort", cancel, { once: true });
@@ -119,38 +150,43 @@ async function readSummary(provider: Provider, body: string, budget: number, sig
   const onAbort = () => rejectAbort(controller.signal.reason);
   controller.signal.addEventListener("abort", onAbort, { once: true });
   let stream: ReturnType<Provider["streamBlocks"]> | undefined;
-  const blocks: string[] = [];
-  let deltas = "";
-  let completed = false;
   try {
-    stream = provider.streamBlocks(
-      [{ role: "user", content: [{ type: "text", text: body }] }],
-      { systemPrompt: `${COMPACT_SYSTEM_PROMPT}\n只总结提供的早期历史；后续原文会另行保留。摘要尽量不超过 ${budget} tokens。`,
-        tools: [], maxTokens: Math.min(4096, Math.max(1024, budget)), temperature: 0, reasoningEffort: "off" },
-      controller.signal,
-    );
-    for (;;) {
-      const next = await Promise.race([stream.next(), aborted]);
-      if (next.done) break;
-      const event = next.value;
-      if (event.type === "error") throw new Error(`压缩失败: ${event.message}`);
-      if (event.type === "text-delta") deltas += event.text;
-      if (event.type === "block" && event.block.type === "text") {
-        blocks.push(event.block.text);
-        deltas = ""; // Final blocks already contain their streamed deltas.
-      }
-      if (event.type === "turn-complete") {
-        completed = true;
-        const reason = event.finishReason?.toLowerCase();
-        if (reason && !["stop", "end_turn", "stop_sequence"].includes(reason)) {
-          throw new Error(`压缩摘要未完整生成（${reason}），已保留原上下文。`);
+    for (const maxTokens of firstLimit < retryLimit ? [firstLimit, retryLimit] : [firstLimit]) {
+      const blocks: string[] = [];
+      let deltas = "";
+      let completed = false;
+      let finishReason: string | null = null;
+      stream = provider.streamBlocks(
+        [{ role: "user", content: [{ type: "text", text: body }] }],
+        { systemPrompt, tools: [], maxTokens, temperature: 0, reasoningEffort: nativeEffort },
+        controller.signal,
+      );
+      for (;;) {
+        const next = await Promise.race([stream.next(), aborted]);
+        if (next.done) break;
+        const event = next.value;
+        if (event.type === "error") throw new Error(`压缩失败: ${event.message}`);
+        if (event.type === "text-delta") deltas += event.text;
+        if (event.type === "block" && event.block.type === "text") {
+          blocks.push(event.block.text);
+          deltas = ""; // Final blocks already contain their streamed deltas.
+        }
+        if (event.type === "turn-complete") {
+          completed = true;
+          finishReason = event.finishReason?.toLowerCase() ?? null;
         }
       }
+      stream = undefined;
+      controller.signal.throwIfAborted();
+      const summary = [...blocks, deltas].join("").trim();
+      if (completed && (!finishReason || ["stop", "end_turn", "stop_sequence"].includes(finishReason)) && summary) return summary;
+      if ((finishReason === "length" || finishReason === "max_tokens") && maxTokens < retryLimit) continue;
+      if (finishReason && !["stop", "end_turn", "stop_sequence"].includes(finishReason)) {
+        throw new Error(`压缩摘要未完整生成（${finishReason}），已保留原上下文。`);
+      }
+      throw new Error("压缩失败: 模型未返回完整摘要，已保留原上下文。");
     }
-    controller.signal.throwIfAborted();
-    const summary = [...blocks, deltas].join("").trim();
-    if (!completed || !summary) throw new Error("压缩失败: 模型未返回完整摘要，已保留原上下文。");
-    return summary;
+    throw new Error("压缩摘要未完整生成（length），已保留原上下文。");
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener("abort", cancel);
@@ -187,8 +223,8 @@ export async function compactMessages(
   }
   if (split < 1) return unchanged();
   const keep = messages.slice(split);
-  const summaryBudget = Math.max(128, Math.min(2000, Math.floor((beforeTokens - estimateTokens(keep)) * 0.35)));
-  const summary = await readSummary(provider, summaryInput(messages.slice(0, split), contextWindow), summaryBudget, signal, options.timeoutMs ?? COMPACT_TIMEOUT_MS);
+  const summaryBudget = Math.max(256, Math.min(4000, Math.floor((beforeTokens - estimateTokens(keep)) * 0.35)));
+  const summary = await readSummary(provider, summaryInput(messages.slice(0, split), contextWindow), summaryBudget, options.reasoningEffort ?? "high", contextWindow, signal, options.timeoutMs ?? COMPACT_TIMEOUT_MS);
   const summaryMessage: Message = {
     role: "user",
     content: [

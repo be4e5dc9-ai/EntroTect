@@ -69,9 +69,57 @@ describe("context compaction", () => {
     expect(provider.receivedHistory).toHaveLength(0);
   });
 
-  it.each(["length", "max_tokens", "MAX_TOKENS", "content_filter"])("rejects incomplete summaries (%s)", async (finishReason) => {
-    const provider = new MockProvider([{ events: [textDelta("partial"), { type: "turn-complete", finishReason, usage: null }] }]);
+  it("inherits reasoning effort and reserves ample completion room beyond the summary target", async () => {
+    let options: Parameters<Provider["streamBlocks"]>[1] | undefined;
+    const provider: Provider = { model: "deepseek-flash", async *streamBlocks(_messages, nextOptions) {
+      options = nextOptions;
+      yield textDelta("complete summary");
+      yield turnComplete();
+    } };
+    const result = await compactMessages(provider, [text("assistant", "x".repeat(10000))], undefined, { reasoningEffort: "ultra" });
+    expect(result.changed).toBe(true);
+    expect(options?.reasoningEffort).toBe("max");
+    expect(options?.maxTokens).toBe(32_768);
+  });
+
+  it.each(["length", "max_tokens", "MAX_TOKENS"])("retries but rejects repeatedly truncated summaries (%s)", async (finishReason) => {
+    const truncated = { events: [textDelta("partial"), { type: "turn-complete" as const, finishReason, usage: null }] };
+    const provider = new MockProvider([truncated, truncated]);
     await expect(compactMessages(provider, [text("assistant", "x".repeat(5000))])).rejects.toThrow("未完整生成");
+    expect(provider.receivedHistory).toHaveLength(2);
+  });
+
+  it("retries a length-limited response with a larger total output allowance and uses only the complete summary", async () => {
+    const limits: number[] = [];
+    const provider: Provider = { model: "deepseek-flash", async *streamBlocks(_messages, options) {
+      limits.push(options.maxTokens ?? 0);
+      yield textDelta(limits.length === 1 ? "partial" : "complete summary");
+      yield { type: "turn-complete", finishReason: limits.length === 1 ? "length" : "stop", usage: null };
+    } };
+    const result = await compactMessages(provider, [text("assistant", "x".repeat(10000))], undefined, { reasoningEffort: "max" });
+    expect(limits).toEqual([32_768, 65_536]);
+    expect(result.summary).toBe("complete summary");
+    expect(result.compacted[0]?.content).toContainEqual(expect.objectContaining({ text: expect.stringContaining("complete summary") }));
+    expect(JSON.stringify(result.compacted)).not.toContain("partial");
+  });
+
+  it("caps the output request to remaining context for small-window models", async () => {
+    let maxTokens = 0;
+    const provider: Provider = { model: "small-window-model", async *streamBlocks(_messages, options) {
+      maxTokens = options.maxTokens ?? 0;
+      yield textDelta("complete summary");
+      yield turnComplete();
+    } };
+    const result = await compactMessages(provider, [text("assistant", "x".repeat(10_000))], undefined, { contextWindow: 4096, reasoningEffort: "max" });
+    expect(result.changed).toBe(true);
+    expect(maxTokens).toBeGreaterThan(512);
+    expect(maxTokens).toBeLessThan(4096);
+  });
+
+  it("does not retry a filtered summary", async () => {
+    const provider = new MockProvider([{ events: [textDelta("partial"), { type: "turn-complete", finishReason: "content_filter", usage: null }] }]);
+    await expect(compactMessages(provider, [text("assistant", "x".repeat(5000))])).rejects.toThrow("未完整生成");
+    expect(provider.receivedHistory).toHaveLength(1);
   });
 
   it("accepts final text blocks without duplicating streamed deltas", async () => {

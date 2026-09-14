@@ -8,6 +8,7 @@ import {
 describe("known context windows", () => {
   it("recognizes catalog-derived model ids", () => {
     expect(knownContextWindow("deepseek-v4-pro")).toBe(1_000_000);
+    expect(knownContextWindow("deepseek-flash")).toBe(1_000_000);
     expect(knownContextWindow("claude-opus-5")).toBe(1_000_000);
     expect(knownContextWindow("kimi-k3")).toBe(1_048_576);
     expect(knownContextWindow("gpt-5")).toBe(400_000);

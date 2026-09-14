@@ -234,6 +234,13 @@ export class OpenAiCompatibleProvider implements Provider {
     const requested = options.reasoningEffort;
     switch (profile.reasoning) {
       case "reasoning_effort": {
+        // DeepSeek enables thinking by default. Omitting reasoning_effort for
+        // "off" does not disable it, so short utility turns such as compaction
+        // can otherwise exhaust max_tokens before producing visible text.
+        if (profile.id === "deepseek" && requested === "off") {
+          body.thinking = { type: "disabled" };
+          break;
+        }
         // 布尔 thinking 模型(声明空档位集)不发分档参数
         if (this.supportedEfforts !== undefined && this.supportedEfforts.length === 0) break;
         const effort = mapReasoningEffort(requested, this.supportedEfforts, profile.reasoningValues);

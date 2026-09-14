@@ -19,6 +19,7 @@ import type {
   MessageAttachment,
   Op,
   ProviderConfig,
+  ReasoningEffort,
   SessionMeta,
   SessionControls,
   TurnContext,
@@ -82,6 +83,18 @@ const MAX_FILE_CONTENT_BYTES = 256 * 1024;
 /** 模型最大输出:内置目录优先;未收录返回 undefined(请求侧省略字段,用模型默认) */
 function resolveMaxTokens(model: string): number | undefined {
   return knownMaxTokens(model);
+}
+
+/** The selected Ultra mode delegates during normal turns, but compaction only
+ * needs the model's native max effort. Share this resolution across manual,
+ * parent-auto, and subagent-auto compaction. */
+function effectiveReasoningEffort(config: AppConfig, providerId: string): ReasoningEffort | undefined {
+  const supported = getSupportedEffortsForModel(config, providerId, config.model);
+  const requested = config.reasoningEffort === "ultra" ? "max" : config.reasoningEffort;
+  const nativeSupported = supported.filter((effort) => effort !== "ultra");
+  return requested && nativeSupported.length > 0
+    ? clampEffort(requested, nativeSupported)
+    : requested;
 }
 
 /** 复制 SendMessage 需要的完整配置,避免后续 SetConfig 改写运行参数。 */
@@ -272,7 +285,7 @@ export class SessionHost {
             this.emit({ type: "error", message: "会话内容太少,无需压缩" });
             break;
           }
-          await this.compactHistory(run, accepted.provider, loaded.messages, accepted.abort.signal, this.contextWindow(accepted.config));
+          await this.compactHistory(run, accepted.provider, loaded.messages, accepted.abort.signal, this.contextWindow(accepted.config), effectiveReasoningEffort(accepted.config, accepted.context.providerId));
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           if (!accepted.abort.signal.aborted) this.emit({ type: "error", message });
@@ -471,11 +484,11 @@ export class SessionHost {
     return resolveContextWindow(config.model, provider ? [provider] : []);
   }
 
-  private async compactHistory(run: ActiveRun, provider: Provider, messages: Message[], signal: AbortSignal, contextWindow: number): Promise<Message[]> {
+  private async compactHistory(run: ActiveRun, provider: Provider, messages: Message[], signal: AbortSignal, contextWindow: number, reasoningEffort?: ReasoningEffort): Promise<Message[]> {
     const id = randomUUID();
     this.emit({ type: "session-compacting", sessionId: run.meta.id, id });
     try {
-      const { compacted, summary, changed } = await compactMessages(provider, messages, signal, { id, contextWindow });
+      const { compacted, summary, changed } = await compactMessages(provider, messages, signal, { id, contextWindow, reasoningEffort });
       signal.throwIfAborted();
       if (!changed) {
         this.emit({ type: "session-compaction-skipped", sessionId: run.meta.id, id });
@@ -718,16 +731,8 @@ export class SessionHost {
             apiFormat: activeProv.apiFormat,
           }
         : undefined;
-      // 推理强度按模型真实档位钳制（声明集或 preset）
-      const supported = getSupportedEffortsForModel(config, context.providerId, config.model);
-      // ultra 是 harness 编排模式，供应商请求仍使用模型原生 max。
-      const requestedEffort =
-        config.reasoningEffort === "ultra" ? "max" : config.reasoningEffort;
-      const nativeSupported = supported.filter((effort) => effort !== "ultra");
-      const effectiveEffort =
-        requestedEffort && nativeSupported.length > 0
-          ? clampEffort(requestedEffort, nativeSupported)
-          : requestedEffort;
+      // 推理强度按模型真实档位钳制；Ultra 的模型请求仍使用原生 max。
+      const effectiveEffort = effectiveReasoningEffort(config, context.providerId);
       const selectedProvider = this.activeProvider(config);
       const contextWindow = this.contextWindow(config);
       const needsCompaction = (history: Message[]) => shouldAutoCompact(history, config.model, selectedProvider ? [selectedProvider] : [], config.autoCompactRatio);
@@ -751,7 +756,7 @@ export class SessionHost {
             compact: (config.autoCompact ?? true) ? {
               shouldCompact: needsCompaction,
               run: async (history) => {
-                const result = await compactMessages(provider, history, abort.signal, { contextWindow });
+                const result = await compactMessages(provider, history, abort.signal, { contextWindow, reasoningEffort: effectiveEffort });
                 return result.compacted;
               },
             } : undefined,
@@ -779,7 +784,7 @@ export class SessionHost {
         onMessage: (message) => this.store.appendMessage(run.meta.id, message),
         compact: (config.autoCompact ?? true) ? {
           shouldCompact: needsCompaction,
-          run: (history) => this.compactHistory(run, provider, history, abort.signal, contextWindow),
+          run: (history) => this.compactHistory(run, provider, history, abort.signal, contextWindow, effectiveEffort),
         } : undefined,
         plugins: this.plugins,
       });
