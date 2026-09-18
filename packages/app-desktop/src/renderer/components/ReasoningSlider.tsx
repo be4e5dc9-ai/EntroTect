@@ -94,13 +94,9 @@ export function ReasoningSlider({
       {open && (
         <div className="reasoning-slider-panel" role="dialog" aria-label="调整思考强度">
           <div className="reasoning-slider-head">
-            <span className="reasoning-slider-mark"><SparkIcon /></span>
             <span className="reasoning-slider-copy">
               <span className="reasoning-slider-level">
                 <strong key={selected}>{SHORT_LABEL[selected]}</strong>
-                <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true">
-                  <path d="m3 1.5 2.5 2.5L3 6.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
               </span>
               <span>{model || "当前模型"}</span>
             </span>
