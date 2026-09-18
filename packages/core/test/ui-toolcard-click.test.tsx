@@ -154,7 +154,7 @@ describe("ReasoningSlider 思考强度", () => {
   it("MiMo shows native low/medium/high plus Ultra orchestration", () => {
     const onSelect = vi.fn();
     render(<ReasoningSlider value="high" efforts={["low", "medium", "high", "ultra"]} defaultValue="high" model="mimo-v2.5-pro" onSelect={onSelect} />);
-    fireEvent.click(screen.getByRole("button", { name: "思考强度：深入" }));
+    fireEvent.click(screen.getByRole("button", { name: "思考强度：high" }));
     const slider = screen.getByRole("slider");
     expect(slider.getAttribute("max")).toBe("3");
     fireEvent.change(slider, { target: { value: "3" } });
@@ -173,7 +173,7 @@ describe("ReasoningSlider 思考强度", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "思考强度：深入" }));
+    fireEvent.click(screen.getByRole("button", { name: "思考强度：high" }));
     const dialog = screen.getByRole("dialog", { name: "调整思考强度" });
     expect(dialog).toBeTruthy();
     expect(dialog.querySelector(".reasoning-slider-mark")).toBeNull();
@@ -182,7 +182,7 @@ describe("ReasoningSlider 思考强度", () => {
       target: { value: "3" },
     });
     expect(onSelect).toHaveBeenCalledWith("ultra");
-    fireEvent.click(screen.getByRole("button", { name: "恢复默认强度：深入" }));
+    fireEvent.click(screen.getByRole("button", { name: "恢复默认强度：high" }));
     expect(onSelect).toHaveBeenLastCalledWith("high");
   });
 });

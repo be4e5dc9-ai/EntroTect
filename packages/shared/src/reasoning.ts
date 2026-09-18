@@ -26,13 +26,13 @@ export const EFFORT_RANK: Record<ReasoningEffort, number> = {
 };
 
 export const EFFORT_LABELS: Record<ReasoningEffort, string> = {
-  off: "关闭 · off",
-  low: "低 · low",
-  medium: "中 · medium",
-  high: "高 · high",
-  xhigh: "极高 · xhigh",
-  max: "最大 · max",
-  ultra: "超强 · ultra",
+  off: "off",
+  low: "low",
+  medium: "medium",
+  high: "high",
+  xhigh: "xhigh",
+  max: "max",
+  ultra: "ultra",
 };
 
 export const DEFAULT_REASONING_EFFORT: ReasoningEffort = "high";

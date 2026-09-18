@@ -3,13 +3,13 @@ import type { CSSProperties } from "react";
 import type { ReasoningEffort } from "@entrotect/shared";
 
 const SHORT_LABEL: Record<ReasoningEffort, string> = {
-  off: "关闭",
-  low: "轻量",
-  medium: "均衡",
-  high: "深入",
-  xhigh: "极高",
-  max: "最大",
-  ultra: "超强",
+  off: "off",
+  low: "low",
+  medium: "medium",
+  high: "high",
+  xhigh: "xhigh",
+  max: "max",
+  ultra: "ultra",
 };
 
 const DESCRIPTION: Record<ReasoningEffort, string> = {
