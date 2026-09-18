@@ -30,14 +30,6 @@ interface ReasoningSliderProps {
   onSelect: (value: ReasoningEffort) => void;
 }
 
-function SparkIcon(): React.JSX.Element {
-  return (
-    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
-      <path d="M7.2 1.5 3.1 7h3L5.8 11.5 10 5.8H7.1l.1-4.3Z" stroke="currentColor" strokeWidth="1.15" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 export function ReasoningSlider({
   value,
   efforts,
@@ -86,9 +78,7 @@ export function ReasoningSlider({
         aria-expanded={open}
         aria-label={`思考强度：${SHORT_LABEL[selected]}`}
       >
-        <span className="bar-select-icon"><SparkIcon /></span>
         <span className="menu-trigger-label">{SHORT_LABEL[selected]}</span>
-        {selected === "ultra" && <span className="reasoning-ultra-dot" aria-hidden="true" />}
       </button>
 
       {open && (

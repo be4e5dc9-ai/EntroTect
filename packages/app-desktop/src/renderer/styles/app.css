@@ -728,13 +728,6 @@
 .reasoning-range-dots span.is-current {
   opacity: 0;
 }
-.reasoning-ultra-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-dim);
-}
 .menu-item {
   display: flex;
   align-items: center;

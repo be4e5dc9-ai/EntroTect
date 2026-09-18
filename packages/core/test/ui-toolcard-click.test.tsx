@@ -173,7 +173,10 @@ describe("ReasoningSlider 思考强度", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "思考强度：high" }));
+    const trigger = screen.getByRole("button", { name: "思考强度：high" });
+    expect(trigger.querySelector(".bar-select-icon")).toBeNull();
+    expect(trigger.querySelector(".reasoning-ultra-dot")).toBeNull();
+    fireEvent.click(trigger);
     const dialog = screen.getByRole("dialog", { name: "调整思考强度" });
     expect(dialog).toBeTruthy();
     expect(dialog.querySelector(".reasoning-slider-mark")).toBeNull();
