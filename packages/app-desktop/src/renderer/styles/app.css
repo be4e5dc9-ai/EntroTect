@@ -647,10 +647,39 @@
   background: color-mix(in srgb, var(--text-tertiary) 16%, var(--surface));
 }
 .reasoning-range-fill {
+  position: relative;
   height: 100%;
   width: calc(14px + (100% - 28px) * var(--reasoning-position));
   background: color-mix(in srgb, var(--accent) 78%, #fff);
   transition: width var(--reasoning-duration) var(--reasoning-ease);
+}
+/* Ultra: fade in a luminous gradient, with a slow sweep contained in the rail. */
+.reasoning-range-fill::before,
+.reasoning-range-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 360ms ease;
+}
+.reasoning-range-fill::before {
+  background: linear-gradient(105deg, #8872eb 0%, #b49af4 36%, #e9ace3 66%, #91dce9 100%);
+}
+.reasoning-range-fill::after {
+  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.5) 49%, transparent 68%);
+  transform: translateX(-100%);
+}
+.reasoning-slider.is-ultra .reasoning-range-fill::before,
+.reasoning-slider.is-ultra .reasoning-range-fill::after {
+  opacity: 1;
+}
+.reasoning-slider.is-ultra .reasoning-range-fill::after {
+  animation: reasoning-ultra-sweep 4.8s ease-in-out infinite;
+}
+@keyframes reasoning-ultra-sweep {
+  0%, 12% { transform: translateX(-100%); }
+  72%, 100% { transform: translateX(100%); }
 }
 .reasoning-range {
   position: absolute;
@@ -694,6 +723,24 @@
   background: #fff;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
   transition: left var(--reasoning-duration) var(--reasoning-ease), box-shadow 160ms ease;
+}
+.reasoning-range-thumb::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 0 3px rgba(174, 145, 244, 0.2), 0 0 15px 3px rgba(168, 133, 236, 0.3);
+  opacity: 0;
+  transition: opacity 360ms ease;
+}
+.reasoning-slider.is-ultra .reasoning-range-thumb::before {
+  opacity: 1;
+  animation: reasoning-ultra-glow 3.6s ease-in-out infinite;
+}
+@keyframes reasoning-ultra-glow {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
 }
 .reasoning-range:focus-visible {
   outline: none;
@@ -1143,6 +1190,11 @@
 .context-compaction.is-running svg { animation: context-compaction-pulse 1.6s ease-in-out infinite; }
 @keyframes context-compaction-pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) {
+  .reasoning-range-fill::before,
+  .reasoning-range-fill::after,
+  .reasoning-range-thumb::before,
+  .reasoning-slider.is-ultra .reasoning-range-fill::after,
+  .reasoning-slider.is-ultra .reasoning-range-thumb::before,
   .context-compaction.is-running svg { animation: none; }
 }
 

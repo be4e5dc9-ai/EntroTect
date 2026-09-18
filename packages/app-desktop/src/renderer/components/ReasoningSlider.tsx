@@ -69,7 +69,7 @@ export function ReasoningSlider({
   }, [open]);
 
   return (
-    <div className="menu menu-right reasoning-slider" ref={rootRef}>
+    <div className={`menu menu-right reasoning-slider${selected === "ultra" ? " is-ultra" : ""}`} ref={rootRef}>
       <button
         type="button"
         className={`bar-select menu-trigger reasoning-slider-trigger${open ? " open" : ""}`}
