@@ -45,6 +45,10 @@ export interface Tool {
   inputSchema: z.ZodType;
   /** 只读工具免审批(M3 权限闸门按此分流) */
   isReadOnly: boolean;
+  /** Explicit opt-in; permissions and concurrency are separate. Missing means exclusive. */
+  isConcurrencySafe?: boolean;
+  /** Safe tools in different groups do not overlap (e.g. delegates vs parent reads). */
+  concurrencyGroup?: string;
   /** Read a volatile snapshot after other approved tools in this batch finish. */
   afterBatch?: boolean;
   /** 审批 UI 的一行预览(命令文本/路径) */

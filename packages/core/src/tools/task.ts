@@ -30,6 +30,8 @@ export function createTaskTool(taskRunner: SubagentRunner): Tool {
       "把一个边界清楚的子问题交给独立子代理。适合网页/论文调研、产品和开源项目比较、代码探索、方案复核、独立修改或验证；多个互不依赖的子问题可在同一轮并行调用。本工具会等待子代理完成并直接返回回报，无需另外查询或等待消息；工具错误表示未完成，不能当作成功结果。prompt 必须写清目标、范围、已有上下文、是否允许修改以及期望的证据和回报。不要委派琐碎工作，也不要与子代理重复执行同一任务。",
     inputSchema,
     isReadOnly: false,
+    isConcurrencySafe: true,
+    concurrencyGroup: "delegates",
     preview: (args) => {
       const prompt = (args as Input).prompt;
       return prompt.length > 60 ? `${prompt.slice(0, 60)}…` : prompt;

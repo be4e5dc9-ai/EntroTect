@@ -22,7 +22,12 @@ function digest(content: string): string {
 
 /** Record the content actually read/written, not a later stat of a possibly different file. */
 export function recordFileState(ctx: ToolContext, filePath: string, content: string): void {
-  statesFor(ctx).set(key(filePath), digest(content));
+  recordFileDigest(ctx, filePath, digest(content));
+}
+
+/** A streaming read can record the same full-file fingerprint without buffering it. */
+export function recordFileDigest(ctx: ToolContext, filePath: string, hash: string): void {
+  statesFor(ctx).set(key(filePath), hash);
 }
 
 export function assertFileFresh(ctx: ToolContext, filePath: string, content: string | null): void {

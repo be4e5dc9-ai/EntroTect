@@ -23,6 +23,7 @@ function createWindow(): void {
     minWidth: 760,
     minHeight: 560,
     show: false,
+    hasShadow: false,
     backgroundColor: "#0d0d10",
     autoHideMenuBar: true,
     icon: path.join(here, "../../build/icon.png"),

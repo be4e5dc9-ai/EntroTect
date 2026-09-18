@@ -16,20 +16,20 @@ export const COMPACT_KEEP_RECENT = 6;
 export const COMPACT_RATIO = 0.7;
 /** Legacy export; message count no longer overrides the context budget. */
 export const COMPACT_MIN_MESSAGES = 8;
-export const COMPACT_TIMEOUT_MS = 180_000;
+export const COMPACT_TIMEOUT_MS = 300_000;
 const MIN_COMPACT_TOKENS = 512;
 // Completion limits include hidden reasoning. Keep the summary target separate
 // from the provider's total output allowance, with more room at higher efforts.
 const COMPACT_OUTPUT_BY_EFFORT: Record<ReasoningEffort, number> = {
-  off: 8_192,
-  low: 8_192,
-  medium: 12_288,
-  high: 16_384,
-  xhigh: 24_576,
-  max: 32_768,
-  ultra: 32_768,
+  off: 16_384,
+  low: 16_384,
+  medium: 24_576,
+  high: 32_768,
+  xhigh: 49_152,
+  max: 65_536,
+  ultra: 65_536,
 };
-const COMPACT_MAX_RETRY_OUTPUT = 65_536;
+const COMPACT_MAX_RETRY_OUTPUT = 131_072;
 
 export const COMPACT_SYSTEM_PROMPT = `把对话压缩成可直接继续工作的事实摘要。保留：
 - 用户当前目标、明确偏好与仍有效的约束；
@@ -108,13 +108,13 @@ function clip(text: string, limit: number): string {
 }
 
 function summaryInput(messages: Message[], contextWindow: number): string {
-  const limit = Math.max(2048, Math.min(240_000, Math.floor(contextWindow * 1.2)));
-  const perMessage = Math.max(160, Math.min(24_000, Math.floor(limit / Math.max(1, messages.length))));
+  const limit = Math.max(2048, Math.min(480_000, Math.floor(contextWindow * 1.2)));
+  const perMessage = Math.max(160, Math.min(48_000, Math.floor(limit / Math.max(1, messages.length))));
   return clip(messages.map((message, index) => {
     const text = message.content.map((block) => {
       if (block.type === "text") return block.text;
       if (block.type === "tool-call") return `[工具调用 ${block.name} ${block.id}] ${block.arguments}`;
-      if (block.type === "tool-result") return `[工具结果 ${block.toolCallId}${block.isError ? " 失败" : ""}] ${clip(block.content, 6000)}`;
+      if (block.type === "tool-result") return `[工具结果 ${block.toolCallId}${block.isError ? " 失败" : ""}] ${clip(block.content, 12_000)}`;
       return `[图片附件 ${block.mime}]`;
     }).join("\n");
     return `#${index + 1} ${message.role}:\n${clip(text, perMessage)}`;
@@ -223,7 +223,7 @@ export async function compactMessages(
   }
   if (split < 1) return unchanged();
   const keep = messages.slice(split);
-  const summaryBudget = Math.max(256, Math.min(4000, Math.floor((beforeTokens - estimateTokens(keep)) * 0.35)));
+  const summaryBudget = Math.max(256, Math.min(8000, Math.floor((beforeTokens - estimateTokens(keep)) * 0.35)));
   const summary = await readSummary(provider, summaryInput(messages.slice(0, split), contextWindow), summaryBudget, options.reasoningEffort ?? "high", contextWindow, signal, options.timeoutMs ?? COMPACT_TIMEOUT_MS);
   const summaryMessage: Message = {
     role: "user",

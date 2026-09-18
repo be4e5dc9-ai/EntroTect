@@ -205,6 +205,7 @@ export const websearchTool: Tool = {
     "网络搜索（Stack Overflow + DuckDuckGo + Bing 多引擎合并去重，无需 API Key）。输入关键词，返回标题、URL 与摘要，用于查文档/库用法/issue 前先搜索再抓取。",
   inputSchema,
   isReadOnly: true,
+  isConcurrencySafe: true,
   preview: (args) => (args as Input).query,
   async call(rawArgs: unknown, _ctx: ToolContext): Promise<string> {
     const args = inputSchema.parse(rawArgs);

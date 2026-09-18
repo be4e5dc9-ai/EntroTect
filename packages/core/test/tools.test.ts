@@ -31,7 +31,7 @@ describe("read 工具", () => {
     const { ctx, root } = await makeCtx();
     await writeFile(path.join(root, "a.txt"), "l1\nl2\nl3\nl4\nl5", "utf8");
     const out = await readTool.call({ file_path: "a.txt", offset: 2, limit: 2 }, ctx);
-    expect(out).toBe("     2| l2\n     3| l3");
+    expect(out).toBe("     2| l2\n     3| l3\n[文件共 5 行；继续读取请使用 offset=4，limit=2。]");
   });
 
   it("文件不存在报错", async () => {

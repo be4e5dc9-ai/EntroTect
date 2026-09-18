@@ -19,7 +19,7 @@ import type {
 import path from "node:path";
 import type { Provider } from "../provider/types.js";
 import type { ShellState, Tool, ToolContext } from "../tools/types.js";
-import { truncateOutput } from "../tools/output.js";
+import { budgetToolResults, truncateOutput } from "../tools/output.js";
 import { zodToJsonSchema } from "../tools/zod-json.js";
 import type { ApprovalOutcome } from "../permission/gate.js";
 import type { PluginHooks } from "../plugins/types.js";
@@ -28,6 +28,7 @@ import type { SandboxMode } from "../sandbox/policy.js";
 import { ULTRA_DISPATCH_PROMPT, ultraDirectTool } from "./ultra.js";
 import type { FileStates } from "../tools/file-state.js";
 import { normalizeToolHistory } from "../tool-history.js";
+import { scheduleTools } from "./tool-scheduler.js";
 
 export interface AgentDeps {
   provider: Provider;
@@ -296,8 +297,8 @@ export async function runAgent(
       };
     }
 
-    // 4. 同阶段审批串行、执行并行；Ultra 首轮先完成协作调用，
-    //    再处理同批的普通工具。结果按原始 tool_use 顺序回填。
+    // 4. 审批串行；连续安全调用有界并行，修改操作形成顺序屏障。
+    //    Ultra 首轮先完成协作，再处理普通工具；结果按 tool_use 顺序回填。
     const toolContextBase = {
       cwd: deps.cwd,
       artifactDir: deps.artifactDir,
@@ -369,7 +370,7 @@ export async function runAgent(
       // 插件 before 钩子:审批前改写 args
       let args: unknown;
       try {
-        const originalArgs = JSON.parse(call.arguments);
+        const originalArgs = JSON.parse(call.arguments.trim() || "{}");
         const rewritten = applyToolBefore(pluginHooks, call.name, originalArgs);
         if (typeof rewritten === "string") {
           try {
@@ -380,8 +381,16 @@ export async function runAgent(
         } else {
           args = rewritten;
         }
-      } catch {
-        args = null;
+        const parsed = tool.inputSchema.safeParse(args);
+        if (!parsed.success) {
+          throw new Error(parsed.error.issues.map((issue) => `${issue.path.join(".") || "参数"}: ${issue.message}`).join("; "));
+        }
+        args = parsed.data;
+      } catch (error) {
+        const reason = `工具 ${call.name} 参数无效，尚未执行。请根据参数定义修正后重试：${error instanceof Error ? error.message : String(error)}`;
+        ordered[index] = { type: "tool-result", toolCallId: call.id, name: call.name, isError: true, content: reason.slice(0, 4000) };
+        deps.emit({ type: "tool-state", toolCallId: call.id, state: "failed", preview, summary: reason.slice(0, 4000) });
+        return;
       }
       // 审批前用改写后的实参重算预览,保证"看到什么就执行什么"(P1-2);
       // write/edit 同时把 file_path 解析为绝对路径展示(P2-3)。
@@ -390,7 +399,7 @@ export async function runAgent(
     });
 
     let dispatchSucceeded = false;
-    let dispatchFailed = false;
+    let dispatchFailed = dispatching && toolCalls.some((call, index) => isDispatchCall(call) && ordered[index] !== null);
     // 4b. 同一阶段审批串行(保持弹窗顺序与交互稳定)
     const executeItems = async (items: Planned[]): Promise<void> => {
       for (const item of items) {
@@ -431,8 +440,10 @@ export async function runAgent(
 
       // Volatile read-only snapshots are sampled last, so slow peers cannot
       // make their status/logs stale before the batch reaches the model.
-      const executeGroup = (group: Planned[]) => Promise.all(
-        group.map(async (item) => {
+      const executeGroup = (group: Planned[]) => scheduleTools(
+        group,
+        (item) => item.tool.isConcurrencySafe === true ? item.tool.concurrencyGroup ?? "queries" : null,
+        async (item) => {
           if (item.denied) return;
           const index = item.index;
           if (deps.abortSignal?.aborted) {
@@ -539,7 +550,7 @@ export async function runAgent(
               summary: message.slice(0, 200),
             });
           }
-        }),
+        },
       );
       const isSnapshot = (item: Planned) => item.tool.isReadOnly && item.tool.afterBatch === true;
       await executeGroup(items.filter((item) => !isSnapshot(item)));
@@ -567,9 +578,10 @@ export async function runAgent(
       await executeItems(pending);
     }
 
-    const results: ContentBlock[] = ordered.filter(
+    const rawResults: ContentBlock[] = ordered.filter(
       (block): block is ContentBlock => block !== null,
     );
+    const results = await budgetToolResults(rawResults, deps.artifactDir);
 
     // 5. tool_result 回填(紧跟 tool_use,配对铁律)
     const toolResultMessage: Message = { role: "user", content: results };

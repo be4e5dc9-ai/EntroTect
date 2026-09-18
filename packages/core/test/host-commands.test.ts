@@ -60,7 +60,7 @@ describe("SessionHost commands", () => {
     await store.appendMessage(meta.id, { role: "assistant", content: [{ type: "text", text: "历史内容".repeat(1000) }] });
     await send("/compact");
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ model: "deepseek-flash", reasoning_effort: "max", max_tokens: 32_768 });
+    expect(calls[0]).toMatchObject({ model: "deepseek-flash", reasoning_effort: "max", max_tokens: 65_536 });
     expect(calls[0]).not.toHaveProperty("thinking", { type: "disabled" });
   });
 

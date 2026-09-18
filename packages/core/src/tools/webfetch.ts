@@ -170,6 +170,7 @@ export const webfetchTool: Tool = {
     "抓取网页内容并转为可读文本。用于查文档、读博客/issue。输入 URL，返回清洗后的正文（默认 12k 字符，超时 15s，200KB 上限）。",
   inputSchema,
   isReadOnly: true,
+  isConcurrencySafe: true,
   preview: (args) => (args as Input).url,
   async call(rawArgs: unknown, _ctx: ToolContext): Promise<string> {
     const args = inputSchema.parse(rawArgs);

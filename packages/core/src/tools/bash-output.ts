@@ -18,6 +18,7 @@ export const bashOutputTool: Tool = {
   description: "读取后台 bash 任务的状态快照、退出码与尾部日志（非增量）。同批调用会等其他工具结束后采样；结果仅代表采样时刻，需要最新状态时再次查询。",
   inputSchema,
   isReadOnly: true,
+  isConcurrencySafe: true,
   afterBatch: true,
   preview: (args) => `output ${(args as Input).jobId}`,
   async call(rawArgs: unknown, ctx: ToolContext): Promise<string> {

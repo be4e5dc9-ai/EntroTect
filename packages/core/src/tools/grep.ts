@@ -40,6 +40,7 @@ async function walk(
   include: string | undefined,
   max: number,
   out: Match[],
+  cwd: string,
   signal?: AbortSignal,
 ): Promise<void> {
   if (out.length >= max) return;
@@ -54,7 +55,7 @@ async function walk(
     if (out.length >= max) return;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (!SKIP_DIRS.has(entry.name)) await walk(full, regex, include, max, out, signal);
+      if (!SKIP_DIRS.has(entry.name)) await walk(full, regex, include, max, out, cwd, signal);
       continue;
     }
     if (!entry.isFile() || !matchesInclude(entry.name, include)) continue;
@@ -82,7 +83,7 @@ async function walk(
       const line = lines[i];
       if (line === undefined) continue;
       if (regex.test(line)) {
-        out.push({ file: path.relative(process.cwd(), full), line: i + 1, text: line.trim().slice(0, 200) });
+        out.push({ file: path.relative(cwd, full), line: i + 1, text: line.trim().slice(0, 200) });
       }
     }
   }
@@ -94,6 +95,7 @@ export const grepTool: Tool = {
     "按正则搜索文件内容(默认忽略大小写),返回 文件:行号 与行内容。用于在代码库中定位符号与用法。",
   inputSchema,
   isReadOnly: true,
+  isConcurrencySafe: true,
   preview: (args) => (args as Input).pattern,
   async call(rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const args = inputSchema.parse(rawArgs);
@@ -111,7 +113,7 @@ export const grepTool: Tool = {
     const matches: Match[] = [];
     const max = args.max_results ?? MAX_RESULTS;
     if (info.isDirectory()) {
-      await walk(root, regex, args.include, max, matches, ctx.abortSignal);
+      await walk(root, regex, args.include, max, matches, ctx.cwd, ctx.abortSignal);
     } else if (info.isFile()) {
       const content = await readFile(root, "utf8");
       content.split(/\r?\n/).forEach((line, i) => {

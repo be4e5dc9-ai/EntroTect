@@ -22,6 +22,7 @@ export const globTool: Tool = {
     "按 glob 模式查找文件名。默认忽略 node_modules、.git、dist、out、.venv 等目录。",
   inputSchema,
   isReadOnly: true,
+  isConcurrencySafe: true,
   preview: (args) => (args as Input).pattern,
   async call(rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const args = inputSchema.parse(rawArgs);

@@ -79,7 +79,7 @@ describe("context compaction", () => {
     const result = await compactMessages(provider, [text("assistant", "x".repeat(10000))], undefined, { reasoningEffort: "ultra" });
     expect(result.changed).toBe(true);
     expect(options?.reasoningEffort).toBe("max");
-    expect(options?.maxTokens).toBe(32_768);
+    expect(options?.maxTokens).toBe(65_536);
   });
 
   it.each(["length", "max_tokens", "MAX_TOKENS"])("retries but rejects repeatedly truncated summaries (%s)", async (finishReason) => {
@@ -97,7 +97,7 @@ describe("context compaction", () => {
       yield { type: "turn-complete", finishReason: limits.length === 1 ? "length" : "stop", usage: null };
     } };
     const result = await compactMessages(provider, [text("assistant", "x".repeat(10000))], undefined, { reasoningEffort: "max" });
-    expect(limits).toEqual([32_768, 65_536]);
+    expect(limits).toEqual([65_536, 131_072]);
     expect(result.summary).toBe("complete summary");
     expect(result.compacted[0]?.content).toContainEqual(expect.objectContaining({ text: expect.stringContaining("complete summary") }));
     expect(JSON.stringify(result.compacted)).not.toContain("partial");
@@ -114,6 +114,23 @@ describe("context compaction", () => {
     expect(result.changed).toBe(true);
     expect(maxTokens).toBeGreaterThan(512);
     expect(maxTokens).toBeLessThan(4096);
+  });
+
+  it("allows a richer summary and more source evidence without exceeding a model's output cap", async () => {
+    let captured: Parameters<Provider["streamBlocks"]>[1] | undefined;
+    let source = "";
+    const provider: Provider = { model: "deepseek-flash", async *streamBlocks(messages, options) {
+      captured = options;
+      source = JSON.stringify(messages);
+      yield textDelta("complete summary");
+      yield turnComplete();
+    } };
+    await compactMessages(provider, [text("assistant", "x".repeat(30_000) + "EVIDENCE_IN_MIDDLE" + "y".repeat(10_000)), text("assistant", "z".repeat(30_000))]);
+    expect(captured?.systemPrompt).toContain("8000 tokens");
+    expect(source).toContain("EVIDENCE_IN_MIDDLE");
+    // A catalogued small output limit still caps the enlarged effort allowance.
+    await compactMessages({ ...provider, model: "nova-pro" }, [text("assistant", "x".repeat(5000))], undefined, { reasoningEffort: "max" });
+    expect(captured?.maxTokens).toBe(8_192);
   });
 
   it("does not retry a filtered summary", async () => {
