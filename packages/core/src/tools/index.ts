@@ -14,3 +14,5 @@ export { stopBgJobsForOwner, stopAllBgJobs } from "./bg-manager.js";
 export * from "./file-state.js";
 export * from "./goal.js";
 export * from "./plan.js";
+export * from "./browser.js";
+export * from "./research.js";

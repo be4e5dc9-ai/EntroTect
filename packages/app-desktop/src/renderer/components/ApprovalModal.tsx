@@ -3,18 +3,21 @@
 // Escape = 拒绝。模态保持 transform-origin 居中(emil 例外条款)。
 // =====================================================================
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
 import { bridge } from "../bridge";
 import motion from "@entrotect/shared/tokens/motion.json";
+import type { ApprovalDecision } from "@entrotect/shared";
 
 export function ApprovalModal(): React.JSX.Element | null {
   const approval = useStore((s) => s.approval);
   const backdropRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const [denyReason, setDenyReason] = useState("");
 
   useEffect(() => {
     if (!approval) return;
+    setDenyReason("");
     const panel = panelRef.current;
     if (panel) {
       const spring = motion.springs.pop;
@@ -41,7 +44,7 @@ export function ApprovalModal(): React.JSX.Element | null {
 
   if (!approval) return null;
 
-  const decide = (decision: "allow-once" | "allow-always" | "deny", reason?: string) => {
+  const decide = (decision: ApprovalDecision, reason?: string) => {
     bridge().send({ kind: "ApprovalDecision", toolCallId: approval.toolCallId, decision, reason });
     useStore.setState({ approval: null });
   };
@@ -61,24 +64,47 @@ export function ApprovalModal(): React.JSX.Element | null {
             <circle cx="9" cy="12" r="0.9" fill="currentColor" />
           </svg>
         </div>
-        <h3 className="approval-title">工具需要你的批准</h3>
+        <h3 className="approval-title">操作需要你的批准</h3>
         <p className="approval-tool">
           <code>{approval.toolName}</code>
+          <span className={`approval-risk ${approval.risk ?? "medium"}`}>
+            {approval.risk === "high" ? "高风险" : approval.risk === "low" ? "低风险" : "需确认"}
+          </span>
         </p>
         <pre className="approval-preview">{approval.preview}</pre>
-        <p className="approval-desc">{approval.description.split("。")[0]}。</p>
+        <p className="approval-desc">{approval.reason ?? `${approval.description.split("。")[0]}。`}</p>
+        {approval.targets?.length ? (
+          <div className="approval-targets" aria-label="本次权限范围">
+            {approval.targets.map((target, index) => (
+              <div className="approval-target" key={`${target.action}-${target.resource}-${index}`}>
+                <span>{target.action}</span>
+                <code>{target.resource}</code>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <div className="approval-actions">
-          <button className="btn btn-ghost" onClick={() => decide("deny")}>
+          <button className="btn btn-ghost" onClick={() => decide("deny", denyReason.trim() || undefined)}>
             拒绝
           </button>
           <button className="btn btn-ghost" onClick={() => decide("allow-once")}>
             允许一次
           </button>
           <button className="btn btn-primary" onClick={() => decide("allow-always")}>
-            本会话总是允许
+            本会话允许
+          </button>
+          <button className="btn btn-primary" onClick={() => decide("allow-project")}>
+            此项目允许
           </button>
         </div>
-        <p className="approval-hint">Esc = 拒绝 · 超时未响应将默认拒绝 · 总是允许 = 本会话内该工具全部调用免审</p>
+        <input
+          className="approval-deny-reason"
+          value={denyReason}
+          onChange={(event) => setDenyReason(event.target.value)}
+          placeholder="可选：告诉 Agent 为什么拒绝，便于它调整方案"
+          aria-label="拒绝原因"
+        />
+        <p className="approval-hint">Esc = 拒绝 · 超时默认拒绝 · 长期授权仅保存上方列出的动作与资源范围</p>
       </div>
     </div>
   );

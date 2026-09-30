@@ -147,4 +147,14 @@ describe("file tool write integrity", () => {
     ]);
     expect(await readFile(path.join(root, "real", "test.js"), "utf8")).toBe("one two");
   });
+
+  it("rejects a workspace symlink or junction that escapes to an external directory", async () => {
+    const { root, ctx } = await setup();
+    const outside = await mkdtemp(path.join(tmpdir(), "entrotect-file-outside-"));
+    roots.push(outside);
+    await writeFile(path.join(outside, "secret.txt"), "outside", "utf8");
+    await symlink(outside, path.join(root, "escape"), process.platform === "win32" ? "junction" : "dir");
+    await expect(readTool.call({ file_path: "escape/secret.txt" }, ctx)).rejects.toThrow("符号链接");
+    await expect(writeTool.call({ file_path: "escape/new.txt", content: "blocked" }, ctx)).rejects.toThrow("符号链接");
+  });
 });

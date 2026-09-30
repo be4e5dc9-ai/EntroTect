@@ -28,7 +28,11 @@ function mockBridge() {
   const setTheme = vi.fn();
   const setAccentColor = vi.fn();
   const listSkills = vi.fn(async () => []);
-  window.entrotect = { send, onEvent, chooseFolder, setTheme, setAccentColor, listSkills };
+  window.entrotect = { send, onEvent, chooseFolder, setTheme, setAccentColor, listSkills,
+    browserCommand: vi.fn(async () => ({ ok: true, tabs: [] })),
+    browserViewport: vi.fn(), onBrowserTabs: vi.fn(() => () => {}),
+    researchCommand: vi.fn(async () => ({ sources: [] })),
+  };
   return { send, onEvent, chooseFolder, setTheme, setAccentColor, listSkills };
 }
 

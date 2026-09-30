@@ -11,6 +11,7 @@ import type {
 } from "@entrotect/shared";
 import { runAgent } from "../src/loop/agent.js";
 import { SessionPermissionGate } from "../src/permission/gate.js";
+import { buildApprovalRequest } from "../src/permission/request.js";
 import { buildBuiltinTools } from "../src/tools/registry.js";
 import { taskTool, setTaskRunner } from "../src/tools/task.js";
 import { createSubagentRunner, type SubagentRunner } from "../src/subagent/run.js";
@@ -442,7 +443,15 @@ describe("task 工具与子代理", () => {
     const tools = buildBuiltinTools();
     const gate = new SessionPermissionGate(tools, 50, "write");
 
-    const parentApproval = gate.request(makeRequest("write", "parent-always"));
+    const write = tools.find((tool) => tool.name === "write")!;
+    const parentRequest = buildApprovalRequest(
+      "parent-always",
+      write,
+      { file_path: "remembered.txt", content: "shared" },
+      cwd,
+      "remembered.txt",
+    );
+    const parentApproval = gate.request(parentRequest);
     gate.respond("parent-always", "allow-always");
     expect((await parentApproval).decision).toBe("allow-always");
 

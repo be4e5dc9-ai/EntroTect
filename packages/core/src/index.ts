@@ -12,3 +12,4 @@ export * from "./tools/task.js";
 export * from "./config.js";
 export * from "./sandbox/index.js";
 export * from "./compact.js";
+export * from "./research/index.js";

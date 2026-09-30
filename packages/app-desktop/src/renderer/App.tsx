@@ -5,7 +5,7 @@
 // =====================================================================
 
 import { useEffect, useRef, useState } from "react";
-import { fetchSkills, useStore, applyEvent } from "./store";
+import { fetchSkills, useStore, applyEvent, applyBrowserTabs, openBrowserTab, openResearchTab, pushToast } from "./store";
 import { bridge } from "./bridge";
 import { PanelCollapseIcon, Sidebar } from "./components/Sidebar";
 import { MessageList } from "./components/MessageList";
@@ -15,6 +15,7 @@ import { SettingsPage } from "./components/SettingsPage";
 import { Toasts } from "./components/Toasts";
 import { DetailPanel } from "./components/DetailPanel";
 import { TodoDock } from "./components/TodoDock";
+import { BrowserIcon, ResearchIcon } from "./components/BrowserPanel";
 
 const DEFAULT_SIDEBAR_WIDTH = 248;
 const DEFAULT_DETAIL_WIDTH = 420;
@@ -58,12 +59,21 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     const unsubscribe = bridge().onEvent(applyEvent);
+    const unsubscribeBrowser = bridge().onBrowserTabs(applyBrowserTabs);
     bridge().send({ kind: "ListSessions" });
     bridge().send({ kind: "GetConfig" });
     bridge().send({ kind: "GetUsageStats" });
     void fetchSkills();
-    return unsubscribe;
+    return () => { unsubscribe(); unsubscribeBrowser(); };
   }, []);
+
+  useEffect(() => {
+    if (!session?.id) return;
+    const sessionId = session.id;
+    void bridge().browserCommand(sessionId, { action: "list" }).then((reply) => {
+      if (reply.ok) applyBrowserTabs(sessionId, reply.tabs);
+    }).catch((error: unknown) => pushToast("error", String(error)));
+  }, [session?.id]);
 
   // 启动(config 到达)与切换供应商后,拉取当前供应商的模型列表
   useEffect(() => {
@@ -149,6 +159,10 @@ export function App(): React.JSX.Element {
                 {busy && <span className="chat-busy" aria-label="运行中">运行中</span>}
               </div>
               <div className="chat-meta">
+                <div className="workspace-tools" aria-label="工作区工具">
+                  <button type="button" onClick={openBrowserTab} disabled={!session} title={session ? "打开内置浏览器" : "先创建或选择一个对话"}><BrowserIcon />浏览器</button>
+                  <button type="button" onClick={openResearchTab} disabled={!session} title={session ? "打开资料库与办公学习模板" : "先创建或选择一个对话"}><ResearchIcon />资料库</button>
+                </div>
                 {usage && (
                   <span className="chat-usage">
                     ↑{usage.inputTokens.toLocaleString()} ↓{usage.outputTokens.toLocaleString()}

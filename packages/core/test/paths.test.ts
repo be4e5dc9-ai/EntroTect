@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import path from "node:path";
-import { resolveInsideCwd } from "../src/tools/paths.js";
+import { resolveInsideCwd, resolvePermittedPath } from "../src/tools/paths.js";
 
 const cwd = process.platform === "win32" ? "C:\\workspace\\proj" : "/workspace/proj";
 
@@ -48,5 +48,13 @@ describe("resolveInsideCwd 路径收容", () => {
     expect(resolveInsideCwd(cwd, "app/plugins2/file.txt", protectedPaths)).toBe(
       path.resolve(cwd, "app/plugins2/file.txt"),
     );
+  });
+
+  it("外部路径只接受当前调用的精确 external 授权", () => {
+    const outside = path.resolve(cwd, "..", "outside", "data.txt");
+    expect(() => resolvePermittedPath(cwd, outside)).toThrow("未获批准");
+    expect(resolvePermittedPath(cwd, outside, [], [{ action: "external", resource: outside }])).toBe(outside);
+    const other = path.resolve(cwd, "..", "outside", "other.txt");
+    expect(() => resolvePermittedPath(cwd, other, [], [{ action: "external", resource: outside }])).toThrow("未获批准");
   });
 });

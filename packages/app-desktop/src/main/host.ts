@@ -48,12 +48,17 @@ import {
   stopBgJobsForOwner,
   type PluginHooks,
   type Provider,
+  type Tool,
+  type ApprovalOutcome,
 } from "@entrotect/core";
 import { clampEffort, getSupportedEffortsForModel, parseSlashCommand, SLASH_HELP, type SlashCommand } from "@entrotect/shared";
 
 export interface HostDeps {
   appDataDir: string;
   getWindow: () => BrowserWindow | null;
+  desktopTools?: (sessionId: string, config: AppConfig) => Tool[];
+  onSessionDeactivated?: (sessionId: string) => void;
+  onSessionDeleted?: (sessionId: string) => void | Promise<void>;
 }
 
 interface ActiveRun {
@@ -101,6 +106,7 @@ function effectiveReasoningEffort(config: AppConfig, providerId: string): Reason
 function cloneConfig(config: AppConfig): AppConfig {
   return {
     ...config,
+    permissionRules: config.permissionRules?.map((rule) => ({ ...rule })),
     providers: config.providers?.map((provider) => ({
       ...provider,
       models: [...provider.models],
@@ -148,6 +154,8 @@ export class SessionHost {
   private active: ActiveRun | null = null;
   private readonly runningSessionIds = new Set<string>();
   private nextRunId = 0;
+  /** Child tools and browser redirects share one approval surface. */
+  private approvalQueue: Promise<void> = Promise.resolve();
   /** 插件 hooks:{appData}/plugins 下 *.mjs 加载而来,init 时填充 */
   private plugins: PluginHooks[] = [];
 
@@ -162,6 +170,59 @@ export class SessionHost {
     this.provider = this.makeProvider();
     const plugins = await loadPluginsFromDir(path.join(this.deps.appDataDir, "plugins"));
     this.plugins = plugins.map((plugin) => plugin.hooks);
+  }
+
+  requireActiveSession(sessionId: string): SessionMeta {
+    if (!this.active || this.active.meta.id !== sessionId) throw new Error("当前会话已切换，请在当前任务重试");
+    return this.active.meta;
+  }
+
+  async authorizeBrowser(request: { sessionId: string; action: string; url: string; reason?: string }): Promise<boolean> {
+    const run = this.active;
+    if (!run || run.meta.id !== request.sessionId || run.abort.signal.aborted) return false;
+    const target = { action: request.action, resource: request.url };
+    const outcome = await this.requestApproval(run, run.gate, {
+      toolCallId: `browser-${randomUUID()}`,
+      toolName: request.action,
+      description: "操作当前任务的内置浏览器。网页本身不能授予权限。",
+      preview: request.url,
+      targets: [target],
+      workspace: run.meta.cwd,
+      risk: request.action === "browser.read" ? "low" : "medium",
+      reason: request.reason ?? (request.action === "browser.interact" ? "网页交互可能提交表单或改变远端数据，请确认符合当前任务" : "访问此网站"),
+      suggestedRules: [{ action: request.action, resource: `${new URL(request.url).origin}/*`, effect: "allow", workspace: run.meta.cwd }],
+    });
+    return outcome.decision !== "deny" && this.active === run && !run.abort.signal.aborted;
+  }
+
+  private async requestApproval(run: ActiveRun, gate: SessionPermissionGate, request: ApprovalRequest): Promise<ApprovalOutcome> {
+    const previous = this.approvalQueue;
+    let release!: () => void;
+    this.approvalQueue = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      await previous;
+      if (this.active !== run || run.abort.signal.aborted || run.gate !== gate) return { decision: "deny", reason: "会话或运行状态已改变" };
+      const needsApproval = gate.wantsApproval(request);
+      const pending = gate.request(request);
+      if (needsApproval) this.emit({ type: "approval-requested", request });
+      const outcome = await pending;
+      if (outcome.decision === "allow-project" && outcome.rules?.length) {
+        const existing = this.config.permissionRules ?? [];
+        const additions = outcome.rules.filter((rule) => !existing.some((current) =>
+          current.action === rule.action && current.resource === rule.resource && current.effect === rule.effect && current.workspace === rule.workspace,
+        ));
+        if (additions.length) {
+          this.config = cloneConfig({ ...this.config, permissionRules: [...existing, ...additions] });
+          gate.setProjectRules(this.config.permissionRules ?? []);
+          this.emit({ type: "config", config: this.config });
+          await saveConfig(this.deps.appDataDir, this.config);
+        }
+      }
+      return outcome;
+    } finally {
+      this.emit({ type: "approval-resolved", toolCallId: request.toolCallId });
+      release();
+    }
   }
 
   /** 当前生效的供应商:按 activeProviderId 找,失效回退第一个 */
@@ -370,6 +431,7 @@ export class SessionHost {
         // 先完成同步共享状态更新并通知 renderer,再等待落盘,避免新 run 先发 turn 事件。
         this.config = cloneConfig(op.config);
         this.active?.gate.setMode(this.config.permissionMode ?? "write");
+        this.active?.gate.setProjectRules(this.config.permissionRules ?? []);
         this.provider = this.makeProvider();
         this.emit({ type: "config", config: this.config });
         await saveConfig(this.deps.appDataDir, this.config);
@@ -383,6 +445,7 @@ export class SessionHost {
       buildBuiltinTools(),
       undefined,
       config.permissionMode ?? "write",
+      config.permissionRules ?? [],
     );
   }
 
@@ -440,6 +503,7 @@ export class SessionHost {
     }
     if (deletingActive) this.teardownActive();
     await this.store.deleteSession(sessionId);
+    await this.deps.onSessionDeleted?.(sessionId);
     this.emit({ type: "sessions-listed", sessions: await this.store.list() });
   }
 
@@ -475,6 +539,7 @@ export class SessionHost {
     if (!this.active) return;
     this.active.abort.abort();
     this.active.gate.dispose();
+    this.deps.onSessionDeactivated?.(this.active.meta.id);
     this.active = null;
   }
 
@@ -625,9 +690,11 @@ export class SessionHost {
 
     // 中断上一次的残留(如果有),开新 AbortController 与权限闸门。
     run.abort.abort();
-    run.gate.dispose();
+    const previousGate = run.gate;
+    previousGate.dispose();
     run.abort = new AbortController();
     run.gate = this.makeGate(config);
+    run.gate.copySessionGrantsFrom(previousGate);
     run.running = true;
 
     const accepted: AcceptedRun = {
@@ -714,14 +781,8 @@ export class SessionHost {
         controls: { ...controls, goal: null },
         reasoningEffort: config.reasoningEffort === "ultra" ? "max" : config.reasoningEffort,
       });
-      const approve = async (request: ApprovalRequest) => {
-        // 仅在真正需要用户裁决时才上报弹窗;
-        // full/write 只读/allow-always 等自动放行路径不打扰。
-        if (gate.wantsApproval(request)) {
-          this.emit({ type: "approval-requested", request });
-        }
-        return gate.request(request);
-      };
+      const approve = (request: ApprovalRequest) => this.requestApproval(run, gate, request);
+      const desktopTools = this.deps.desktopTools?.(run.meta.id, config) ?? [];
       const activeProv = this.activeProvider(config);
       const imageProvider = activeProv
         ? {
@@ -742,7 +803,7 @@ export class SessionHost {
         tools: toolsForSession([...buildBuiltinTools({
           taskRunner: createSubagentRunner({
             provider,
-            tools: toolsForSession(buildBuiltinTools({ imageProvider }), controls),
+            tools: toolsForSession([...buildBuiltinTools({ imageProvider }), ...desktopTools], controls),
             systemPrompt: subagentSystemPrompt,
             approve,
             cwd: run.meta.cwd,
@@ -762,7 +823,7 @@ export class SessionHost {
             } : undefined,
           }),
           imageProvider,
-        }), ...(controls.goal && controls.goal.status !== "completed" ? [createGoalTool(async (status, summary) => {
+        }), ...desktopTools, ...(controls.goal && controls.goal.status !== "completed" ? [createGoalTool(async (status, summary) => {
           if (abort.signal.aborted) throw new Error("操作已取消");
           await this.saveControls(run, { ...controls, goal: { objective: controls.goal!.objective, status, summary } });
         })] : [])], controls),

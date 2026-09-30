@@ -10,7 +10,7 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import type { Tool, ToolContext } from "./types.js";
-import { resolveInsideCwd } from "./paths.js";
+import { resolvePermittedPathReal } from "./paths.js";
 
 const inputSchema = z.strictObject({
   path: z.string().optional().describe("可选：聚焦到单个文件/目录（相对工作目录），不填则检查全项目"),
@@ -101,7 +101,7 @@ export const diagnosticsTool: Tool = {
 
     const tscArgs = ["--noEmit", "--pretty", "false"];
     if (args.path) {
-      tscArgs.push(resolveInsideCwd(cwd, args.path, ctx.protectedPaths));
+      tscArgs.push(await resolvePermittedPathReal(cwd, args.path, ctx.protectedPaths, ctx.approvedResources));
     }
     const result = await run(tsc, tscArgs, cwd, 25000, process.platform === "win32");
     const out = `${result.stdout}\n${result.stderr}`.trim();

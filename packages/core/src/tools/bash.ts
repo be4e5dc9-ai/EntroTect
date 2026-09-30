@@ -124,7 +124,7 @@ export const bashTool: Tool = {
     if (ctx.sandboxMode === "restricted") {
       const verdict = analyzeCommand(args.command);
       if (verdict.blocked) {
-        throw new Error(`[沙箱] 已拦截危险命令(${verdict.reason})。如确需执行,请切换权限模式为"完全访问权限"后重试。`);
+        throw new Error(`[危险命令保护] 已拦截(${verdict.reason})。如确需执行,请在设置中关闭危险命令保护后重试。`);
       }
     }
 

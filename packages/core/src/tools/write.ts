@@ -8,7 +8,7 @@ import { z } from "zod";
 import type { Tool, ToolContext } from "./types.js";
 import { assertFileFresh, recordFileState } from "./file-state.js";
 import { atomicWriteText, readTextIfExists, withFileLock } from "./file-access.js";
-import { resolveInsideCwd } from "./paths.js";
+import { resolvePermittedPath, resolvePermittedPathReal } from "./paths.js";
 
 const inputSchema = z.strictObject({
   file_path: z.string().describe("文件路径(相对路径基于工作目录)"),
@@ -27,8 +27,9 @@ export const writeTool: Tool = {
   preview: (args) => (args as Input).file_path,
   async call(rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const args = inputSchema.parse(rawArgs);
-    const absolute = resolveInsideCwd(ctx.cwd, args.file_path, ctx.protectedPaths);
+    const absolute = resolvePermittedPath(ctx.cwd, args.file_path, ctx.protectedPaths, ctx.approvedResources);
     return withFileLock(absolute, ctx.abortSignal, async (filePath) => {
+      await resolvePermittedPathReal(ctx.cwd, args.file_path, ctx.protectedPaths, ctx.approvedResources);
       const content = await readTextIfExists(filePath);
       assertFileFresh(ctx, filePath, content);
       await mkdir(path.dirname(filePath), { recursive: true });

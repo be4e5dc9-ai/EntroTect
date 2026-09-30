@@ -5,7 +5,7 @@
 import fg from "fast-glob";
 import { z } from "zod";
 import type { Tool, ToolContext } from "./types.js";
-import { resolveInsideCwd } from "./paths.js";
+import { resolvePermittedPathReal } from "./paths.js";
 
 const MAX_RESULTS = 500;
 
@@ -26,7 +26,7 @@ export const globTool: Tool = {
   preview: (args) => (args as Input).pattern,
   async call(rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const args = inputSchema.parse(rawArgs);
-    const root = args.path ? resolveInsideCwd(ctx.cwd, args.path, ctx.protectedPaths) : ctx.cwd;
+    const root = args.path ? await resolvePermittedPathReal(ctx.cwd, args.path, ctx.protectedPaths, ctx.approvedResources) : ctx.cwd;
     const matches = await fg(args.pattern, {
       cwd: root,
       dot: false,

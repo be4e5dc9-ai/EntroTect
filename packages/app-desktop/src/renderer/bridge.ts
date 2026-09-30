@@ -2,7 +2,7 @@
 // preload 桥接的类型安全包装
 // =====================================================================
 
-import type { AppEvent, Op, SkillInfo } from "@entrotect/shared";
+import type { AppEvent, Op, SkillInfo, BrowserCommand, BrowserReply, BrowserTabState, BrowserViewport, ResearchCommand, ResearchReply } from "@entrotect/shared";
 
 export interface EntroTectBridge {
   send: (op: Op) => void;
@@ -12,6 +12,10 @@ export interface EntroTectBridge {
   setAccentColor: (color: string) => void;
   listSkills: () => Promise<SkillInfo[]>;
   pathOfDragFile: (file: File) => string;
+  browserCommand: (sessionId: string, command: BrowserCommand) => Promise<BrowserReply>;
+  browserViewport: (sessionId: string, tabId: string, bounds: BrowserViewport | null) => void;
+  onBrowserTabs: (callback: (sessionId: string, tabs: BrowserTabState[]) => void) => () => void;
+  researchCommand: (command: ResearchCommand) => Promise<ResearchReply>;
 }
 
 declare global {

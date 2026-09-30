@@ -1,7 +1,7 @@
 {
   "name": "@entrotect/app-desktop",
-  "version": "0.7.21",
-  "description": "EntroTect - Windows 婵℃鐭傚?Coding Agent",
+  "version": "0.7.22",
+  "description": "EntroTect - Windows 本地开发、调研与学习办公 Agent",
   "author": "EntroTect",
   "type": "module",
   "main": "dist/main/main.cjs",
@@ -46,7 +46,9 @@
       "output": "../../release"
     },
     "files": [
-      "dist/**/*",
+      "dist/main/**/*",
+      "dist/preload/**/*",
+      "dist/renderer/**/*",
       "build/icon.png",
       "package.json",
       "!node_modules/**"

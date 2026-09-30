@@ -46,7 +46,7 @@ function readonlyBash(tool: Tool): Tool {
 export function toolsForSession(tools: Tool[], controls?: SessionControls): Tool[] {
   if (controls?.mode !== "plan") return tools;
   return tools.flatMap((tool) => {
-    if (["write", "edit", "generate_image", "kill_shell", "todowrite"].includes(tool.name)) return [];
+    if (["write", "edit", "generate_image", "kill_shell", "todowrite", "library_save", "library_update", "library_remove", "library_export", "library_export_table", "browser_click", "browser_type", "browser_press"].includes(tool.name)) return [];
     if (tool.name === "bash") return [readonlyBash(tool)];
     if (tool.name === "task") return [{ ...tool, isReadOnly: true, description: "把独立的只读代码探索、资料调研或方案复核交给子代理；子代理同样处于 Plan mode，不能实施修改。" }];
     return [tool];

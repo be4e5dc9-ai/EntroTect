@@ -26,7 +26,7 @@ describe("config 持久化回环", () => {
     expect(loaded.providers?.find((p) => p.id === "gateway")?.modelReasoningLevels?.[model]).toEqual(["low", "high", "max"]);
   });
 
-  it("showReasoning / ultra / 控件样式 / permissionMode 落盘后可完整读回", async () => {
+  it("showReasoning / ultra / 控件样式 / 权限规则落盘后可完整读回", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "entrotect-config-"));
     const config: AppConfig = {
       baseUrl: "https://example.test/v1",
@@ -36,6 +36,7 @@ describe("config 持久化回环", () => {
       reasoningEffort: "ultra",
       reasoningControlStyle: "menu",
       permissionMode: "ask",
+      permissionRules: [{ action: "shell", resource: "git status *", effect: "allow", workspace: "c:/repo" }],
     };
     await saveConfig(dir, config);
     const loaded = await loadConfig(dir);
@@ -43,6 +44,7 @@ describe("config 持久化回环", () => {
     expect(loaded.reasoningEffort).toBe("ultra");
     expect(loaded.reasoningControlStyle).toBe("menu");
     expect(loaded.permissionMode).toBe("ask");
+    expect(loaded.permissionRules).toEqual(config.permissionRules);
   });
 
   it("reasoningEffort medium 落盘回环", async () => {
@@ -70,6 +72,7 @@ describe("config 持久化回环", () => {
     expect(loaded.reasoningEffort).toBe("high");
     expect(loaded.reasoningControlStyle).toBe("slider");
     expect(loaded.permissionMode).toBe("write");
+    expect(loaded.permissionRules).toEqual([]);
   });
 });
 

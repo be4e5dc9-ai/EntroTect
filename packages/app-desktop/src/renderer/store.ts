@@ -13,6 +13,8 @@ import type {
   TokenUsage,
   UsageStats,
   AppConfig,
+  ApprovalRequest,
+  BrowserTabState,
 } from "@entrotect/shared";
 import { DEFAULT_ACCENT_COLOR } from "../appearance";
 import type { Theme as AppearanceTheme } from "../appearance";
@@ -67,7 +69,9 @@ export type UiAnyBlock = UiBlock | UiPlanBlock | UiToolBlock | UiFileBlock | UiI
  */
 export type DetailTab =
   | { id: string; kind: "file"; path: string }
-  | { id: string; kind: "subagent"; toolCallId: string };
+  | { id: string; kind: "subagent"; toolCallId: string }
+  | { id: string; kind: "browser"; tabId: string | null }
+  | { id: string; kind: "research" };
 
 export interface UiMessage {
   key: number;
@@ -170,12 +174,7 @@ interface UiState {
   modelsByProvider: ModelsByProvider;
   /** 各供应商的上下文窗口缓存;仅显式保存时写入配置,供设置页/后续上下文 UI 使用 */
   contextWindowsByProvider: ContextWindowsByProvider;
-  approval: {
-    toolCallId: string;
-    toolName: string;
-    preview: string;
-    description: string;
-  } | null;
+  approval: ApprovalRequest | null;
   config: AppConfig | null;
   view: View;
   toasts: Toast[];
@@ -186,6 +185,8 @@ interface UiState {
   detailTabs: DetailTab[];
   /** 当前激活标签 id;null = 详情栏隐藏(回两段布局) */
   activeDetailId: string | null;
+  browserTabs: Record<string, BrowserTabState[]>;
+  composerDraft: { id: number; sessionId: string; text: string } | null;
   /** 文件内容缓存(key = 展示 path;null = 读取失败) */
   fileContents: Record<string, string | null>;
   /** 子代理对话页(key = task 工具调用 id;每条即一个对话流) */
@@ -220,6 +221,8 @@ export const useStore = create<UiState>()(() => ({
   accentColor: DEFAULT_ACCENT_COLOR,
   detailTabs: [],
   activeDetailId: null,
+  browserTabs: {},
+  composerDraft: null,
   fileContents: {},
   subagentChats: {},
   skills: [],
@@ -444,7 +447,7 @@ const TOAST_LIFETIME_MS = 5000;
 /** 退场时长须短于入场(emil:退出快于进入) */
 const TOAST_EXIT_MS = 180;
 
-function pushToast(kind: Toast["kind"], text: string): void {
+export function pushToast(kind: Toast["kind"], text: string): void {
   const id = Date.now() + Math.random();
   useStore.setState((state) => ({ toasts: [...state.toasts, { id, kind, text }] }));
   setTimeout(() => {
@@ -625,13 +628,88 @@ export function openSubagentTab(toolCallId: string): void {
   });
 }
 
+/** Browser state is owned by the main process; background sessions never steal focus. */
+export function applyBrowserTabs(sessionId: string, tabs: BrowserTabState[]): void {
+  useStore.setState((state) => {
+    const browserTabs = { ...state.browserTabs, [sessionId]: tabs };
+    if (state.currentSession?.id !== sessionId) return { browserTabs };
+    const existingIds = new Set(state.detailTabs.map((tab) => tab.id));
+    const liveIds = new Set(tabs.map((tab) => tab.id));
+    const additions: DetailTab[] = tabs
+      .filter((tab) => !existingIds.has(`browser-${tab.id}`))
+      .map((tab) => ({ id: `browser-${tab.id}`, kind: "browser", tabId: tab.id }));
+    const detailTabs = state.detailTabs.filter((tab) => tab.kind !== "browser"
+      || tab.tabId === null || liveIds.has(tab.tabId));
+    detailTabs.push(...additions);
+    const activeDetailId = detailTabs.some((tab) => tab.id === state.activeDetailId)
+      ? state.activeDetailId : detailTabs.at(-1)?.id ?? null;
+    return { browserTabs, detailTabs, activeDetailId };
+  });
+}
+
+/** A user-opened address replaces only the new-page draft they submitted. */
+export function activateBrowserTab(sessionId: string, tabId: string): void {
+  useStore.setState((state) => {
+    if (state.currentSession?.id !== sessionId) return {};
+    if (state.activeDetailId !== "browser-new") return {};
+    const id = `browser-${tabId}`;
+    if (!state.detailTabs.some((tab) => tab.id === id)) return {};
+    return {
+      detailTabs: state.detailTabs.filter((tab) => tab.id !== "browser-new"),
+      activeDetailId: id,
+    };
+  });
+}
+
+export function openBrowserTab(): void {
+  if (!useStore.getState().currentSession) return;
+  const id = "browser-new";
+  useStore.setState((state) => ({
+    detailTabs: state.detailTabs.some((tab) => tab.id === id) ? state.detailTabs
+      : [...state.detailTabs, { id, kind: "browser", tabId: null }],
+    activeDetailId: id,
+  }));
+}
+
+export function openResearchTab(): void {
+  if (!useStore.getState().currentSession) return;
+  const id = "research-library";
+  useStore.setState((state) => ({
+    detailTabs: state.detailTabs.some((tab) => tab.id === id) ? state.detailTabs
+      : [...state.detailTabs, { id, kind: "research" }],
+    activeDetailId: id,
+  }));
+}
+
+/** Templates populate the draft; never send them without the user's review. */
+export function useComposerPrompt(text: string): void {
+  const sessionId = useStore.getState().currentSession?.id;
+  if (sessionId) useStore.setState({ composerDraft: { id: Date.now(), sessionId, text } });
+}
+
 /** 激活既有标签(点击标签条) */
 export function activateDetailTab(id: string): void {
   useStore.setState({ activeDetailId: id });
 }
 
 /** 关闭标签:激活标签被关则顺延到邻位;关光则隐藏详情栏 */
+const closingBrowserTabs = new Set<string>();
 export function closeDetailTab(id: string): void {
+  const stateBefore = useStore.getState();
+  const closing = stateBefore.detailTabs.find((tab) => tab.id === id);
+  if (closing?.kind === "browser" && closing.tabId && stateBefore.currentSession) {
+    const sessionId = stateBefore.currentSession.id;
+    const closeKey = `${sessionId}:${closing.tabId}`;
+    if (closingBrowserTabs.has(closeKey)) return;
+    closingBrowserTabs.add(closeKey);
+    void bridge().browserCommand(sessionId, { action: "close", tabId: closing.tabId })
+      .then((reply) => {
+        applyBrowserTabs(sessionId, reply.tabs);
+        if (!reply.ok) pushToast("error", reply.error ?? "关闭网页失败");
+      }).catch((error: unknown) => pushToast("error", String(error)))
+      .finally(() => closingBrowserTabs.delete(closeKey));
+    return;
+  }
   useStore.setState((state) => {
     const index = state.detailTabs.findIndex((tab) => tab.id === id);
     if (index === -1) return {};
@@ -837,6 +915,7 @@ export function applyEvent(event: AppEvent): void {
                 approval: null,
                 detailTabs: [],
                 activeDetailId: null,
+                composerDraft: null,
                 fileContents: {},
                 subagentChats: {},
               }
@@ -863,6 +942,7 @@ export function applyEvent(event: AppEvent): void {
             approval: null,
             detailTabs: [],
             activeDetailId: null,
+            composerDraft: null,
             fileContents: {},
             subagentChats: {},
           };
@@ -1190,6 +1270,10 @@ export function applyEvent(event: AppEvent): void {
       break;
     case "approval-requested":
       useStore.setState({ approval: event.request });
+      break;
+    case "approval-resolved":
+      useStore.setState((state) => state.approval?.toolCallId === event.toolCallId
+        ? { approval: null } : {});
       break;
     case "error":
       deltaBuffer = "";

@@ -25,6 +25,10 @@ function mockBridge() {
     setTheme: vi.fn(),
     setAccentColor: vi.fn(),
     listSkills: vi.fn(async () => []),
+    browserCommand: vi.fn(async () => ({ ok: true, tabs: [] })),
+    browserViewport: vi.fn(),
+    onBrowserTabs: vi.fn(() => () => {}),
+    researchCommand: vi.fn(async () => ({ sources: [] })),
   };
   return { send };
 }
@@ -229,7 +233,7 @@ describe("App 首条消息与子代理点击", () => {
     fireEvent.click(toggle);
     expect(screen.getByLabelText("收起详情栏")).toBe(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText("在这里查看文件与子代理")).toBeDefined();
+    expect(screen.getByText("文件、网页与资料，在一处继续")).toBeDefined();
     fireEvent.click(toggle);
     expect(screen.getByLabelText("展开详情栏")).toBe(toggle);
     expect(document.querySelector(".detail-panel")).toBeNull();
@@ -280,7 +284,7 @@ describe("App 首条消息与子代理点击", () => {
       expect(useStore.getState().detailTabs.length).toBe(0);
     });
     expect(screen.getByLabelText("收起详情栏")).toBe(toggle);
-    expect(screen.getByText("在这里查看文件与子代理")).toBeDefined();
+    expect(screen.getByText("文件、网页与资料，在一处继续")).toBeDefined();
     fireEvent.click(toggle);
     expect(screen.getByLabelText("展开详情栏")).toBe(toggle);
   });

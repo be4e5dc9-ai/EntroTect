@@ -80,7 +80,7 @@ describe("analyzeCommand 危险命令模式表", () => {
   }
 });
 
-describe("bash 工具与沙箱联动", () => {
+describe("bash 工具与危险命令保护联动", () => {
   it("运行中的主代理从 full 切到 restricted 后,后续危险 bash 立即拦截", async () => {
     const { ctx } = await makeCtx("full");
     let sandboxMode: ToolContext["sandboxMode"] = ctx.sandboxMode;
@@ -122,14 +122,14 @@ describe("bash 工具与沙箱联动", () => {
     const secondResult = result.messages[4]?.content[0];
     expect(firstResult).toMatchObject({ type: "tool-result", isError: false });
     expect(secondResult).toMatchObject({ type: "tool-result", isError: true });
-    expect(String(secondResult?.content)).toMatch(/沙箱.*拦截/);
+    expect(String(secondResult?.content)).toMatch(/危险命令保护.*拦截/);
   });
 
   it("restricted 模式拦截危险命令,full 模式放行", async () => {
     const { ctx } = await makeCtx("restricted");
 
     await expect(bashTool.call({ command: "del /f x.txt" }, ctx)).rejects.toThrow(
-      /沙箱.*拦截/,
+      /危险命令保护.*拦截/,
     );
 
     // 切回 full:危险命令可执行(安全命令必然放行,只验证后者避免真删文件)
@@ -181,7 +181,7 @@ describe("bash 工具与沙箱联动", () => {
         (part) =>
           part.kind === "tool-state" &&
           part.state === "failed" &&
-          part.summary?.includes("沙箱"),
+          part.summary?.includes("危险命令保护"),
       ),
     ).toBe(true);
   });

@@ -1,24 +1,23 @@
 // =====================================================================
-// 权限闸门:会话级三态审批
-// 设计依据:ClaudeCode/06 权限三态 + opencode/09 last-match-wins 的
-// v1 精简版。v1 范围:
-//   - 只读工具自动放行(read/glob/grep);
-//   - 写类工具(write/edit/bash)等待用户三选一;
-//   - allow-always 按工具名记忆(会话级);
-//   - fail-closed:审批超时默认 deny,deny 理由回喂模型。
+// 权限闸门:动作 + 资源规则、会话授权、项目持久授权与 fail-closed 审批。
+// 规则采用 last-match-wins；同一工具的不同文件、命令或域名分别裁决。
 // =====================================================================
 
 import type {
   ApprovalDecision,
   ApprovalRequest,
   PermissionMode,
+  PermissionRule,
 } from "@entrotect/shared";
 import type { Tool } from "../tools/types.js";
+import { evaluatePermission, rulesForApproval } from "./rules.js";
 
 export interface ApprovalOutcome {
   decision: ApprovalDecision;
   /** deny 时附带的理由,会回喂给模型 */
   reason?: string;
+  /** allow-project 时由 host 持久化的最小范围规则。 */
+  rules?: PermissionRule[];
 }
 
 interface PendingApproval {
@@ -38,19 +37,26 @@ const APPROVAL_TIMEOUT_MS = 10 * 60 * 1000;
  * fail-closed:审批超时默认拒绝,deny 理由回喂模型。
  */
 export class SessionPermissionGate {
-  /** 会话内允许名单(allow-always 按工具名记忆) */
-  private readonly alwaysAllowed = new Set<string>();
+  /** 会话内规则只存在于本次会话，不污染其他项目或会话。 */
+  private readonly sessionRules: PermissionRule[] = [];
+  private projectRules: PermissionRule[];
   private readonly readOnlyTools = new Set<string>();
   private readonly pending = new Map<string, PendingApproval>();
   private readonly timeoutMs: number;
   private mode: PermissionMode;
 
-  constructor(tools: Tool[], timeoutMs: number = APPROVAL_TIMEOUT_MS, mode: PermissionMode = "write") {
+  constructor(
+    tools: Tool[],
+    timeoutMs: number = APPROVAL_TIMEOUT_MS,
+    mode: PermissionMode = "write",
+    projectRules: readonly PermissionRule[] = [],
+  ) {
     for (const tool of tools) {
       if (tool.isReadOnly) this.readOnlyTools.add(tool.name);
     }
     this.timeoutMs = timeoutMs;
     this.mode = mode;
+    this.projectRules = projectRules.map((rule) => ({ ...rule }));
   }
 
   /** 更新后续检查使用的模式;已挂起的审批仍由原有 respond/超时路径收口。 */
@@ -58,14 +64,33 @@ export class SessionPermissionGate {
     this.mode = mode;
   }
 
+  /** 配置更新后替换持久规则；会话规则继续保留。 */
+  setProjectRules(rules: readonly PermissionRule[]): void {
+    this.projectRules = rules.map((rule) => ({ ...rule }));
+  }
+
+  /** Preserve conversation grants while a new run releases old approvals. */
+  copySessionGrantsFrom(previous: SessionPermissionGate): void {
+    this.sessionRules.push(...previous.sessionRules.map((rule) => ({ ...rule })));
+  }
+
   /**
    * 主循环在每次工具执行前调用。
-   * full 模式/已 allow-always 的工具即时放行;write 模式只读工具即时放行;
+   * full 模式/匹配 allow 规则即时放行;write 模式低风险只读动作默认放行;
    * 其余挂起,等待 host 调 respond() 或超时 fail-closed deny。
    */
   request(request: ApprovalRequest): Promise<ApprovalOutcome> {
-    if (this.shouldAutoAllow(request)) {
+    const evaluation = this.evaluate(request);
+    if (evaluation.effect === "allow") {
       return Promise.resolve({ decision: "allow-once" });
+    }
+    if (evaluation.effect === "deny") {
+      return Promise.resolve({
+        decision: "deny",
+        reason: evaluation.rule
+          ? `项目权限规则拒绝了 ${evaluation.target?.action ?? "操作"}: ${evaluation.target?.resource ?? request.preview}`
+          : evaluation.reason ?? request.reason ?? "权限规则拒绝了该操作",
+      });
     }
     return new Promise<ApprovalOutcome>((resolve) => {
       const timer = setTimeout(() => {
@@ -78,14 +103,19 @@ export class SessionPermissionGate {
 
   /** 请求是否会走挂起(需要用户裁决)路径;用于 host 决定是否上报 approval-requested */
   wantsApproval(request: ApprovalRequest): boolean {
-    return !this.shouldAutoAllow(request);
+    return this.evaluate(request).effect === "ask";
   }
 
-  private shouldAutoAllow(request: ApprovalRequest): boolean {
-    return (
-      this.mode === "full" ||
-      this.alwaysAllowed.has(request.toolName) ||
-      (this.mode === "write" && this.readOnlyTools.has(request.toolName))
+  private evaluate(request: ApprovalRequest) {
+    if (request.policyEffect === "deny") {
+      return { effect: "deny" as const, reason: request.reason ?? "宿主安全策略拒绝了该操作" };
+    }
+    return evaluatePermission(
+      request,
+      this.mode,
+      this.readOnlyTools.has(request.toolName),
+      this.projectRules,
+      this.sessionRules,
     );
   }
 
@@ -95,8 +125,13 @@ export class SessionPermissionGate {
     if (!pending) return;
     this.pending.delete(toolCallId);
     clearTimeout(pending.timer);
-    if (decision === "allow-always") {
-      this.alwaysAllowed.add(pending.request.toolName);
+    const readOnly = this.readOnlyTools.has(pending.request.toolName);
+    if (decision === "allow-always" || decision === "allow-project") {
+      const rules = rulesForApproval(pending.request, readOnly);
+      if (decision === "allow-always") this.sessionRules.push(...rules);
+      else this.projectRules.push(...rules);
+      pending.resolve({ decision, reason, ...(decision === "allow-project" ? { rules } : {}) });
+      return;
     }
     pending.resolve({ decision, reason });
   }

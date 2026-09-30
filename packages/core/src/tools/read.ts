@@ -11,7 +11,7 @@ import { z } from "zod";
 import type { Tool, ToolContext } from "./types.js";
 import { recordFileDigest } from "./file-state.js";
 import { withFileLock } from "./file-access.js";
-import { resolveInsideCwd } from "./paths.js";
+import { resolvePermittedPath, resolvePermittedPathReal } from "./paths.js";
 
 /** 单次可读上限 256KB,超出引导用 offset/limit 窗口读 */
 const MAX_READ_BYTES = 256 * 1024;
@@ -25,21 +25,18 @@ const inputSchema = z.strictObject({
 
 type Input = z.infer<typeof inputSchema>;
 
-function resolveReadablePath(ctx: ToolContext, requested: string): string | Promise<string> {
+function resolveReadablePath(ctx: ToolContext, requested: string): { absolute: string; artifact: boolean } {
   const absolute = path.resolve(ctx.cwd, requested);
   const artifacts = path.resolve(ctx.artifactDir);
   // The only exception to workspace confinement is a generated text output in
   // this session's artifact directory. Never expose config, other sessions, or links.
   if (path.relative(artifacts, path.dirname(absolute)) === "" && /^tool-output-\d+-[a-f0-9]{8}\.txt$/i.test(path.basename(absolute))) {
-    return (async () => {
-      const info = await lstat(absolute);
-      if (!info.isFile() || info.isSymbolicLink() || path.relative(await realpath(artifacts), path.dirname(await realpath(absolute))) !== "") {
-        throw new Error("工具输出路径无效");
-      }
-      return absolute;
-    })();
+    return { absolute, artifact: true };
   }
-  return resolveInsideCwd(ctx.cwd, requested, ctx.protectedPaths);
+  return {
+    absolute: resolvePermittedPath(ctx.cwd, requested, ctx.protectedPaths, ctx.approvedResources),
+    artifact: false,
+  };
 }
 
 /** Hash the complete decoded file for freshness checks; retain only a bounded
@@ -120,8 +117,15 @@ export const readTool: Tool = {
   async call(rawArgs: unknown, ctx: ToolContext): Promise<string> {
     const args = inputSchema.parse(rawArgs);
     const resolved = resolveReadablePath(ctx, args.file_path);
-    const absolute = typeof resolved === "string" ? resolved : await resolved;
-    return withFileLock(absolute, ctx.abortSignal, async (filePath) => {
+    return withFileLock(resolved.absolute, ctx.abortSignal, async (filePath) => {
+      if (resolved.artifact) {
+        const info = await lstat(resolved.absolute);
+        if (!info.isFile() || info.isSymbolicLink() || path.relative(await realpath(ctx.artifactDir), path.dirname(await realpath(resolved.absolute))) !== "") {
+          throw new Error("工具输出路径无效");
+        }
+      } else {
+        await resolvePermittedPathReal(ctx.cwd, args.file_path, ctx.protectedPaths, ctx.approvedResources);
+      }
       let info;
       try {
         info = await stat(filePath);

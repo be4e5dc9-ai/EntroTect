@@ -26,6 +26,14 @@ export function knownMaxTokens(model: string): number | undefined {
   return KNOWN_MODEL_MAX_TOKENS[model.split("/").pop()!];
 }
 
+/** Capability declared by the shipped catalog; undefined means not declared. */
+export function knownModelSupportsImages(model: string): boolean | undefined {
+  const bare = model.split("/").pop();
+  const entries = Object.entries(catalog).filter(([key]) => key === model || key.split("/").pop() === bare);
+  if (!entries.length) return undefined;
+  return entries.every(([, entry]) => (entry.capabilities.input as readonly string[]).includes("image"));
+}
+
 /** clamp 到模型已知最大输出;未知模型原样返回(不限制) */
 export function clampMaxTokens<T extends number | undefined>(
   model: string,

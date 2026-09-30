@@ -657,6 +657,28 @@ describe("AnthropicProvider", () => {
 });
 
 describe("GoogleProvider", () => {
+  it("截图观察转为 inlineData，仍位于匹配的工具结果之后", async () => {
+    const { requests, fetchImpl } = captureRequests([
+      'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"看到了"}]},"finishReason":"STOP"}]}\n\n',
+    ]);
+    const provider = new GoogleProvider({
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta", apiKey: "gk", model: "gemini-3.5-flash", fetchImpl,
+    });
+    const messages: Message[] = [
+      { role: "assistant", content: [{ type: "tool-call", id: "shot", name: "browser_screenshot", arguments: '{"tabId":"tab"}' }] },
+      { role: "user", content: [{ type: "tool-result", toolCallId: "shot", name: "browser_screenshot", isError: false, content: "saved.png" }] },
+      { role: "user", content: [{ type: "text", text: "网页视觉观察" }, { type: "image", mime: "image/png", dataBase64: "aW1hZ2U=" }] },
+    ];
+    for await (const _ of provider.streamBlocks(messages, { systemPrompt: "SYS", tools: [], maxTokens: 256 })) { /* capture request */ }
+    const contents = requests[0]!.body.contents as Array<{ role: string; parts: Array<Record<string, unknown>> }>;
+    expect(contents[0]!.parts[0]).toMatchObject({ functionCall: { name: "browser_screenshot" } });
+    expect(contents[1]!.parts[0]).toEqual({ functionResponse: { name: "browser_screenshot", response: { result: "saved.png" } } });
+    expect(contents[2]!.parts).toEqual([
+      { text: "网页视觉观察" },
+      { inlineData: { mimeType: "image/png", data: "aW1hZ2U=" } },
+    ]);
+  });
+
   it("systemPrompt 进 systemInstruction,工具结果按工具名配对", async () => {
     const chunks = [
       'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"好"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":4}}\n\n',

@@ -24,9 +24,9 @@ import { ContextUsagePopover } from "./ContextUsagePopover";
 import { ReasoningSlider } from "./ReasoningSlider";
 
 const PERMISSION_OPTIONS: Array<MenuOption<NonNullable<AppConfig["permissionMode"]>>> = [
-  { value: "full", label: "完全访问权限" },
-  { value: "write", label: "修改需批准" },
-  { value: "ask", label: "全部请求均需批准" },
+  { value: "full", label: "完全访问" },
+  { value: "write", label: "敏感操作需批准" },
+  { value: "ask", label: "每项操作均需批准" },
 ];
 
 /** 兼容旧配置的 effort 值：保留合法值，否则回退 high */
@@ -59,6 +59,7 @@ export function Composer(): React.JSX.Element {
   const contextWindowsByProvider = useStore((s) => s.contextWindowsByProvider);
   const skills = useStore((s) => s.skills);
   const [text, setText] = useState("");
+  const externalDraft = useStore((s) => s.composerDraft);
   const ref = useRef<HTMLTextAreaElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const [slashCursor, setSlashCursor] = useState(0);
@@ -69,6 +70,19 @@ export function Composer(): React.JSX.Element {
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
+
+  useEffect(() => {
+    if (!externalDraft || externalDraft.sessionId !== session?.id) return;
+    setText((current) => current.trim() ? `${current}\n\n${externalDraft.text}` : externalDraft.text);
+    useStore.setState({ composerDraft: null });
+    requestAnimationFrame(() => {
+      const input = ref.current;
+      if (!input) return;
+      input.focus();
+      input.style.height = "auto";
+      input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
+    });
+  }, [externalDraft, session?.id]);
 
   // 自动拉取 skills(首次挂载)
   useEffect(() => {

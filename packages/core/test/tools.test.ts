@@ -255,7 +255,9 @@ describe("bash 工具", () => {
     const timeoutJob = getBgJob(timeoutId!, ctx.artifactDir);
     if (!timeoutJob!.done) await once(timeoutJob!.child!, "close");
     expect(await bashOutputTool.call({ jobId: timeoutId }, ctx)).toContain("已超时");
-  });
+    // Two Windows PowerShell launches plus process-tree cleanup can exceed the
+    // default 5s on a cold machine; each command retains its own timeout checks.
+  }, 15_000);
 
   it("后台任务按会话隔离，删除会话时终止并移除", async () => {
     const { ctx, root } = await makeCtx();

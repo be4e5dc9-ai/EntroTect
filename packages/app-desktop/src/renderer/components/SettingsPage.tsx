@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import type {
   AppConfig,
+  PermissionEffect,
   ProviderConfig,
   ReasoningEffort,
   SkillOverride,
@@ -41,6 +42,7 @@ type Primary = "providers" | "appearance" | "general" | "skills";
 function snapshotConfig(config: AppConfig): AppConfig {
   return {
     ...config,
+    permissionRules: config.permissionRules?.map((rule) => ({ ...rule })),
     providers: config.providers?.map((p) => ({
       ...p,
       models: [...p.models],
@@ -61,6 +63,7 @@ function snapshotConfig(config: AppConfig): AppConfig {
 
 export function SettingsPage(): React.JSX.Element | null {
   const config = useStore((s) => s.config);
+  const currentSession = useStore((s) => s.currentSession);
   const modelsByProvider = useStore((s) => s.modelsByProvider);
   const contextWindowsByProvider = useStore((s) => s.contextWindowsByProvider);
   const theme = useStore((s) => s.theme);
@@ -79,6 +82,9 @@ export function SettingsPage(): React.JSX.Element | null {
       : null;
   });
   const [fetchState, setFetchState] = useState<Record<string, FetchState>>({});
+  const [ruleAction, setRuleAction] = useState("shell");
+  const [ruleResource, setRuleResource] = useState("");
+  const [ruleEffect, setRuleEffect] = useState<PermissionEffect>("ask");
   const previousCache = useRef({ modelsByProvider, contextWindowsByProvider });
 
   // 双栏导航状态:primary + secondary active provider
@@ -242,6 +248,31 @@ export function SettingsPage(): React.JSX.Element | null {
     if (current) {
       bridge().send({ kind: "SetConfig", config: { ...current, sandboxMode: next } });
     }
+  };
+
+  const removePermissionRule = (index: number) => {
+    const rules = (form.permissionRules ?? []).filter((_, ruleIndex) => ruleIndex !== index);
+    setForm((current) => (current ? { ...current, permissionRules: rules } : current));
+    const current = useStore.getState().config;
+    if (current) bridge().send({ kind: "SetConfig", config: { ...current, permissionRules: rules } });
+  };
+
+  const clearPermissionRules = () => {
+    setForm((current) => (current ? { ...current, permissionRules: [] } : current));
+    const current = useStore.getState().config;
+    if (current) bridge().send({ kind: "SetConfig", config: { ...current, permissionRules: [] } });
+  };
+
+  const addPermissionRule = () => {
+    const resource = ruleResource.trim();
+    const workspace = currentSession?.cwd || form.workspaceDir?.trim();
+    if (!resource || !workspace) return;
+    const rule = { action: ruleAction, resource, effect: ruleEffect, workspace };
+    const rules = [...(form.permissionRules ?? []), rule];
+    setForm((current) => (current ? { ...current, permissionRules: rules } : current));
+    const current = useStore.getState().config;
+    if (current) bridge().send({ kind: "SetConfig", config: { ...current, permissionRules: rules } });
+    setRuleResource("");
   };
 
   const toggleAutoCompact = () => {
@@ -616,9 +647,9 @@ export function SettingsPage(): React.JSX.Element | null {
 
                 <div className="field field-inline">
                   <div className="field-inline-text">
-                    <span className="field-inline-title">拦截危险命令(沙箱)</span>
+                    <span className="field-inline-title">危险命令保护</span>
                     <span className="field-inline-desc">
-                      即时生效;开启后删除/格式化/关停等危险命令将被拒绝执行
+                      启发式拦截删除、格式化、关停等高风险 PowerShell 命令；这不是操作系统沙箱
                     </span>
                   </div>
                   <button
@@ -630,6 +661,60 @@ export function SettingsPage(): React.JSX.Element | null {
                   >
                     <span className="switch-knob" />
                   </button>
+                </div>
+
+                <div className="field permission-rules-field">
+                  <div className="permission-rules-head">
+                    <div className="field-inline-text">
+                      <span className="field-inline-title">项目权限规则</span>
+                      <span className="field-inline-desc">
+                        “此项目允许”产生的最小范围规则；按顺序匹配，最后一条生效
+                      </span>
+                    </div>
+                    {(form.permissionRules?.length ?? 0) > 0 ? (
+                      <button type="button" className="btn btn-ghost" onClick={clearPermissionRules}>全部清除</button>
+                    ) : null}
+                  </div>
+                  {(form.permissionRules?.length ?? 0) === 0 ? (
+                    <p className="permission-rules-empty">暂无持久授权。会话授权会在关闭任务后自动失效。</p>
+                  ) : (
+                    <div className="permission-rules-list">
+                      {form.permissionRules?.map((rule, index) => (
+                        <div className="permission-rule-row" key={`${rule.workspace}-${rule.action}-${rule.resource}-${index}`}>
+                          <span className={`permission-rule-effect ${rule.effect}`}>{rule.effect}</span>
+                          <code>{rule.action}</code>
+                          <code title={rule.resource}>{rule.resource}</code>
+                          <button type="button" className="btn btn-ghost" onClick={() => removePermissionRule(index)} aria-label="删除权限规则">删除</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="permission-rule-editor">
+                    <select value={ruleEffect} onChange={(event) => setRuleEffect(event.target.value as PermissionEffect)} aria-label="规则效果">
+                      <option value="allow">允许</option>
+                      <option value="ask">每次询问</option>
+                      <option value="deny">拒绝</option>
+                    </select>
+                    <select value={ruleAction} onChange={(event) => setRuleAction(event.target.value)} aria-label="权限动作">
+                      <option value="shell">shell</option>
+                      <option value="edit">edit</option>
+                      <option value="read">read</option>
+                      <option value="inspect">inspect</option>
+                      <option value="network">network</option>
+                      <option value="search">search</option>
+                      <option value="external">external</option>
+                      <option value="subagent">subagent</option>
+                      <option value="process">process</option>
+                      <option value="state">state</option>
+                      <option value="tool">tool</option>
+                      <option value="*">全部动作</option>
+                    </select>
+                    <input value={ruleResource} onChange={(event) => setRuleResource(event.target.value)} placeholder="资源模式，例如 git status * 或 https://example.com/*" spellCheck={false} />
+                    <button type="button" className="btn btn-ghost" onClick={addPermissionRule} disabled={!ruleResource.trim() || !(currentSession?.cwd || form.workspaceDir?.trim())}>添加</button>
+                  </div>
+                  {!(currentSession?.cwd || form.workspaceDir?.trim()) ? (
+                    <p className="permission-rules-empty">请先打开项目或设置默认工作目录，再添加项目规则。</p>
+                  ) : null}
                 </div>
 
                 <div className="field field-inline">

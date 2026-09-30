@@ -172,8 +172,10 @@ export interface AppConfig {
   reasoningEffort?: ReasoningEffort;
   /** 输入区思考强度控件：默认滑块，menu 保留旧版菜单。 */
   reasoningControlStyle?: ReasoningControlStyle;
-  /** 权限模式:full = 全部自动放行;write = 写操作需批准;ask = 每个工具调用都需批准 */
+  /** 权限模式:full = 规则允许的调用自动放行;write = 敏感副作用需批准;ask = 每个工具调用都需批准 */
   permissionMode?: PermissionMode;
+  /** 项目级权限规则；按顺序匹配，最后一条命中的规则生效。 */
+  permissionRules?: PermissionRule[];
   /** 沙箱模式;restricted 拦截危险命令 */
   sandboxMode?: "full" | "restricted";
   /** UI 是否显示模型思考过程 */
@@ -188,6 +190,24 @@ export interface AppConfig {
 }
 
 export type PermissionMode = "full" | "write" | "ask";
+
+/** 权限规则的动作维度；保留 string 允许插件声明自己的动作。 */
+export type PermissionEffect = "allow" | "ask" | "deny";
+export type PermissionRisk = "low" | "medium" | "high";
+
+export interface PermissionTarget {
+  /** 动作类别，例如 read/edit/shell/network/subagent/process。 */
+  action: string;
+  /** 被访问的具体资源：绝对路径、命令、URL 或任务标识。 */
+  resource: string;
+}
+
+export interface PermissionRule extends PermissionTarget {
+  /** allow/ask/deny；规则采用 last-match-wins。 */
+  effect: PermissionEffect;
+  /** 可选工作区作用域；缺省表示全局规则。 */
+  workspace?: string;
+}
 
 export const PROVIDER_PRESETS: ProviderConfig[] = [
   {
@@ -369,6 +389,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   reasoningEffort: "high",
   reasoningControlStyle: "slider",
   permissionMode: "write",
+  permissionRules: [],
   sandboxMode: "full",
   showReasoning: false,
   autoCompact: true,
@@ -379,7 +400,7 @@ export const DEFAULT_CONFIG: AppConfig = {
 // Op:UI → 核心(照抄 codex Op 的思想:带判别字段的命令集)
 // =====================================================================
 
-export type ApprovalDecision = "allow-once" | "allow-always" | "deny";
+export type ApprovalDecision = "allow-once" | "allow-always" | "allow-project" | "deny";
 
 /** 拖入对话栏的附件:图片走 Base64 内嵌,其他文件带路径(由核心工具读取) */
 export type MessageAttachment =
@@ -433,6 +454,18 @@ export interface ApprovalRequest {
   preview: string;
   /** 危险度说明 */
   description: string;
+  /** 本次调用实际触达的动作与资源。旧调用方缺省时由权限闸门回退生成。 */
+  targets?: PermissionTarget[];
+  /** 审批面板使用的风险级别。 */
+  risk?: PermissionRisk;
+  /** 为什么本次需要审批。 */
+  reason?: string;
+  /** “本会话/项目允许”应写入的最小范围规则。 */
+  suggestedRules?: PermissionRule[];
+  /** 发起调用的工作区，用于匹配项目级规则。 */
+  workspace?: string;
+  /** 宿主策略的不可覆盖裁决（例如危险命令保护）。 */
+  policyEffect?: "deny";
 }
 
 /**
@@ -506,6 +539,7 @@ export type AppEvent =
       summary?: string;
     }
   | { type: "approval-requested"; request: ApprovalRequest }
+  | { type: "approval-resolved"; toolCallId: string }
   | {
       type: "file-changed";
       toolCallId: string;
@@ -636,6 +670,16 @@ export const appConfigSchema = z.object({
   reasoningEffort: z.string().optional(),
   reasoningControlStyle: z.enum(["slider", "menu"]).optional(),
   permissionMode: z.enum(["full", "write", "ask"]).optional(),
+  permissionRules: z
+    .array(
+      z.object({
+        action: z.string().min(1),
+        resource: z.string().min(1),
+        effect: z.enum(["allow", "ask", "deny"]),
+        workspace: z.string().min(1).optional(),
+      }),
+    )
+    .optional(),
   sandboxMode: z.enum(["full", "restricted"]).optional(),
   showReasoning: z.boolean().optional(),
   temperature: z.number().min(0).max(2).optional(),
@@ -700,7 +744,7 @@ export const opSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("ApprovalDecision"),
     toolCallId: z.string(),
-    decision: z.enum(["allow-once", "allow-always", "deny"]),
+    decision: z.enum(["allow-once", "allow-always", "allow-project", "deny"]),
     reason: z.string().optional(),
   }),
   z.object({ kind: z.literal("GetConfig") }),
@@ -792,6 +836,7 @@ export const appEventSchema = z.discriminatedUnion("type", [
     preview: z.string(),
     summary: z.string().optional(),
   }),
+  z.object({ type: z.literal("approval-resolved"), toolCallId: z.string() }),
   z.object({
     type: z.literal("approval-requested"),
     request: z.object({
@@ -799,6 +844,17 @@ export const appEventSchema = z.discriminatedUnion("type", [
       toolName: z.string(),
       preview: z.string(),
       description: z.string(),
+      targets: z.array(z.object({ action: z.string(), resource: z.string() })).optional(),
+      risk: z.enum(["low", "medium", "high"]).optional(),
+      reason: z.string().optional(),
+      suggestedRules: z.array(z.object({
+        action: z.string(),
+        resource: z.string(),
+        effect: z.enum(["allow", "ask", "deny"]),
+        workspace: z.string().optional(),
+      })).optional(),
+      workspace: z.string().optional(),
+      policyEffect: z.literal("deny").optional(),
     }),
   }),
   z.object({

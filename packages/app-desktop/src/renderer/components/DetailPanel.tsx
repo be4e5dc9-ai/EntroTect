@@ -9,6 +9,9 @@ import { useMemo } from "react";
 import {
   activateDetailTab,
   closeDetailTab,
+  openBrowserTab,
+  openResearchTab,
+  useComposerPrompt,
   useStore,
   type DetailTab,
   type UiMessage,
@@ -16,6 +19,9 @@ import {
 } from "../store";
 import { fileName } from "./FileCard";
 import { SubagentChat } from "./SubagentChat";
+import { BrowserIcon, BrowserPanel, ResearchIcon } from "./BrowserPanel";
+import { ResearchLibrary } from "./ResearchLibrary";
+import { bridge } from "../bridge";
 
 const RESIZE_MAX = 640;
 const RESIZE_MIN = 320;
@@ -101,6 +107,8 @@ export function DetailPanel({ width, onWidthChange }: DetailPanelProps): React.J
   const tabs = useStore((s) => s.detailTabs);
   const activeDetailId = useStore((s) => s.activeDetailId);
   const messages = useStore((s) => s.messages);
+  const sessionId = useStore((s) => s.currentSession?.id);
+  const browserTabs = useStore((s) => sessionId ? s.browserTabs[sessionId] : undefined);
   const active = tabs.find((tab) => tab.id === activeDetailId) ?? null;
 
   const taskBlockOf = useMemo(
@@ -108,15 +116,18 @@ export function DetailPanel({ width, onWidthChange }: DetailPanelProps): React.J
     [messages],
   );
 
-  const tabTitle = (tab: DetailTab): string =>
-    tab.kind === "file"
-      ? fileName(tab.path)
-      : subagentTitle(taskBlockOf(tab.toolCallId));
+  const tabTitle = (tab: DetailTab): string => {
+    if (tab.kind === "file") return fileName(tab.path);
+    if (tab.kind === "subagent") return subagentTitle(taskBlockOf(tab.toolCallId));
+    if (tab.kind === "research") return "资料库";
+    return browserTabs?.find((item) => item.id === tab.tabId)?.title || "新网页";
+  };
 
   const address = (tab: DetailTab): string =>
-    tab.kind === "file"
-      ? `file://${tab.path}`
-      : `subagent://${tabTitle(tab)}`;
+    tab.kind === "file" ? `file://${tab.path}`
+      : tab.kind === "subagent" ? `subagent://${tabTitle(tab)}`
+      : tab.kind === "research" ? "本会话的来源、笔记与工作模板"
+      : browserTabs?.find((item) => item.id === tab.tabId)?.url ?? "";
 
   const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
     const startX = event.clientX;
@@ -149,11 +160,16 @@ export function DetailPanel({ width, onWidthChange }: DetailPanelProps): React.J
               className={`detail-tab${tab.id === active?.id ? " active" : ""}`}
               onClick={() => activateDetailTab(tab.id)}
               role="tab"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.target !== event.currentTarget) return;
+                if (event.key === "Enter" || event.key === " ") { event.preventDefault(); activateDetailTab(tab.id); }
+              }}
               aria-selected={tab.id === active?.id}
               title={tab.kind === "file" ? tab.path : tabTitle(tab)}
             >
               <span className="detail-tab-icon">
-                {tab.kind === "file" ? <FileIcon /> : <SubagentIcon />}
+                {tab.kind === "file" ? <FileIcon /> : tab.kind === "subagent" ? <SubagentIcon /> : tab.kind === "browser" ? <BrowserIcon /> : <ResearchIcon />}
               </span>
               <span className="detail-tab-title">{tabTitle(tab)}</span>
               <button
@@ -171,8 +187,9 @@ export function DetailPanel({ width, onWidthChange }: DetailPanelProps): React.J
             </div>
           ))}
         </div>
+        <button type="button" className="browser-icon-button detail-browser-add" onClick={openBrowserTab} disabled={!sessionId} title="新网页" aria-label="新网页">+</button>
       </div>
-      {active && <div className="detail-meta">
+      {active && active.kind !== "browser" && <div className="detail-meta">
         <span className={`detail-meta-dot${active.kind === "subagent" ? " subagent" : ""}`} aria-hidden="true" />
         <span className="detail-meta-text" title={address(active)}>
           {address(active)}
@@ -193,14 +210,22 @@ export function DetailPanel({ width, onWidthChange }: DetailPanelProps): React.J
         {!active ? (
           <div className="detail-empty">
             <FileIcon />
-            <p>在这里查看文件与子代理</p>
-            <span>点击对话中的文件或子代理卡片打开详情。</span>
+            <p>文件、网页与资料，在一处继续</p>
+            <span>点击对话中的文件或子代理卡片，也可以打开浏览器收集来源。</span>
+            <div className="workspace-tools">
+              <button type="button" onClick={openBrowserTab} disabled={!sessionId}><BrowserIcon />浏览网页</button>
+              <button type="button" onClick={openResearchTab} disabled={!sessionId}><ResearchIcon />资料库</button>
+            </div>
           </div>
         ) : active.kind === "file" ? (
           <FileDetailBody path={active.path} />
-        ) : (
+        ) : active.kind === "subagent" ? (
           <SubagentChat toolCallId={active.toolCallId} />
-        )}
+        ) : active.kind === "browser" && sessionId ? (
+          <BrowserPanel key={active.id} sessionId={sessionId} tabId={active.tabId} tab={browserTabs?.find((tab) => tab.id === active.tabId)} />
+        ) : active.kind === "research" && sessionId ? (
+          <ResearchLibrary key={sessionId} sessionId={sessionId} request={(command) => bridge().researchCommand(command)} onUsePrompt={useComposerPrompt} />
+        ) : null}
       </div>
       <div className="detail-resizer" onPointerDown={startResize} />
     </aside>

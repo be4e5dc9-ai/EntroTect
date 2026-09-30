@@ -18,6 +18,7 @@ type TextBlock = Extract<import("@entrotect/shared").ContentBlock, { type: "text
 interface GeminiPart {
   text?: string;
   thought?: boolean;
+  inlineData?: { mimeType: string; data: string };
   functionCall?: { name: string; args: Record<string, unknown> };
   functionResponse?: { name: string; response: { result: string } };
 }
@@ -65,7 +66,7 @@ function toGeminiMessages(messages: Message[]): {
       continue;
     }
 
-    // user: 文本 + tool_result 合并
+    // user: 文本、图像与 tool_result 均保留，截图观察来自单独的 user 消息。
     const parts: GeminiPart[] = [];
     const text = msg.content
       .filter((b): b is TextBlock => b.type === "text")
@@ -73,7 +74,9 @@ function toGeminiMessages(messages: Message[]): {
       .join("\n");
     if (text) parts.push({ text });
     for (const b of msg.content) {
-      if (b.type === "tool-result") {
+      if (b.type === "image") {
+        parts.push({ inlineData: { mimeType: b.mime, data: b.dataBase64 } });
+      } else if (b.type === "tool-result") {
         parts.push({
           functionResponse: {
             name: b.name, // Gemini 用工具名配对 functionResponse

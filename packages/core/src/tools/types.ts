@@ -5,7 +5,7 @@
 // =====================================================================
 
 import type { z } from "zod";
-import type { SubagentPart } from "@entrotect/shared";
+import type { PermissionTarget, SubagentPart } from "@entrotect/shared";
 import type { SandboxMode } from "../sandbox/policy.js";
 import type { FileStates } from "./file-state.js";
 
@@ -25,7 +25,11 @@ export interface ToolContext {
   sandboxMode: SandboxMode;
   /** 受保护路径(应用自身数据目录):文件工具必须拒绝对其读写 */
   protectedPaths?: readonly string[];
+  /** 本次调用经权限闸门批准的具体资源；仅对当前工具调用有效。 */
+  approvedResources?: readonly PermissionTarget[];
   abortSignal?: AbortSignal;
+  /** A successful tool may supply a bounded visual observation for the next model request. */
+  modelImage?: (image: { mime: string; dataBase64: string }) => void;
   /** Shared across tool calls of one agent, never across parent/child agents. */
   fileStates?: FileStates;
   shellState?: ShellState;

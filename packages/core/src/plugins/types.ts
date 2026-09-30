@@ -15,7 +15,7 @@ export interface PluginApi {
 export interface PluginHooks {
   /** 用户消息发送前改写文本;返回 string 替换,返回 undefined 保持原样 */
   "chat.message"?: (text: string) => string | undefined | void;
-  /** 工具执行前(审批通过后、call 之前);返回 string 则替换为新的 args JSON 字符串 */
+  /** 工具执行前、权限裁决前改写参数；审批 UI 始终展示改写后的真实参数。 */
   "tool.execute.before"?: (toolName: string, args: unknown) => string | undefined | void;
   /** 工具执行后观察;不能改结果 */
   "tool.execute.after"?: (toolName: string, output: string, isError: boolean) => void;

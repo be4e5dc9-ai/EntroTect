@@ -163,6 +163,7 @@ export async function loadConfig(appDataDir: string): Promise<AppConfig> {
     reasoningControlStyle:
       fromFile.reasoningControlStyle ?? DEFAULT_CONFIG.reasoningControlStyle ?? "slider",
     permissionMode: fromFile.permissionMode ?? DEFAULT_CONFIG.permissionMode,
+    permissionRules: fromFile.permissionRules?.map((rule) => ({ ...rule })) ?? [],
     sandboxMode: fromFile.sandboxMode ?? DEFAULT_CONFIG.sandboxMode,
     showReasoning: fromFile.showReasoning ?? DEFAULT_CONFIG.showReasoning,
     temperature: fromFile.temperature,

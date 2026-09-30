@@ -1,0 +1,53 @@
+/* The remote WebContentsView must match this viewport without transform animation. */
+.detail-panel:has(.browser-panel) { animation: none; }
+.workspace-tools { display: inline-flex; gap: 4px; flex-shrink: 0; }
+.workspace-tools button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px; color: var(--text-secondary); border-radius: 7px; font-size: 12px; }
+.workspace-tools button:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); }
+.workspace-tools button:disabled { opacity: .4; cursor: not-allowed; }
+.detail-browser-add { flex-shrink: 0; }
+.browser-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
+.browser-navigation { display: flex; align-items: center; gap: 3px; padding: 10px 10px 7px; }
+.browser-icon-button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 25px; width: 25px; height: 28px; border-radius: 6px; font-size: 18px; color: var(--text-secondary); }
+.browser-icon-button:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
+.browser-icon-button:disabled { opacity: .35; cursor: not-allowed; }
+.browser-address { flex: 1; width: 0; min-width: 40px; height: 32px; margin-left: 3px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 0 9px; color: var(--text); font-family: var(--font-sans); font-size: 11.5px; outline: none; }
+.browser-address:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+.browser-go { padding: 6px; margin-left: 2px; color: var(--accent-strong); white-space: nowrap; font-size: 11.5px; }
+.browser-go:disabled { opacity: .4; cursor: not-allowed; }
+.browser-tools { display: flex; align-items: center; gap: 2px; padding: 0 10px 7px; }
+.browser-tools button { display: inline-flex; align-items: center; min-height: 27px; padding: 4px 6px; color: var(--text-secondary); font-size: 11px; white-space: nowrap; border-radius: 5px; }
+.browser-tools button:last-child { margin-left: auto; }
+.browser-tools button:hover:not(:disabled) { color: var(--accent-strong); background: var(--accent-dim); }
+.browser-tools button:disabled { opacity: .45; cursor: not-allowed; }
+.browser-progress { height: 2px; flex-shrink: 0; overflow: hidden; background: var(--border); }
+.browser-progress.is-active::after { content: ""; display: block; height: 2px; width: 35%; background: var(--accent); animation: browser-progress 1.6s ease-in-out infinite; }
+.browser-viewport { flex: 1; min-height: 100px; position: relative; overflow: hidden; background: var(--surface); }
+.browser-status { display: flex; justify-content: space-between; gap: 10px; flex-shrink: 0; padding: 7px 12px; font-size: 10px; color: var(--text-tertiary); border-top: 1px solid var(--border); }
+.browser-welcome { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100%; padding: 28px; text-align: center; }
+.browser-welcome-icon { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; background: var(--accent-dim); color: var(--accent-strong); margin-bottom: 16px; }
+.browser-welcome-icon svg { width: 26px; height: 26px; }
+.browser-welcome h2 { margin: 0 0 10px; font-size: 17px; font-weight: 500; color: var(--text); letter-spacing: -.3px; }
+.browser-welcome p { max-width: 290px; margin: 0; color: var(--text-secondary); font-size: 12.5px; line-height: 1.9; }
+.browser-welcome > span { max-width: 290px; margin-top: 22px; color: var(--text-tertiary); font-size: 10.5px; line-height: 1.7; }
+.browser-error { padding: 28px 20px; color: var(--text-secondary); font-size: 12px; overflow-wrap: anywhere; }
+.browser-error strong { color: var(--danger); font-weight: 500; }
+.browser-error p { line-height: 1.7; }
+.browser-error button { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; }
+.browser-paused { padding: 30px 20px; color: var(--text-tertiary); font-size: 12px; text-align: center; }
+.browser-extraction { position: absolute; inset: 0; padding: 14px; overflow-y: auto; background: var(--bg-sidebar); }
+.browser-extraction > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+.browser-extraction > header strong { display: block; color: var(--text); font-size: 13px; font-weight: 500; }
+.browser-extraction > header span { display: block; margin-top: 5px; color: var(--text-tertiary); font-size: 11px; overflow-wrap: anywhere; }
+.browser-table-card { border: 1px solid var(--border); border-radius: 10px; margin: 0 0 12px; padding: 12px; background: var(--surface); }
+.browser-table-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.browser-table-heading strong { font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+.browser-table-heading button { flex-shrink: 0; font-size: 11px; color: var(--accent-strong); padding: 4px 7px; border-radius: 5px; background: var(--accent-dim); }
+.browser-table-card > span, .browser-table-card > small { display: block; font-size: 10px; color: var(--text-tertiary); line-height: 1.6; }
+.browser-table-preview { max-height: 220px; overflow: auto; margin: 9px 0; border: 1px solid var(--border); border-radius: 5px; }
+.browser-table-preview table { border-collapse: collapse; min-width: 100%; font-size: 10px; color: var(--text-secondary); }
+.browser-table-preview td { min-width: 65px; max-width: 180px; padding: 6px 8px; border: 1px solid var(--border); overflow-wrap: anywhere; }
+.browser-table-preview tr:first-child { background: var(--surface-hover); color: var(--text); }
+.browser-empty-extraction { padding: 20px 0; color: var(--text-tertiary); font-size: 12px; line-height: 1.8; }
+.browser-screenshot { width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--border); }
+@keyframes browser-progress { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }
+@media (prefers-reduced-motion: reduce) { .browser-progress.is-active::after { width: 100%; animation: none; opacity: .7; } }
